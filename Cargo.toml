@@ -16,3 +16,14 @@ textwrap = "0.16"
 unicode-width = "0.2"
 unicode-segmentation = "1.13"
 url = "2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+incremental = false
+
+[profile.release.build-override]
+opt-level = 0
