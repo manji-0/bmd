@@ -366,6 +366,25 @@ impl Inline {
             .max()
             .unwrap_or(0)
     }
+
+    /// Extract plain text from inline children, preserving a single space for breaks.
+    pub(crate) fn plain_text(inlines: &[Inline]) -> String {
+        let mut out = String::new();
+        for (i, inline) in inlines.iter().enumerate() {
+            match inline {
+                Inline::Text(t) | Inline::Code(t) => out.push_str(t),
+                Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => {
+                    out.push_str(&Self::plain_text(c));
+                }
+                Inline::HardBreak | Inline::SoftBreak => {
+                    if i > 0 {
+                        out.push(' ');
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 /// Opaque identifier for a link stored in `Document.links`.
