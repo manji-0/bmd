@@ -62,7 +62,7 @@ impl App {
             // each event so that a SearchConfirm transition is reflected immediately.
             while event::poll(poll_timeout)? {
                 let mode = self.keymap_mode();
-                let command = map_event(event::read()?, mode);
+                let command = map_event(event::read()?, mode, self.view_state.is_search_active());
                 if self.is_quit(&command) {
                     self.should_quit = true;
                     break;
@@ -249,10 +249,12 @@ impl App {
             return;
         }
 
+        let ctx = self.render_context();
         let matches = find_search_matches(
             &self.document,
             self.view_state.terminal_size().width(),
             &trimmed,
+            &ctx,
         );
 
         match self

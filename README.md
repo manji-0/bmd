@@ -58,7 +58,7 @@ some-generator | bmd
 | `/` | start forward search |
 | `?` | start backward search |
 | `Enter` | confirm search query |
-| `Esc` | cancel search input |
+| `Esc` | cancel search input, or clear active search results |
 | `Backspace` | delete last search character |
 | `q` / `Ctrl-c` | quit |
 

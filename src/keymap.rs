@@ -32,19 +32,26 @@ pub enum Command {
 }
 
 /// Map a crossterm event to a command.
-pub fn map_event(event: Event, mode: KeymapMode) -> Command {
+///
+/// When `search_active` is true and the mode is [`KeymapMode::Normal`], `Esc`
+/// clears the active search instead of quitting.
+pub fn map_event(event: Event, mode: KeymapMode, search_active: bool) -> Command {
     match event {
         Event::Key(key) => match mode {
-            KeymapMode::Normal => map_normal_key(key),
+            KeymapMode::Normal => map_normal_key(key, search_active),
             KeymapMode::Search => map_search_key(key),
         },
         _ => Command::None,
     }
 }
 
-fn map_normal_key(key: KeyEvent) -> Command {
+fn map_normal_key(key: KeyEvent, search_active: bool) -> Command {
     if std::env::var("BMD_DEBUG").is_ok() {
         eprintln!("[bmd debug] key event: {:?}", key);
+    }
+
+    if search_active && key.code == KeyCode::Esc {
+        return Command::SearchCancel;
     }
 
     // Quit commands take priority and are recognized on both Press and Repeat.
@@ -114,25 +121,31 @@ mod tests {
     #[test]
     fn search_mode_maps_input() {
         assert_eq!(
-            map_event(Event::Key(key('a')), KeymapMode::Search),
+            map_event(Event::Key(key('a')), KeymapMode::Search, false),
             Command::SearchInput('a')
         );
         assert_eq!(
             map_event(
                 Event::Key(KeyEvent::from(KeyCode::Backspace)),
-                KeymapMode::Search
+                KeymapMode::Search,
+                false
             ),
             Command::SearchBackspace
         );
         assert_eq!(
             map_event(
                 Event::Key(KeyEvent::from(KeyCode::Enter)),
-                KeymapMode::Search
+                KeymapMode::Search,
+                false
             ),
             Command::SearchConfirm
         );
         assert_eq!(
-            map_event(Event::Key(KeyEvent::from(KeyCode::Esc)), KeymapMode::Search),
+            map_event(
+                Event::Key(KeyEvent::from(KeyCode::Esc)),
+                KeymapMode::Search,
+                false
+            ),
             Command::SearchCancel
         );
     }
@@ -141,13 +154,37 @@ mod tests {
     fn search_mode_ignores_normal_commands() {
         // While typing a query, 'q' should be input rather than quit.
         assert_eq!(
-            map_event(Event::Key(key('q')), KeymapMode::Search),
+            map_event(Event::Key(key('q')), KeymapMode::Search, false),
             Command::SearchInput('q')
         );
     }
 
+    #[test]
+    fn active_search_esc_clears_search_instead_of_quitting() {
+        assert_eq!(
+            map_event(
+                Event::Key(KeyEvent::from(KeyCode::Esc)),
+                KeymapMode::Normal,
+                true
+            ),
+            Command::SearchCancel
+        );
+    }
+
+    #[test]
+    fn inactive_search_esc_quits() {
+        assert_eq!(
+            map_event(
+                Event::Key(KeyEvent::from(KeyCode::Esc)),
+                KeymapMode::Normal,
+                false
+            ),
+            Command::Quit
+        );
+    }
+
     fn map(key: KeyEvent) -> Command {
-        map_event(Event::Key(key), KeymapMode::Normal)
+        map_event(Event::Key(key), KeymapMode::Normal, false)
     }
 
     fn key(c: char) -> KeyEvent {
