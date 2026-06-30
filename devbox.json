@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.2/.schema/devbox.schema.json",
+  "packages": [
+    "rustup@latest",
+    "clang@latest",
+    "libiconv@latest",
+    "prek@latest"
+  ],
+  "env": {
+    "RUSTUP_HOME": "$PWD/.rustup",
+    "CARGO_HOME": "$PWD/.cargo",
+    "RUSTFLAGS": "-C linker=clang"
+  },
+  "shell": {
+    "init_hook": [
+      "mkdir -p \"$RUSTUP_HOME\" \"$CARGO_HOME\""
+    ],
+    "scripts": {
+      "setup": [
+        "rustup toolchain install",
+        "cargo fetch"
+      ],
+      "build": "cargo build",
+      "build-release": "cargo build --release",
+      "test": "cargo test -- --show-output",
+      "run": "cargo run --",
+      "clippy": "cargo clippy --all-targets -- -D warnings",
+      "fmt": "cargo fmt --all",
+      "fmt-check": "cargo fmt --all -- --check",
+      "prek": "prek run --all-files"
+    }
+  }
+}

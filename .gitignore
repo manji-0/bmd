@@ -1,2 +1,5 @@
 /target
 /.pi
+/.rustup
+/.cargo
+/.devbox

@@ -1,0 +1,182 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "clang@latest": {
+      "last_modified": "2026-05-21T08:15:18Z",
+      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#clang",
+      "source": "devbox-search",
+      "version": "21.1.8",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/l32bv33wqwkj2l1y8dp5x6h9r3q9im77-clang-wrapper-21.1.8",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/l32bv33wqwkj2l1y8dp5x6h9r3q9im77-clang-wrapper-21.1.8"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/h6vk77gc3300z162ywhcz8asjckrgmr3-clang-wrapper-21.1.8",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/h6vk77gc3300z162ywhcz8asjckrgmr3-clang-wrapper-21.1.8"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/rp3shfv6zk8m02lf4xm5nbkiyb586pv4-clang-wrapper-21.1.8",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/rp3shfv6zk8m02lf4xm5nbkiyb586pv4-clang-wrapper-21.1.8"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/874j5xydsj6nr6i1zdrjvhln5gmxvvrr-clang-wrapper-21.1.8",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/874j5xydsj6nr6i1zdrjvhln5gmxvvrr-clang-wrapper-21.1.8"
+        }
+      }
+    },
+    "github:NixOS/nixpkgs/nixpkgs-unstable": {
+      "last_modified": "2026-06-29T11:10:55Z",
+      "resolved": "github:NixOS/nixpkgs/9c4c05a947a91dc14625265fab505fb695e93218?lastModified=1782731455&narHash=sha256-weCjCyph1saaHwUdjTk6AAFn%2Fw2riVwOimn%2FqZMFxKY%3D"
+    },
+    "libiconv@latest": {
+      "last_modified": "2026-05-21T08:15:18Z",
+      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#libiconv",
+      "source": "devbox-search",
+      "version": "2.42",
+      "systems": {
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/1rqqh7kn5mj9yyrdyl0irpx0jvvi1pda-glibc-iconv-2.42",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/1rqqh7kn5mj9yyrdyl0irpx0jvvi1pda-glibc-iconv-2.42"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lmhbvfwrg837bkq46ild4rngand4mhn5-glibc-iconv-2.42",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lmhbvfwrg837bkq46ild4rngand4mhn5-glibc-iconv-2.42"
+        }
+      }
+    },
+    "prek@latest": {
+      "last_modified": "2026-05-21T08:15:18Z",
+      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#prek",
+      "source": "devbox-search",
+      "version": "0.3.11",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/2zw3fhay0dwfh8hg1dz94ffq0kmdpsyy-prek-0.3.11",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/2zw3fhay0dwfh8hg1dz94ffq0kmdpsyy-prek-0.3.11"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/xkn4x7fg8cj78vf5i924gjgz5rx7kf8h-prek-0.3.11",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/xkn4x7fg8cj78vf5i924gjgz5rx7kf8h-prek-0.3.11"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/p4gqmc0bv3gfws89zx0ynxk43883869h-prek-0.3.11",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/p4gqmc0bv3gfws89zx0ynxk43883869h-prek-0.3.11"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/py2m9vglskggcyyarm0nha16siw346af-prek-0.3.11",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/py2m9vglskggcyyarm0nha16siw346af-prek-0.3.11"
+        }
+      }
+    },
+    "rustup@latest": {
+      "last_modified": "2026-05-21T08:15:18Z",
+      "plugin_version": "0.0.1",
+      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#rustup",
+      "source": "devbox-search",
+      "version": "1.29.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/nl70ay30nl2szm2g03xa0d7ai69dgbln-rustup-1.29.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/nl70ay30nl2szm2g03xa0d7ai69dgbln-rustup-1.29.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/684175m8xqfisacqw9rdc97fn2vpp0fj-rustup-1.29.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/684175m8xqfisacqw9rdc97fn2vpp0fj-rustup-1.29.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/4hqncs7jnqc64z49r1w09b235074li9q-rustup-1.29.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/4hqncs7jnqc64z49r1w09b235074li9q-rustup-1.29.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/dpqx1vygrisrvnnwgym1226x317vqp4a-rustup-1.29.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/dpqx1vygrisrvnnwgym1226x317vqp4a-rustup-1.29.0"
+        }
+      }
+    }
+  }
+}
