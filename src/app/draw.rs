@@ -13,7 +13,8 @@ use crate::render::{
 };
 
 use super::App;
-use super::layout::{centered_rect, split_main_and_prompt};
+use super::layout::{centered_rect, split_layout};
+use super::status::{draw_help_overlay, draw_status_bar, format_status_bar};
 
 impl App {
     pub(crate) fn draw_frame<B: Backend>(
@@ -25,7 +26,7 @@ impl App {
     {
         terminal.draw(|f| {
             let full_area = f.area();
-            let (main_area, prompt_area) = split_main_and_prompt(full_area, self.view_state.mode());
+            let areas = split_layout(full_area, self.view_state.mode());
 
             let ctx = RenderContext::new(
                 &self.theme,
@@ -43,19 +44,23 @@ impl App {
                 cache: &self.document_cache,
                 scroll: self.scroll_visual,
             };
-            f.render_widget(widget, main_area);
+            f.render_widget(widget, areas.main);
 
             if let Some(link_id) = self.view_state.mode().preview_link() {
                 self.draw_floating_preview(f, full_area, link_id);
             }
 
-            if let Some(ref msg) = self.error_message {
-                let popup = centered_rect(60, 20, main_area);
-                f.render_widget(Clear, popup);
-                let block = Block::bordered().title("Error");
-                let para = Paragraph::new(msg.clone()).block(block);
-                f.render_widget(para, popup);
+            if self.help_visible {
+                draw_help_overlay(f, areas.main);
             }
+
+            let status = format_status_bar(
+                self.source_label.as_deref(),
+                &self.view_state,
+                self.max_scroll(),
+                self.status_message.as_deref(),
+            );
+            draw_status_bar(f, areas.status, status);
 
             if let UiMode::SearchInput { direction, query } = self.view_state.mode() {
                 let prefix = match direction {
@@ -64,7 +69,7 @@ impl App {
                 };
                 let prompt = format!("{}{}", prefix, query);
                 let para = Paragraph::new(prompt);
-                f.render_widget(para, prompt_area);
+                f.render_widget(para, areas.prompt);
             }
         })?;
         Ok(())

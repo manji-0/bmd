@@ -1,9 +1,11 @@
 //! Scrolling and link navigation commands.
 
 use crate::browser::open_link;
+use crate::render::find_link_line_offset;
 
 use super::App;
 use super::scroll::HALF_PAGE_SCROLL_ANIM_SPEED;
+use super::status::scroll_link_target;
 
 impl App {
     pub(crate) fn scroll_down(&mut self, n: usize) {
@@ -19,13 +21,15 @@ impl App {
 
     pub(crate) fn half_page_down(&mut self) {
         self.scroll_anim_speed = HALF_PAGE_SCROLL_ANIM_SPEED;
+        let half = self.content_height() as usize / 2;
         let max = self.max_scroll();
-        self.view_state = self.view_state.clone().half_page_down(max);
+        self.view_state = self.view_state.clone().scroll_down(half, max);
     }
 
     pub(crate) fn half_page_up(&mut self) {
         self.scroll_anim_speed = HALF_PAGE_SCROLL_ANIM_SPEED;
-        self.view_state = self.view_state.clone().half_page_up();
+        let half = self.content_height() as usize / 2;
+        self.view_state = self.view_state.clone().scroll_up(half);
     }
 
     pub(crate) fn jump_to_top(&mut self) {
@@ -61,17 +65,19 @@ impl App {
                         {
                             self.view_state = self.view_state.clone().open_preview(id);
                         } else {
-                            self.error_message =
-                                Some(format!("failed to load preview: {}", link.url.as_str()));
+                            self.set_status_message(format!(
+                                "failed to load preview: {}",
+                                link.url.as_str()
+                            ));
                         }
                     } else if let Err(e) = open_link(&link.url) {
-                        self.error_message = Some(e.to_string());
+                        self.set_status_message(e.to_string());
                     }
                 } else {
-                    self.error_message = Some(format!("dangling link {}", id));
+                    self.set_status_message(format!("dangling link {id}"));
                 }
             }
-            None => self.error_message = Some("no link selected".to_string()),
+            None => self.set_status_message("no link selected — press n to select a link".into()),
         }
     }
 
@@ -80,7 +86,16 @@ impl App {
     }
 
     pub(crate) fn scroll_to_selected_link(&mut self) {
-        // Keep the selected link visible on screen. For now, rely on the user to scroll.
-        // A future improvement would compute the Y position of each link occurrence.
+        let Some(id) = self.view_state.selected_link() else {
+            return;
+        };
+        let ctx = self.render_context();
+        let width = self.view_state.terminal_size().width();
+        let Some(line_offset) = find_link_line_offset(&self.document, width, &ctx, id) else {
+            return;
+        };
+        let max = self.max_scroll();
+        let target = scroll_link_target(line_offset, max, &self.view_state);
+        self.view_state = self.view_state.clone().scroll_to(target);
     }
 }

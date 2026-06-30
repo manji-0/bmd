@@ -54,7 +54,11 @@ fn run() -> Result<(), AppError> {
     let mut terminal =
         Terminal::new(backend).map_err(|e| AppError::TerminalSetup(e.to_string()))?;
 
-    let app = App::new(document, picker, base_path)?;
+    let source_label = base_path.as_ref().and_then(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    });
+    let app = App::new(document, picker, base_path, source_label)?;
     let result = app.run(&mut terminal);
 
     restore_terminal(&mut terminal)?;

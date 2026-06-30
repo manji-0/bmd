@@ -21,6 +21,7 @@ pub(crate) const SCROLL_ANIM_SPEED: f32 = 20.0;
 /// Exponential smoothing rate for half-page scroll (higher = faster convergence).
 pub(crate) const HALF_PAGE_SCROLL_ANIM_SPEED: f32 = 140.0;
 pub(crate) const LINE_SCROLL_LINES: usize = 2;
+pub(crate) const STATUS_MESSAGE_DURATION: Duration = Duration::from_secs(3);
 
 impl App {
     pub(crate) fn max_scroll(&self) -> usize {
@@ -29,7 +30,7 @@ impl App {
             self.view_state.terminal_size().width(),
             &self.render_context(),
         );
-        let view_height = self.view_state.terminal_size().height() as usize;
+        let view_height = self.content_height() as usize;
         if total_height <= view_height {
             return 0;
         }
