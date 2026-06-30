@@ -237,16 +237,16 @@ impl Table {
 
     /// Compute column widths within the given total terminal width.
     ///
-    /// The returned widths do not include the Unicode border columns; the caller
-    /// must add `widths.len() + 1` to get the full table width.
+    /// The returned widths are content-only; the rendered frame adds
+    /// `3 * col_count + 1` columns for vertical borders and per-cell padding.
     pub fn allocate_column_widths(&self, total_width: usize) -> Vec<usize> {
         let col_count = self.column_count();
         if col_count == 0 {
             return Vec::new();
         }
 
-        let border_width = col_count + 1; // one vertical border between each column + sides
-        let available = total_width.saturating_sub(border_width).max(col_count);
+        let frame_overhead = table_frame_overhead(col_count);
+        let available = total_width.saturating_sub(frame_overhead).max(col_count);
 
         let mut ideal = vec![0usize; col_count];
         let mut min = vec![0usize; col_count];
@@ -263,28 +263,83 @@ impl Table {
         }
 
         let total_ideal: usize = ideal.iter().sum();
-        if total_ideal <= available {
-            return ideal;
-        }
-
-        let total_min: usize = min.iter().sum();
-        if total_min >= available {
-            // Even minimums don't fit; distribute proportionally to mins, floor at 1.
-            return distribute_table_width(available, &min, &min);
-        }
-
-        let extra = available - total_min;
-        let desire: Vec<usize> = ideal.iter().zip(&min).map(|(i, m)| i - m).collect();
-        let mut widths = min.clone();
-        let total_desire: usize = desire.iter().sum();
-        if total_desire > 0 {
-            for i in 0..col_count {
-                widths[i] += (extra * desire[i]).div_ceil(total_desire);
-            }
+        let mut widths = if total_ideal <= available {
+            ideal
+        } else if min.iter().sum::<usize>() >= available {
+            distribute_table_width(available, &min, &min)
         } else {
-            widths = distribute_table_width(available, &min, &min);
-        }
+            let total_min: usize = min.iter().sum();
+            let extra = available - total_min;
+            let desire: Vec<usize> = ideal.iter().zip(&min).map(|(i, m)| i - m).collect();
+            let mut widths = min.clone();
+            let total_desire: usize = desire.iter().sum();
+            if total_desire > 0 {
+                for i in 0..col_count {
+                    widths[i] += (extra * desire[i]) / total_desire;
+                }
+                let assigned: usize = widths.iter().sum();
+                let mut remainder = available.saturating_sub(assigned);
+                let mut idx = 0usize;
+                while remainder > 0 {
+                    widths[idx % col_count] += 1;
+                    remainder -= 1;
+                    idx += 1;
+                }
+            } else {
+                widths = distribute_table_width(available, &min, &min);
+            }
+            trim_column_widths(&mut widths, available);
+            widths
+        };
+
+        expand_column_widths(&mut widths, available);
         widths
+    }
+
+    /// Rendered table width in terminal columns for `widths`.
+    pub fn table_frame_width(widths: &[usize]) -> usize {
+        table_frame_overhead(widths.len()) + widths.iter().sum::<usize>()
+    }
+}
+
+/// Vertical borders plus per-cell `space + content + space` padding.
+fn table_frame_overhead(col_count: usize) -> usize {
+    3 * col_count + 1
+}
+
+fn trim_column_widths(widths: &mut [usize], available: usize) {
+    while widths.iter().sum::<usize>() > available {
+        let Some(max_idx) = widths
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, v)| *v)
+            .map(|(i, _)| i)
+        else {
+            break;
+        };
+        if widths[max_idx] > 1 {
+            widths[max_idx] -= 1;
+        } else {
+            break;
+        }
+    }
+}
+
+fn expand_column_widths(widths: &mut [usize], available: usize) {
+    let sum: usize = widths.iter().sum();
+    if sum >= available {
+        return;
+    }
+    let mut extra = available - sum;
+    let n = widths.len();
+    for (i, width) in widths.iter_mut().enumerate() {
+        if extra == 0 {
+            break;
+        }
+        let remaining = n - i;
+        let add = extra / remaining;
+        *width += add;
+        extra -= add;
     }
 }
 

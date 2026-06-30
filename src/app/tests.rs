@@ -194,6 +194,20 @@ fn next_link_scrolls_toward_link() {
 }
 
 #[test]
+fn next_heading_scrolls_to_later_section() {
+    let mut input = String::from("# Top\n\n");
+    for i in 0..80 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    input.push_str("## Bottom section\n\n");
+    let doc = parse(&input).unwrap();
+    let mut app = new_test_app(doc);
+
+    app.next_heading();
+    assert!(app.view_state.scroll().offset() > 0);
+}
+
+#[test]
 fn search_command_flow_scrolls_to_match() {
     let mut input = String::from("# Alpha\n\n");
     for i in 0..100 {

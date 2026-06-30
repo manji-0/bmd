@@ -141,9 +141,33 @@ fn table_allocate_column_widths_fits_total_width() {
         alignments: vec![Alignment::Left, Alignment::Left],
     };
     let widths = table.allocate_column_widths(20);
-    let border_width = widths.len() + 1;
-    assert!(widths.iter().sum::<usize>() + border_width <= 20);
+    assert_eq!(Table::table_frame_width(&widths), 20);
     assert!(widths.iter().all(|w| *w >= 1));
+}
+
+#[test]
+fn table_frame_width_fills_terminal_for_wrapped_content() {
+    let table = Table {
+        headers: vec![
+            vec![Inline::Text("とても長い説明文が入るカラム".to_string())],
+            vec![Inline::Text("短".to_string())],
+            vec![Inline::Text("値".to_string())],
+        ],
+        rows: vec![vec![
+            vec![Inline::Text("これは折り返しのテストです".to_string())],
+            vec![Inline::Text("1".to_string())],
+            vec![Inline::Text("x".to_string())],
+        ]],
+        alignments: vec![Alignment::Left, Alignment::Left, Alignment::Left],
+    };
+    for total in [40_usize, 60, 80] {
+        let widths = table.allocate_column_widths(total);
+        assert_eq!(
+            Table::table_frame_width(&widths),
+            total,
+            "expected frame width {total}"
+        );
+    }
 }
 
 #[test]
