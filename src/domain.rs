@@ -490,12 +490,88 @@ impl Scroll {
     }
 }
 
+/// Direction used when starting a search.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchDirection {
+    Forward,
+    Backward,
+}
+
+/// A non-empty search query string.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchQuery(String);
+
+impl SearchQuery {
+    /// # Errors
+    ///
+    /// Returns `SearchQueryError::Empty` if the value is empty.
+    pub fn new(value: String) -> Result<Self, SearchQueryError> {
+        if value.is_empty() {
+            return Err(SearchQueryError::Empty);
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SearchQueryError {
+    #[error("search query cannot be empty")]
+    Empty,
+}
+
+/// A search match expressed as a logical line offset in the rendered document.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SearchMatch {
+    pub line_offset: usize,
+    pub match_index: usize,
+}
+
+impl SearchMatch {
+    pub fn new(line_offset: usize, match_index: usize) -> Self {
+        Self {
+            line_offset,
+            match_index,
+        }
+    }
+}
+
+/// Search state with typed transitions.
+///
+/// Invalid transitions are modelled out by the `ViewState` API: callers can only
+/// mutate the query while in `Input`, and can only navigate matches while in
+/// `Active`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SearchState {
+    Inactive,
+    Input {
+        direction: SearchDirection,
+        query: String,
+    },
+    Active {
+        direction: SearchDirection,
+        query: SearchQuery,
+        matches: Vec<SearchMatch>,
+        current_index: usize,
+    },
+}
+
+impl SearchState {
+    pub const fn inactive() -> Self {
+        Self::Inactive
+    }
+}
+
 /// View state with typed transitions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewState {
     scroll: Scroll,
     selected_link: Option<LinkId>,
     terminal_size: TerminalSize,
+    search_state: SearchState,
 }
 
 impl ViewState {
@@ -504,6 +580,7 @@ impl ViewState {
             scroll: Scroll::new(),
             selected_link: None,
             terminal_size,
+            search_state: SearchState::inactive(),
         }
     }
 
@@ -542,6 +619,13 @@ impl ViewState {
         }
     }
 
+    pub fn scroll_to(self, offset: usize) -> Self {
+        Self {
+            scroll: Scroll { offset },
+            ..self
+        }
+    }
+
     pub fn jump_to_bottom(self, max_scroll: usize) -> Self {
         Self {
             scroll: Scroll { offset: max_scroll },
@@ -557,6 +641,223 @@ impl ViewState {
             },
             ..self
         }
+    }
+
+    /// Enter search input mode with the given direction.
+    ///
+    /// Any previously active search is discarded and the query input starts empty.
+    pub fn start_search(self, direction: SearchDirection) -> Self {
+        Self {
+            search_state: SearchState::Input {
+                direction,
+                query: String::new(),
+            },
+            ..self
+        }
+    }
+
+    /// Cancel search input or an active search and return to normal navigation.
+    pub fn cancel_search(self) -> Self {
+        Self {
+            search_state: SearchState::Inactive,
+            ..self
+        }
+    }
+
+    /// Append a character to the query while in search input mode.
+    ///
+    /// If the view is not in search input mode, this is a no-op.
+    pub fn append_search_input(self, c: char) -> Self {
+        let search_state = match self.search_state {
+            SearchState::Input { direction, query } => {
+                let mut next = query;
+                next.push(c);
+                SearchState::Input {
+                    direction,
+                    query: next,
+                }
+            }
+            other => other,
+        };
+        Self {
+            search_state,
+            ..self
+        }
+    }
+
+    /// Remove the last character from the query while in search input mode.
+    ///
+    /// If the view is not in search input mode, this is a no-op.
+    pub fn backspace_search_input(self) -> Self {
+        let search_state = match self.search_state {
+            SearchState::Input { direction, query } => {
+                let mut next = query;
+                next.pop();
+                SearchState::Input {
+                    direction,
+                    query: next,
+                }
+            }
+            other => other,
+        };
+        Self {
+            search_state,
+            ..self
+        }
+    }
+
+    /// Confirm the current search query, build matches, and activate search.
+    ///
+    /// `matches` must be sorted by ascending `line_offset`. The first match that
+    /// is at or after the current scroll offset is selected for forward searches;
+    /// for backward searches the last match at or before the offset is selected.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SearchQueryError::Empty` if the trimmed query is empty.
+    pub fn confirm_search(
+        self,
+        query: String,
+        direction: SearchDirection,
+        matches: Vec<SearchMatch>,
+    ) -> Result<Self, SearchQueryError> {
+        let query = SearchQuery::new(query)?;
+        let current_index = if matches.is_empty() {
+            0
+        } else {
+            match direction {
+                SearchDirection::Forward => matches
+                    .iter()
+                    .position(|m| m.line_offset >= self.scroll.offset)
+                    .unwrap_or(0),
+                SearchDirection::Backward => matches
+                    .iter()
+                    .rposition(|m| m.line_offset <= self.scroll.offset)
+                    .unwrap_or(matches.len() - 1),
+            }
+        };
+        let search_state = SearchState::Active {
+            direction,
+            query,
+            matches,
+            current_index,
+        };
+        Ok(Self {
+            search_state,
+            ..self
+        })
+    }
+
+    /// Move to the next search match and scroll to it.
+    ///
+    /// If no search is active, this is a no-op.
+    pub fn next_search_match(self, max_scroll: usize) -> Self {
+        let (search_state, line_offset) = match self.search_state {
+            SearchState::Active {
+                direction,
+                query,
+                matches,
+                current_index,
+            } => {
+                if matches.is_empty() {
+                    (
+                        SearchState::Active {
+                            direction,
+                            query,
+                            matches,
+                            current_index,
+                        },
+                        None,
+                    )
+                } else {
+                    let next_index = (current_index + 1) % matches.len();
+                    let line_offset = Some(matches[next_index].line_offset);
+                    (
+                        SearchState::Active {
+                            direction,
+                            query,
+                            matches,
+                            current_index: next_index,
+                        },
+                        line_offset,
+                    )
+                }
+            }
+            other => (other, None),
+        };
+        let scroll = match line_offset {
+            Some(offset) => Scroll {
+                offset: offset.min(max_scroll),
+            },
+            None => self.scroll,
+        };
+        Self {
+            search_state,
+            scroll,
+            ..self
+        }
+    }
+
+    /// Move to the previous search match and scroll to it.
+    ///
+    /// If no search is active, this is a no-op.
+    pub fn prev_search_match(self, max_scroll: usize) -> Self {
+        let (search_state, line_offset) = match self.search_state {
+            SearchState::Active {
+                direction,
+                query,
+                matches,
+                current_index,
+            } => {
+                if matches.is_empty() {
+                    (
+                        SearchState::Active {
+                            direction,
+                            query,
+                            matches,
+                            current_index,
+                        },
+                        None,
+                    )
+                } else {
+                    let prev_index = if current_index == 0 {
+                        matches.len() - 1
+                    } else {
+                        current_index - 1
+                    };
+                    let line_offset = Some(matches[prev_index].line_offset);
+                    (
+                        SearchState::Active {
+                            direction,
+                            query,
+                            matches,
+                            current_index: prev_index,
+                        },
+                        line_offset,
+                    )
+                }
+            }
+            other => (other, None),
+        };
+        let scroll = match line_offset {
+            Some(offset) => Scroll {
+                offset: offset.min(max_scroll),
+            },
+            None => self.scroll,
+        };
+        Self {
+            search_state,
+            scroll,
+            ..self
+        }
+    }
+
+    pub fn search_state(&self) -> &SearchState {
+        &self.search_state
+    }
+
+    pub fn is_search_active(&self) -> bool {
+        matches!(self.search_state, SearchState::Active { .. })
     }
 
     pub fn select_next_link(self, document: &Document) -> Self {
@@ -754,5 +1055,123 @@ mod tests {
         let border_width = widths.len() + 1;
         assert!(widths.iter().sum::<usize>() + border_width <= 20);
         assert!(widths.iter().all(|w| *w >= 1));
+    }
+
+    #[test]
+    fn search_query_rejects_empty() {
+        assert!(matches!(
+            SearchQuery::new("".to_string()),
+            Err(SearchQueryError::Empty)
+        ));
+    }
+
+    #[test]
+    fn view_state_starts_search_in_input_mode() {
+        let size = TerminalSize::new(80, 24).unwrap();
+        let state = ViewState::new(size).start_search(SearchDirection::Forward);
+        assert!(matches!(
+            state.search_state(),
+            SearchState::Input {
+                direction: SearchDirection::Forward,
+                query,
+            } if query.is_empty()
+        ));
+    }
+
+    #[test]
+    fn view_state_appends_search_input() {
+        let size = TerminalSize::new(80, 24).unwrap();
+        let state = ViewState::new(size)
+            .start_search(SearchDirection::Forward)
+            .append_search_input('f')
+            .append_search_input('o')
+            .append_search_input('o');
+        assert!(matches!(
+            state.search_state(),
+            SearchState::Input { query, .. } if query == "foo"
+        ));
+    }
+
+    #[test]
+    fn view_state_backspace_search_input() {
+        let size = TerminalSize::new(80, 24).unwrap();
+        let state = ViewState::new(size)
+            .start_search(SearchDirection::Forward)
+            .append_search_input('b')
+            .append_search_input('a')
+            .append_search_input('r')
+            .backspace_search_input();
+        assert!(matches!(
+            state.search_state(),
+            SearchState::Input { query, .. } if query == "ba"
+        ));
+    }
+
+    #[test]
+    fn view_state_confirms_search_selects_first_forward_match() {
+        let size = TerminalSize::new(80, 24).unwrap();
+        let state = ViewState::new(size).scroll_down(5, 100);
+        let matches = vec![SearchMatch::new(2, 0), SearchMatch::new(7, 1)];
+        let state = state
+            .confirm_search("foo".to_string(), SearchDirection::Forward, matches)
+            .unwrap();
+        assert!(matches!(
+            state.search_state(),
+            SearchState::Active {
+                current_index: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn view_state_confirms_search_selects_last_backward_match() {
+        let size = TerminalSize::new(80, 24).unwrap();
+        let state = ViewState::new(size).scroll_down(5, 100);
+        let matches = vec![SearchMatch::new(2, 0), SearchMatch::new(7, 1)];
+        let state = state
+            .confirm_search("foo".to_string(), SearchDirection::Backward, matches)
+            .unwrap();
+        assert!(matches!(
+            state.search_state(),
+            SearchState::Active {
+                current_index: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn view_state_search_navigation_wraps() {
+        let size = TerminalSize::new(80, 24).unwrap();
+        let matches = vec![SearchMatch::new(1, 0), SearchMatch::new(3, 1)];
+        let state = ViewState::new(size)
+            .confirm_search("foo".to_string(), SearchDirection::Forward, matches)
+            .unwrap();
+        let state = state.next_search_match(100);
+        assert!(matches!(
+            state.search_state(),
+            SearchState::Active {
+                current_index: 1,
+                ..
+            }
+        ));
+        let state = state.next_search_match(100);
+        assert!(matches!(
+            state.search_state(),
+            SearchState::Active {
+                current_index: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn view_state_cancel_search_returns_to_inactive() {
+        let size = TerminalSize::new(80, 24).unwrap();
+        let state = ViewState::new(size)
+            .start_search(SearchDirection::Forward)
+            .cancel_search();
+        assert!(matches!(state.search_state(), SearchState::Inactive));
     }
 }

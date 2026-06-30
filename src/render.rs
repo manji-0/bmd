@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Rect, Size},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Paragraph, Widget, Wrap},
+    widgets::{Paragraph, Widget},
 };
 use ratatui_image::{Resize, protocol::Protocol};
 use syntect::{
@@ -20,8 +20,8 @@ use syntect::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::domain::{
-    Block, CodeBlock, Document, Heading, HeadingLevel, Inline, LinkId, List, MermaidDiagram, Table,
-    ViewState,
+    Block, CodeBlock, Document, Heading, HeadingLevel, Inline, LinkId, List, MermaidDiagram,
+    SearchMatch, SearchState, Table, ViewState,
 };
 use crate::error::AppError;
 
@@ -115,6 +115,8 @@ pub struct Theme {
     pub table_cell: Style,
     pub table_border: Style,
     pub mermaid_placeholder: Style,
+    pub search_match: Style,
+    pub search_match_selected: Style,
 }
 
 impl Default for Theme {
@@ -158,6 +160,14 @@ impl Default for Theme {
                 .fg(Color::Black)
                 .bg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
+            search_match: Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+            search_match_selected: Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD),
             rule: Style::default().fg(Color::DarkGray),
             table_header: Style::default()
                 .fg(Color::White)
@@ -176,6 +186,9 @@ pub struct RenderContext<'a> {
     pub syntax_theme: &'a SyntectTheme,
     pub rendered: &'a RenderedDocument,
     pub selected_link: Option<LinkId>,
+    pub search_query: Option<String>,
+    pub selected_search_match: Option<usize>,
+    pub selected_match_line_offset: Option<usize>,
 }
 
 impl<'a> RenderContext<'a> {
@@ -192,6 +205,9 @@ impl<'a> RenderContext<'a> {
             syntax_theme,
             rendered,
             selected_link: view_state.selected_link(),
+            search_query: active_search_query(view_state.search_state()),
+            selected_search_match: active_search_match_index(view_state.search_state()),
+            selected_match_line_offset: active_search_match_line_offset(view_state.search_state()),
         }
     }
 }
@@ -263,7 +279,15 @@ impl Widget for MarkdownWidget<'_> {
                     width: area.width,
                     height: content_visible as u16,
                 };
-                render_block(block, block_idx, block_area, buf, skip_rows, ctx);
+                render_block(
+                    block,
+                    block_idx,
+                    block_area,
+                    buf,
+                    skip_rows,
+                    ctx,
+                    line_offset,
+                );
                 y += content_visible as u16;
                 // Any remaining visible rows are part of the inter-block gap.
                 y += (visible_height.saturating_sub(content_visible)) as u16;
@@ -323,33 +347,13 @@ pub fn measure_block_height(block: &Block, width: u16, ctx: &RenderContext) -> u
 }
 
 fn measure_paragraph_height(inlines: &[Inline], width: u16, ctx: &RenderContext) -> usize {
-    let text = inlines_to_text(inlines, ctx, ctx.theme.text);
-    measure_text_height(&text, width as usize)
-}
-
-fn measure_text_height(text: &Text, width: usize) -> usize {
-    if width == 0 {
-        return 1;
-    }
-    let lines = text
-        .lines
-        .iter()
-        .map(|line| {
-            let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            let trimmed = content.trim_end();
-            if trimmed.is_empty() {
-                1
-            } else {
-                textwrap::fill(trimmed, width).lines().count().max(1)
-            }
-        })
-        .sum::<usize>();
-    lines.max(1)
+    inlines_to_wrapped_lines(inlines, ctx, ctx.theme.text, 0, width as usize)
+        .len()
+        .max(1)
 }
 
 fn measure_heading_height(heading: &Heading, width: u16, ctx: &RenderContext) -> usize {
     let (style, _prefix_style) = heading_styles(heading.level, ctx.theme);
-    let text = inlines_to_text(&heading.content, ctx, style);
     let prefix_width = heading.level.prefix().width();
     let total_width = width as usize;
     // Keep this condition in sync with render_heading.
@@ -358,7 +362,15 @@ fn measure_heading_height(heading: &Heading, width: u16, ctx: &RenderContext) ->
     } else {
         total_width
     };
-    measure_text_height(&text, content_width.max(1))
+    inlines_to_wrapped_lines(
+        &heading.content,
+        ctx,
+        style,
+        0,
+        content_width.max(1),
+    )
+    .len()
+    .max(1)
 }
 
 fn measure_code_block_height(cb: &CodeBlock, width: u16) -> usize {
@@ -417,6 +429,7 @@ fn measure_table_height(table: &Table, width: u16, ctx: &RenderContext) -> usize
                 widths.get(i).copied().unwrap_or(1),
                 ctx.theme.table_header,
                 ctx,
+                0,
             )
             .len()
         })
@@ -434,6 +447,7 @@ fn measure_table_height(table: &Table, width: u16, ctx: &RenderContext) -> usize
                         widths.get(i).copied().unwrap_or(1),
                         ctx.theme.table_cell,
                         ctx,
+                        0,
                     )
                     .len()
                 })
@@ -462,14 +476,19 @@ fn render_block(
     buf: &mut Buffer,
     skip_rows: usize,
     ctx: &RenderContext,
+    line_offset: usize,
 ) {
     match block {
-        Block::Heading(h) => render_heading(h, area, buf, skip_rows, ctx),
-        Block::Paragraph(inlines) => render_paragraph(inlines, area, buf, skip_rows, ctx),
-        Block::CodeBlock(cb) => render_code_block(cb, area, buf, skip_rows, ctx),
-        Block::BlockQuote(blocks) => render_blockquote(blocks, area, buf, skip_rows, ctx),
-        Block::List(list) => render_list(list, area, buf, skip_rows, ctx),
-        Block::Table(table) => render_table(table, area, buf, skip_rows, ctx),
+        Block::Heading(h) => render_heading(h, area, buf, skip_rows, ctx, line_offset),
+        Block::Paragraph(inlines) => {
+            render_paragraph(inlines, area, buf, skip_rows, ctx, line_offset)
+        }
+        Block::CodeBlock(cb) => render_code_block(cb, area, buf, skip_rows, ctx, line_offset),
+        Block::BlockQuote(blocks) => {
+            render_blockquote(blocks, area, buf, skip_rows, ctx, line_offset)
+        }
+        Block::List(list) => render_list(list, area, buf, skip_rows, ctx, line_offset),
+        Block::Table(table) => render_table(table, area, buf, skip_rows, ctx, line_offset),
         Block::Mermaid(diag) => render_mermaid(diag, block_idx, area, buf, skip_rows, ctx),
         Block::Rule => render_rule(area, buf),
     }
@@ -481,15 +500,25 @@ fn render_heading(
     buf: &mut Buffer,
     skip_rows: usize,
     ctx: &RenderContext,
+    line_offset: usize,
 ) {
     let (style, prefix_style) = heading_styles(heading.level, ctx.theme);
-    let text = inlines_to_text(&heading.content, ctx, style);
     let prefix = heading.level.prefix();
     let prefix_width = prefix.width();
     if area.width as usize > prefix_width + 1 {
-        render_prefixed_text(prefix, prefix_style, &text, area, buf, skip_rows);
+        let content_width = (area.width as usize).saturating_sub(prefix_width).max(1);
+        let rows = inlines_to_wrapped_lines(
+            &heading.content,
+            ctx,
+            style,
+            line_offset,
+            content_width,
+        );
+        render_prefixed_offset_lines(prefix, prefix_style, &rows, area, buf, skip_rows);
     } else {
-        render_wrapped_text(&text, area, buf, skip_rows);
+        let rows =
+            inlines_to_wrapped_lines(&heading.content, ctx, style, line_offset, area.width as usize);
+        render_offset_lines(&rows, area, buf, skip_rows);
     }
 }
 
@@ -499,24 +528,43 @@ fn render_paragraph(
     buf: &mut Buffer,
     skip_rows: usize,
     ctx: &RenderContext,
+    line_offset: usize,
 ) {
-    let text = inlines_to_text(inlines, ctx, ctx.theme.text);
-    render_wrapped_text(&text, area, buf, skip_rows);
+    let rows = inlines_to_wrapped_lines(
+        inlines,
+        ctx,
+        ctx.theme.text,
+        line_offset,
+        area.width as usize,
+    );
+    render_offset_lines(&rows, area, buf, skip_rows);
 }
 
-fn render_wrapped_text(text: &Text, area: Rect, buf: &mut Buffer, skip_rows: usize) {
-    let para = Paragraph::new(text.clone())
-        .wrap(Wrap { trim: true })
-        .scroll((skip_rows as u16, 0));
-    para.render(area, buf);
+fn render_offset_lines(
+    rows: &[(usize, Line<'static>)],
+    area: Rect,
+    buf: &mut Buffer,
+    skip_rows: usize,
+) {
+    let max_y = area.y + area.height;
+    for (row_idx, (_, line)) in rows.iter().enumerate() {
+        if row_idx < skip_rows {
+            continue;
+        }
+        let screen_y = area.y + (row_idx - skip_rows) as u16;
+        if screen_y >= max_y {
+            break;
+        }
+        buf.set_line(area.x, screen_y, line, area.width);
+    }
 }
 
-/// Render a block-level prefix (e.g. heading marker "##") in front of the
-/// existing content, reducing the available width for the text.
-fn render_prefixed_text(
+/// Render a block-level prefix (e.g. heading marker "##") in front of wrapped
+/// content rows, reducing the available width for the text.
+fn render_prefixed_offset_lines(
     prefix: &str,
     prefix_style: Style,
-    text: &Text,
+    rows: &[(usize, Line<'static>)],
     area: Rect,
     buf: &mut Buffer,
     skip_rows: usize,
@@ -524,30 +572,23 @@ fn render_prefixed_text(
     let prefix_width = prefix.width();
     let total_width = area.width as usize;
     if prefix_width >= total_width {
-        // No room for both; just render the text.
-        let para = Paragraph::new(text.clone())
-            .wrap(Wrap { trim: true })
-            .scroll((skip_rows as u16, 0));
-        para.render(area, buf);
+        render_offset_lines(rows, area, buf, skip_rows);
         return;
     }
 
-    // Render the prefix on every visible row at the left of the area.
-    for row in 0..area.height {
-        let y = area.y + row;
-        buf.set_stringn(area.x, y, prefix, prefix_width, prefix_style);
+    let text_width = area.width.saturating_sub(prefix_width as u16);
+    let max_y = area.y + area.height;
+    for (row_idx, (_, line)) in rows.iter().enumerate() {
+        if row_idx < skip_rows {
+            continue;
+        }
+        let screen_y = area.y + (row_idx - skip_rows) as u16;
+        if screen_y >= max_y {
+            break;
+        }
+        buf.set_stringn(area.x, screen_y, prefix, prefix_width, prefix_style);
+        buf.set_line(area.x + prefix_width as u16, screen_y, line, text_width);
     }
-
-    let text_area = Rect {
-        x: area.x + prefix_width as u16,
-        y: area.y,
-        width: area.width - prefix_width as u16,
-        height: area.height,
-    };
-    let para = Paragraph::new(text.clone())
-        .wrap(Wrap { trim: true })
-        .scroll((skip_rows as u16, 0));
-    para.render(text_area, buf);
 }
 
 /// Returns the text style and prefix style for a heading level.
@@ -568,6 +609,7 @@ fn render_code_block(
     buf: &mut Buffer,
     skip_rows: usize,
     ctx: &RenderContext,
+    line_offset: usize,
 ) {
     let mut lines: Vec<Line> = Vec::new();
 
@@ -590,7 +632,7 @@ fn render_code_block(
             HighlightLines::new(ctx.syntax_set.find_syntax_plain_text(), ctx.syntax_theme)
         });
 
-    for line in LinesWithEndings::from(&cb.content) {
+    for (i, line) in LinesWithEndings::from(&cb.content).enumerate() {
         let line_without_nl = line.strip_suffix('\n').unwrap_or(line);
         let highlighted = highlighter
             .highlight_line(line_without_nl, ctx.syntax_set)
@@ -599,7 +641,8 @@ fn render_code_block(
             .into_iter()
             .map(|(style, text)| syntect_span(style, text, ctx.theme.code_block))
             .collect();
-        lines.push(Line::from(spans));
+        let styled_line = Line::from(spans);
+        lines.push(highlight_line(styled_line, ctx, line_offset + 1 + i));
     }
 
     // Scroll and render.  Do not add a synthetic trailing line; the inter-block gap
@@ -609,6 +652,27 @@ fn render_code_block(
         .style(ctx.theme.code_block)
         .scroll((skip_rows as u16, 0));
     para.render(area, buf);
+}
+
+/// Highlight a pre-built `Line` if a search query is active.
+fn highlight_line(line: Line<'static>, ctx: &RenderContext, line_offset: usize) -> Line<'static> {
+    match ctx.search_query {
+        None => line,
+        Some(ref query) => Line::from(
+            line.spans
+                .into_iter()
+                .flat_map(|span| {
+                    highlight_span(
+                        span,
+                        &query.to_lowercase(),
+                        ctx.theme.search_match,
+                        ctx.theme.search_match_selected,
+                        ctx.selected_match_line_offset == Some(line_offset),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        ),
+    }
 }
 
 fn syntect_span(style: syntect::highlighting::Style, text: &str, fallback: Style) -> Span<'static> {
@@ -625,6 +689,7 @@ fn render_blockquote(
     buf: &mut Buffer,
     skip_rows: usize,
     ctx: &RenderContext,
+    mut line_offset: usize,
 ) {
     if area.width < 3 {
         return;
@@ -641,11 +706,16 @@ fn render_blockquote(
     }
 
     let mut y = inner_area.y;
-    let mut line_offset: usize = 0;
+    let mut line_offset_inner: usize = 0;
     let scroll = skip_rows;
     let max_y = inner_area.y + inner_area.height;
 
     for block in blocks {
+        let height = measure_block_height(block, inner_area.width, ctx);
+        if line_offset_inner.saturating_add(height) <= scroll {
+            line_offset_inner += height;
+            continue;
+        }
         let height = measure_block_height(block, inner_area.width, ctx);
         if line_offset.saturating_add(height) <= scroll {
             line_offset += height;
@@ -670,18 +740,26 @@ fn render_blockquote(
             buf,
             block_skip,
             ctx,
+            line_offset + 1 + line_offset_inner,
         );
         y += render_height as u16;
-        line_offset += height;
+        line_offset_inner += height;
         if y >= max_y {
             break;
         }
     }
 }
 
-fn render_list(list: &List, area: Rect, buf: &mut Buffer, skip_rows: usize, ctx: &RenderContext) {
+fn render_list(
+    list: &List,
+    area: Rect,
+    buf: &mut Buffer,
+    skip_rows: usize,
+    ctx: &RenderContext,
+    line_offset: usize,
+) {
     let mut y = area.y;
-    let mut line_offset: usize = 0;
+    let mut line_offset_inner: usize = 0;
     let scroll = skip_rows;
     let max_y = area.y + area.height;
 
@@ -695,11 +773,11 @@ fn render_list(list: &List, area: Rect, buf: &mut Buffer, skip_rows: usize, ctx:
         let inner_width = (area.width as usize).saturating_sub(marker_width).max(1) as u16;
 
         if item.content.is_empty() {
-            if line_offset >= scroll && y < max_y {
+            if line_offset_inner >= scroll && y < max_y {
                 buf.set_stringn(area.x, y, &marker, marker_width, ctx.theme.list_marker);
                 y += 1;
             }
-            line_offset += 1;
+            line_offset_inner += 1;
             if y >= max_y {
                 break;
             }
@@ -707,7 +785,7 @@ fn render_list(list: &List, area: Rect, buf: &mut Buffer, skip_rows: usize, ctx:
         }
 
         let mut item_y = y;
-        let mut item_line_offset = line_offset;
+        let mut item_line_offset = line_offset_inner;
         let mut drew_marker = false;
         for block in &item.content {
             let height = measure_block_height(block, inner_width, ctx);
@@ -716,6 +794,7 @@ fn render_list(list: &List, area: Rect, buf: &mut Buffer, skip_rows: usize, ctx:
                 continue;
             }
             let block_skip = scroll.saturating_sub(item_line_offset);
+            let block_line_offset = line_offset + item_line_offset;
             let remaining = (max_y - item_y) as usize;
             let render_height = height.saturating_sub(block_skip).min(remaining);
             if render_height == 0 {
@@ -743,7 +822,15 @@ fn render_list(list: &List, area: Rect, buf: &mut Buffer, skip_rows: usize, ctx:
                 width: inner_width,
                 height: render_height as u16,
             };
-            render_block(block, usize::MAX, block_area, buf, block_skip, ctx);
+            render_block(
+                block,
+                usize::MAX,
+                block_area,
+                buf,
+                block_skip,
+                ctx,
+                block_line_offset,
+            );
             item_y += render_height as u16;
             item_line_offset += height;
             if item_y >= max_y {
@@ -751,9 +838,9 @@ fn render_list(list: &List, area: Rect, buf: &mut Buffer, skip_rows: usize, ctx:
             }
         }
 
-        let item_height = item_line_offset - line_offset;
+        let item_height = item_line_offset - line_offset_inner;
         y = item_y;
-        line_offset += item_height;
+        line_offset_inner += item_height;
 
         if y >= max_y {
             break;
@@ -767,6 +854,7 @@ fn render_table(
     buf: &mut Buffer,
     skip_rows: usize,
     ctx: &RenderContext,
+    line_offset: usize,
 ) {
     let col_count = table
         .headers
@@ -779,41 +867,92 @@ fn render_table(
     let widths = allocate_column_widths(table, area.width as usize);
 
     // Pre-wrap all cell content, including borders, into terminal rows.
-    let mut rows: Vec<Line> = Vec::new();
+    let mut rows: Vec<(usize, Line)> = Vec::new();
 
     // Top border.
-    rows.push(Line::styled(
-        horizontal_table_border(&widths, '┌', '┬', '┐'),
-        ctx.theme.table_border,
+    rows.push((
+        line_offset,
+        Line::styled(
+            horizontal_table_border(&widths, '┌', '┬', '┐'),
+            ctx.theme.table_border,
+        ),
     ));
 
     // Header rows (multi-line cells produce multiple terminal rows).
-    rows.extend(render_table_row(
+    let header_rows = render_table_row(
         &table.headers,
         &widths,
         ctx.theme.table_header,
         ctx,
-    ));
+        line_offset + 1,
+    );
+    for (i, line) in header_rows.into_iter().enumerate() {
+        rows.push((line_offset + 1 + i, line));
+    }
 
     // Separator.
-    rows.push(Line::styled(
-        horizontal_table_border(&widths, '├', '┼', '┤'),
-        ctx.theme.table_border,
+    let header_height = table
+        .headers
+        .iter()
+        .enumerate()
+        .map(|(i, cell)| {
+            wrap_cell_inlines(
+                cell,
+                widths.get(i).copied().unwrap_or(1),
+                ctx.theme.table_header,
+                ctx,
+                line_offset + 1,
+            )
+            .len()
+        })
+        .max()
+        .unwrap_or(1);
+    let separator_offset = line_offset + 1 + header_height;
+    rows.push((
+        separator_offset,
+        Line::styled(
+            horizontal_table_border(&widths, '├', '┼', '┤'),
+            ctx.theme.table_border,
+        ),
     ));
 
     // Body rows.
+    let mut body_offset = separator_offset + 1;
     for row in &table.rows {
-        rows.extend(render_table_row(row, &widths, ctx.theme.table_cell, ctx));
+        let row_height = row
+            .iter()
+            .enumerate()
+            .map(|(i, cell)| {
+                wrap_cell_inlines(
+                    cell,
+                    widths.get(i).copied().unwrap_or(1),
+                    ctx.theme.table_cell,
+                    ctx,
+                    body_offset,
+                )
+                .len()
+            })
+            .max()
+            .unwrap_or(1);
+        let row_lines = render_table_row(row, &widths, ctx.theme.table_cell, ctx, body_offset);
+        for (i, line) in row_lines.into_iter().enumerate() {
+            rows.push((body_offset + i, line));
+        }
+        body_offset += row_height;
     }
 
     // Bottom border.
-    rows.push(Line::styled(
-        horizontal_table_border(&widths, '└', '┴', '┘'),
-        ctx.theme.table_border,
+    rows.push((
+        body_offset,
+        Line::styled(
+            horizontal_table_border(&widths, '└', '┴', '┘'),
+            ctx.theme.table_border,
+        ),
     ));
 
     // Render directly into the buffer, skipping scrolled rows and clipping to area.
-    for (row_idx, line) in rows.iter().enumerate() {
+    for (row_line_offset, line) in rows.iter() {
+        let row_idx = row_line_offset.saturating_sub(line_offset);
         let screen_y = area.y as usize + row_idx;
         if row_idx < skip_rows || screen_y >= (area.y + area.height) as usize {
             continue;
@@ -827,13 +966,14 @@ fn render_table_row(
     widths: &[usize],
     style: Style,
     ctx: &RenderContext,
+    row_start_line_offset: usize,
 ) -> Vec<Line<'static>> {
     let col_count = widths.len();
     let max_height = (0..col_count)
         .map(|i| {
             cells
                 .get(i)
-                .map(|c| wrap_cell_inlines(c, widths[i], style, ctx).len())
+                .map(|c| wrap_cell_inlines(c, widths[i], style, ctx, row_start_line_offset).len())
                 .unwrap_or(1)
         })
         .max()
@@ -846,7 +986,7 @@ fn render_table_row(
     for (i, width) in widths.iter().enumerate() {
         let cell = cells.get(i);
         let wrapped = cell
-            .map(|c| wrap_cell_inlines(c, *width, style, ctx))
+            .map(|c| wrap_cell_inlines(c, *width, style, ctx, row_start_line_offset))
             .unwrap_or_else(|| vec![Line::from(" ")]);
         wrapped_columns.push(wrapped);
     }
@@ -894,30 +1034,16 @@ fn wrap_cell_inlines(
     width: usize,
     style: Style,
     ctx: &RenderContext,
+    start_line_offset: usize,
 ) -> Vec<Line<'static>> {
     if width == 0 {
         return vec![Line::from(" ")];
     }
-    let text = inlines_to_text(inlines, ctx, style);
-    let mut lines = Vec::new();
-    for raw_line in text.lines {
-        let mut plain = String::new();
-        for span in &raw_line.spans {
-            plain.push_str(&span.content);
-        }
-        let wrap_width = width.max(1);
-        let wrapped = textwrap::fill(&plain, wrap_width);
-        for wrapped_line in wrapped.lines() {
-            lines.push(Line::styled(wrapped_line.to_string(), style));
-        }
-        if wrapped.is_empty() {
-            lines.push(Line::styled(" ".to_string(), style));
-        }
-    }
+    let lines = inlines_to_wrapped_lines(inlines, ctx, style, start_line_offset, width);
     if lines.is_empty() {
-        lines.push(Line::from(" "));
+        return vec![Line::from(" ")];
     }
-    lines
+    lines.into_iter().map(|(_, line)| line).collect()
 }
 
 fn allocate_column_widths(table: &Table, total_width: usize) -> Vec<usize> {
@@ -962,7 +1088,252 @@ fn render_rule(area: Rect, buf: &mut Buffer) {
 
 /// Convert inline content to ratatui `Text`, respecting hard breaks and collapsing
 /// consecutive whitespace (including SoftBreak) into single spaces.
-fn inlines_to_text(inlines: &[Inline], ctx: &RenderContext, base_style: Style) -> Text<'static> {
+fn inlines_to_text(
+    inlines: &[Inline],
+    ctx: &RenderContext,
+    base_style: Style,
+    line_offset: usize,
+) -> Text<'static> {
+    highlight_text(
+        inlines_to_text_raw(inlines, ctx, base_style),
+        ctx.search_query.as_deref(),
+        ctx.theme.search_match,
+        ctx.theme.search_match_selected,
+        ctx.selected_match_line_offset,
+        line_offset,
+    )
+}
+
+/// Convert inline content to wrapped terminal rows with search highlighting.
+fn inlines_to_wrapped_lines(
+    inlines: &[Inline],
+    ctx: &RenderContext,
+    base_style: Style,
+    start_line_offset: usize,
+    width: usize,
+) -> Vec<(usize, Line<'static>)> {
+    let raw = inlines_to_text_raw(inlines, ctx, base_style);
+    let mut out = Vec::new();
+    let mut next_offset = start_line_offset;
+    for line in raw.lines {
+        let wrapped = wrap_styled_line(line, width, next_offset, ctx);
+        if wrapped.is_empty() {
+            out.push((next_offset, Line::from(" ")));
+            next_offset += 1;
+        } else {
+            next_offset = wrapped.last().map(|(offset, _)| offset + 1).unwrap_or(next_offset);
+            out.extend(wrapped);
+        }
+    }
+    if out.is_empty() {
+        out.push((start_line_offset, Line::from(" ")));
+    }
+    out
+}
+
+/// Word-wrap a styled line while preserving span styles and search highlights.
+fn wrap_styled_line(
+    line: Line<'static>,
+    width: usize,
+    line_offset: usize,
+    ctx: &RenderContext,
+) -> Vec<(usize, Line<'static>)> {
+    if width == 0 {
+        return vec![(line_offset, highlight_line(line, ctx, line_offset))];
+    }
+
+    let words: Vec<(String, Style)> = line
+        .spans
+        .iter()
+        .flat_map(|span| {
+            span.content
+                .split_whitespace()
+                .map(|word| (word.to_string(), span.style))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    if words.is_empty() {
+        return vec![(line_offset, highlight_line(line, ctx, line_offset))];
+    }
+
+    let mut wrapped = Vec::new();
+    let mut current_spans: Vec<Span<'static>> = Vec::new();
+    let mut current_width = 0usize;
+
+    for (word, style) in words {
+        let word_width = word.width();
+        let gap = usize::from(!current_spans.is_empty());
+        if !current_spans.is_empty() && current_width + gap + word_width > width {
+            wrapped.push(Line::from(std::mem::take(&mut current_spans)));
+            current_width = 0;
+        }
+        if !current_spans.is_empty() {
+            let space_style = current_spans.last().map(|s| s.style).unwrap_or(style);
+            append_span_text(&mut current_spans, " ", space_style);
+            current_width += 1;
+        }
+        append_span_text(&mut current_spans, &word, style);
+        current_width += word_width;
+    }
+
+    if !current_spans.is_empty() {
+        wrapped.push(Line::from(current_spans));
+    }
+
+    wrapped
+        .into_iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let offset = line_offset + i;
+            (offset, highlight_line(line, ctx, offset))
+        })
+        .collect()
+}
+
+fn append_span_text(spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(last) = spans.last_mut() {
+        if last.style == style {
+            let mut merged = last.content.to_string();
+            merged.push_str(text);
+            last.content = merged.into();
+            return;
+        }
+    }
+    spans.push(Span::styled(text.to_string(), style));
+}
+
+fn highlight_text(
+    text: Text<'static>,
+    query: Option<&str>,
+    match_style: Style,
+    selected_match_style: Style,
+    selected_match_line_offset: Option<usize>,
+    current_line_offset: usize,
+) -> Text<'static> {
+    let Some(query) = query else {
+        return text;
+    };
+    if query.is_empty() {
+        return text;
+    }
+    let query_lower = query.to_lowercase();
+    let mut line_offset = current_line_offset;
+    Text::from(
+        text.lines
+            .into_iter()
+            .map(|line| {
+                let is_selected_line = selected_match_line_offset == Some(line_offset);
+                let highlighted = Line::from(
+                    line.spans
+                        .into_iter()
+                        .flat_map(|span| {
+                            highlight_span(
+                                span,
+                                &query_lower,
+                                match_style,
+                                selected_match_style,
+                                is_selected_line,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                line_offset += 1;
+                highlighted
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn highlight_span(
+    span: Span<'static>,
+    query_lower: &str,
+    match_style: Style,
+    selected_match_style: Style,
+    is_selected_line: bool,
+) -> Vec<Span<'static>> {
+    let text = &span.content;
+    let mut out = Vec::new();
+    let mut last = 0usize;
+    for (start, matched) in find_case_insensitive_matches(text, query_lower) {
+        if last < start {
+            out.push(Span::styled(text[last..start].to_string(), span.style));
+        }
+        out.push(Span::styled(
+            text[start..]
+                .chars()
+                .take(matched.chars().count())
+                .collect::<String>(),
+            if is_selected_line {
+                selected_match_style
+            } else {
+                match_style
+            },
+        ));
+        last = start + matched.len();
+    }
+    if last < text.len() {
+        out.push(Span::styled(text[last..].to_string(), span.style));
+    }
+    if out.is_empty() {
+        out.push(span);
+    }
+    out
+}
+
+/// Find case-insensitive matches of `query` in `text` using Unicode-aware
+/// grapheme iteration. Returns byte offsets and the matched substring from the
+/// original `text` so that slicing is always safe even when `to_lowercase`
+/// changes byte length.
+fn find_case_insensitive_matches<'a>(text: &'a str, query_lower: &str) -> Vec<(usize, &'a str)> {
+    if query_lower.is_empty() {
+        return Vec::new();
+    }
+    let mut matches = Vec::new();
+    let mut chars = text.char_indices().peekable();
+
+    while let Some(&(start, _)) = chars.peek() {
+        let query_chars = query_lower.chars();
+        let mut text_iter = chars.clone();
+        let mut matched = true;
+
+        for query_char in query_chars {
+            match text_iter.next() {
+                Some((_, c)) if c.to_lowercase().to_string() == query_char.to_string() => {}
+                _ => {
+                    matched = false;
+                    break;
+                }
+            }
+        }
+
+        if matched {
+            let end = if let Some(&(last_idx, _)) = text_iter.peek() {
+                last_idx
+            } else {
+                text.len()
+            };
+            matches.push((start, &text[start..end]));
+            // Advance past the match to avoid overlapping highlights.
+            for _ in 0..query_lower.chars().count() {
+                chars.next();
+            }
+        } else {
+            chars.next();
+        }
+    }
+
+    matches
+}
+
+fn inlines_to_text_raw(
+    inlines: &[Inline],
+    ctx: &RenderContext,
+    base_style: Style,
+) -> Text<'static> {
     let mut segments = Vec::new();
     inlines_to_segments(inlines, ctx, base_style, &mut segments);
     let mut lines = Vec::new();
@@ -1031,6 +1402,35 @@ fn inlines_to_text(inlines: &[Inline], ctx: &RenderContext, base_style: Style) -
     }
 
     Text::from(lines)
+}
+
+fn active_search_query(search_state: &SearchState) -> Option<String> {
+    match search_state {
+        SearchState::Active { query, .. } => Some(query.as_str().to_string()),
+        _ => None,
+    }
+}
+
+fn active_search_match_index(search_state: &SearchState) -> Option<usize> {
+    match search_state {
+        SearchState::Active {
+            matches,
+            current_index,
+            ..
+        } => matches.get(*current_index).map(|m| m.match_index),
+        _ => None,
+    }
+}
+
+fn active_search_match_line_offset(search_state: &SearchState) -> Option<usize> {
+    match search_state {
+        SearchState::Active {
+            matches,
+            current_index,
+            ..
+        } => matches.get(*current_index).map(|m| m.line_offset),
+        _ => None,
+    }
 }
 
 #[derive(Debug)]
@@ -1119,11 +1519,232 @@ impl Default for SyntaxAssets {
     }
 }
 
+/// Find all logical lines in the rendered document that contain `query`.
+///
+/// The returned matches are sorted by ascending line offset and can be passed
+/// to `ViewState::confirm_search`.
+pub fn find_search_matches(document: &Document, width: u16, query: &str) -> Vec<SearchMatch> {
+    if width == 0 || query.is_empty() {
+        return Vec::new();
+    }
+    let query_lower = query.to_lowercase();
+    let mut match_index = 0usize;
+    collect_searchable_lines(document, width)
+        .into_iter()
+        .filter_map(|(offset, text)| {
+            if text.to_lowercase().contains(&query_lower) {
+                let m = SearchMatch::new(offset, match_index);
+                match_index += 1;
+                Some(m)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn collect_searchable_lines(document: &Document, width: u16) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut line_offset: usize = 0;
+    for (idx, block) in document.blocks.iter().enumerate() {
+        let gap = if idx == 0 { 0 } else { 1 };
+        line_offset += gap;
+        let block_lines = block_searchable_lines(block, width);
+        for line in block_lines {
+            out.push((line_offset, line));
+            line_offset += 1;
+        }
+    }
+    out
+}
+
+fn block_searchable_lines(block: &Block, width: u16) -> Vec<String> {
+    match block {
+        Block::Heading(heading) => {
+            let prefix_width = heading.level.prefix().width();
+            let content_width = if (width as usize) > prefix_width + 1 {
+                (width as usize).saturating_sub(prefix_width)
+            } else {
+                width as usize
+            };
+            wrap_inlines_to_lines(&heading.content, content_width.max(1))
+        }
+        Block::Paragraph(inlines) => wrap_inlines_to_lines(inlines, width as usize),
+        Block::CodeBlock(cb) => code_block_searchable_lines(cb),
+        Block::BlockQuote(blocks) => {
+            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            let mut lines = Vec::new();
+            for child in blocks {
+                lines.extend(block_searchable_lines(child, inner_width));
+            }
+            // `measure_blockquote_height` adds one logical row of padding.
+            lines.push(String::new());
+            lines
+        }
+        Block::List(list) => list_searchable_lines(list, width),
+        Block::Table(table) => table_searchable_lines(table, width),
+        Block::Mermaid(diag) => diag.source.lines().map(|s| s.to_string()).collect(),
+        Block::Rule => Vec::new(),
+    }
+}
+
+fn wrap_plain_text(text: &str, width: usize) -> Vec<String> {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+    textwrap::fill(text, width)
+        .lines()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Extract plain-text lines from inline content, respecting `HardBreak` as a line
+/// boundary. This mirrors how `inlines_to_text` splits lines for rendering.
+fn inlines_to_plain_lines(inlines: &[Inline]) -> Vec<String> {
+    let mut lines: Vec<String> = vec![String::new()];
+    fn append(inlines: &[Inline], lines: &mut Vec<String>) {
+        for inline in inlines {
+            match inline {
+                Inline::Text(t) | Inline::Code(t) => {
+                    lines.last_mut().unwrap().push_str(t);
+                }
+                Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => {
+                    append(c, lines);
+                }
+                Inline::HardBreak => {
+                    lines.push(String::new());
+                }
+                Inline::SoftBreak => {
+                    lines.last_mut().unwrap().push(' ');
+                }
+            }
+        }
+    }
+    append(inlines, &mut lines);
+    if lines.last().map(|s| s.is_empty()).unwrap_or(false) {
+        lines.pop();
+    }
+    lines
+}
+
+fn wrap_inlines_to_lines(inlines: &[Inline], width: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in inlines_to_plain_lines(inlines) {
+        out.extend(wrap_plain_text(&line, width));
+    }
+    out
+}
+
+fn code_block_searchable_lines(cb: &CodeBlock) -> Vec<String> {
+    let mut lines = Vec::new();
+    let label = cb
+        .language
+        .as_ref()
+        .map(|l| format!(" {l} "))
+        .unwrap_or_else(|| " code ".to_string());
+    lines.push(label);
+    if cb.content.is_empty() {
+        lines.push(String::new());
+    } else {
+        for line in cb.content.lines() {
+            lines.push(line.to_string());
+        }
+    }
+    lines
+}
+
+fn list_searchable_lines(list: &List, width: u16) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (idx, item) in list.items.iter().enumerate() {
+        let marker_width = if list.ordered {
+            format!("{}.", idx + 1).width() + 1
+        } else {
+            2
+        };
+        let inner_width = (width as usize).saturating_sub(marker_width).max(1) as u16;
+        if item.content.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        for child in &item.content {
+            lines.extend(block_searchable_lines(child, inner_width));
+        }
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+fn table_searchable_lines(table: &Table, width: u16) -> Vec<String> {
+    let col_count = table
+        .headers
+        .len()
+        .max(table.rows.first().map(|r| r.len()).unwrap_or(0));
+    if col_count == 0 {
+        return Vec::new();
+    }
+    let widths = table.allocate_column_widths(width as usize);
+    let mut lines = Vec::new();
+
+    // `measure_table_height` counts: top border + header + separator + body + bottom border.
+    lines.push(String::new());
+    lines.extend(render_table_search_lines(&table.headers, &widths));
+    lines.push(String::new());
+    for row in &table.rows {
+        lines.extend(render_table_search_lines(row, &widths));
+    }
+    lines.push(String::new());
+
+    lines
+}
+
+fn render_table_search_lines(cells: &[Vec<Inline>], widths: &[usize]) -> Vec<String> {
+    let col_count = widths.len();
+    let mut wrapped_columns: Vec<Vec<String>> = Vec::with_capacity(col_count);
+    for (i, width) in widths.iter().enumerate() {
+        let cell_lines = cells
+            .get(i)
+            .map(|cell| inlines_to_plain_lines(cell))
+            .unwrap_or_default();
+        let mut wrapped = Vec::new();
+        for line in cell_lines {
+            wrapped.extend(wrap_plain_text(&line, *width));
+        }
+        wrapped_columns.push(wrapped);
+    }
+    let max_height = wrapped_columns
+        .iter()
+        .map(|c| c.len())
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    let mut lines = Vec::with_capacity(max_height);
+    for row_line in 0..max_height {
+        let mut row_text = String::new();
+        for (i, _width) in widths.iter().enumerate() {
+            let cell = wrapped_columns
+                .get(i)
+                .and_then(|col| col.get(row_line))
+                .map(|s| s.as_str())
+                .unwrap_or(" ");
+            if !row_text.is_empty() {
+                row_text.push(' ');
+            }
+            row_text.push_str(cell);
+        }
+        lines.push(row_text);
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::domain::{
-        Alignment, Block, CodeBlock, Document, Inline, Table, TerminalSize, ViewState,
+        Alignment, Block, CodeBlock, Document, Inline, List, ListItem, Table, TerminalSize,
+        ViewState,
     };
     use crate::parse::parse;
     use ratatui::Terminal;
@@ -1151,6 +1772,9 @@ mod tests {
             syntax_theme,
             rendered,
             selected_link: None,
+            search_query: None,
+            selected_search_match: None,
+            selected_match_line_offset: None,
         }
     }
 
@@ -1179,6 +1803,151 @@ mod tests {
             }
         }
         lines
+    }
+
+    #[test]
+    fn find_search_matches_finds_text_in_paragraphs() {
+        let document = Document::new(
+            vec![
+                Block::Paragraph(vec![Inline::Text("hello world".to_string())]),
+                Block::Paragraph(vec![Inline::Text("foo bar".to_string())]),
+                Block::Paragraph(vec![Inline::Text("hello again".to_string())]),
+            ],
+            Vec::new(),
+        )
+        .unwrap();
+        let matches = find_search_matches(&document, 80, "hello");
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].line_offset, 0);
+        assert_eq!(matches[1].line_offset, 4);
+    }
+
+    #[test]
+    fn find_search_matches_is_case_insensitive() {
+        let document = Document::new(
+            vec![Block::Paragraph(vec![Inline::Text(
+                "Hello World".to_string(),
+            )])],
+            Vec::new(),
+        )
+        .unwrap();
+        let matches = find_search_matches(&document, 80, "world");
+        assert_eq!(matches.len(), 1);
+    }
+
+    #[test]
+    fn find_search_matches_searches_code_blocks() {
+        let document = Document::new(
+            vec![Block::CodeBlock(CodeBlock {
+                language: Some("rust".to_string()),
+                content: "fn main() {}".to_string(),
+            })],
+            Vec::new(),
+        )
+        .unwrap();
+        let matches = find_search_matches(&document, 80, "main");
+        assert_eq!(matches.len(), 1);
+    }
+
+    #[test]
+    fn find_search_matches_empty_query_returns_no_matches() {
+        let document = Document::new(
+            vec![Block::Paragraph(vec![Inline::Text("hello".to_string())])],
+            Vec::new(),
+        )
+        .unwrap();
+        assert!(find_search_matches(&document, 80, "").is_empty());
+    }
+
+    #[test]
+    fn find_search_matches_zero_width_returns_no_matches() {
+        let document = Document::new(
+            vec![Block::Paragraph(vec![Inline::Text("hello".to_string())])],
+            Vec::new(),
+        )
+        .unwrap();
+        assert!(find_search_matches(&document, 0, "hello").is_empty());
+    }
+
+    #[test]
+    fn find_search_matches_respects_hard_breaks() {
+        let document = Document::new(
+            vec![Block::Paragraph(vec![
+                Inline::Text("first".to_string()),
+                Inline::HardBreak,
+                Inline::Text("second".to_string()),
+            ])],
+            Vec::new(),
+        )
+        .unwrap();
+        let matches = find_search_matches(&document, 80, "second");
+        assert_eq!(matches.len(), 1);
+        // Hard break creates a second logical line within the same paragraph.
+        assert_eq!(matches[0].line_offset, 1);
+    }
+
+    #[test]
+    fn find_search_matches_list_offsets_exclude_inner_gaps() {
+        let document = Document::new(
+            vec![Block::List(List {
+                ordered: false,
+                items: vec![
+                    ListItem {
+                        content: vec![
+                            Block::Paragraph(vec![Inline::Text("alpha".to_string())]),
+                            Block::Paragraph(vec![Inline::Text("beta".to_string())]),
+                        ],
+                    },
+                    ListItem {
+                        content: vec![Block::Paragraph(vec![Inline::Text("gamma".to_string())])],
+                    },
+                ],
+            })],
+            Vec::new(),
+        )
+        .unwrap();
+        let matches = find_search_matches(&document, 80, "gamma");
+        assert_eq!(matches.len(), 1);
+        // alpha (line 0), beta (line 1), gamma (line 2) — no synthetic gaps.
+        assert_eq!(matches[0].line_offset, 2);
+    }
+
+    #[test]
+    fn find_search_matches_blockquote_includes_padding() {
+        let document = Document::new(
+            vec![
+                Block::BlockQuote(vec![Block::Paragraph(vec![Inline::Text(
+                    "quoted".to_string(),
+                )])]),
+                Block::Paragraph(vec![Inline::Text("after".to_string())]),
+            ],
+            Vec::new(),
+        )
+        .unwrap();
+        let matches = find_search_matches(&document, 80, "after");
+        assert_eq!(matches.len(), 1);
+        // quoted (line 0) + blockquote padding (line 1) + gap (line 2) -> after at line 3.
+        assert_eq!(matches[0].line_offset, 3);
+    }
+
+    #[test]
+    fn find_search_matches_table_includes_borders() {
+        let document = Document::new(
+            vec![
+                Block::Table(Table {
+                    headers: vec![vec![Inline::Text("Header".to_string())]],
+                    rows: vec![vec![vec![Inline::Text("Cell".to_string())]]],
+                    alignments: vec![Alignment::Left],
+                }),
+                Block::Paragraph(vec![Inline::Text("after".to_string())]),
+            ],
+            Vec::new(),
+        )
+        .unwrap();
+        let matches = find_search_matches(&document, 80, "after");
+        assert_eq!(matches.len(), 1);
+        // top border (0) + header (1) + separator (2) + cell (3) + bottom border (4) + gap (5) -> after at 6.
+        assert_eq!(matches[0].line_offset, 6);
     }
 
     #[test]
@@ -1251,10 +2020,143 @@ mod tests {
             Inline::Text("Hello ".into()),
             Inline::Strong(vec![Inline::Text("world".into())]),
         ];
-        let text = inlines_to_text(&inlines, &ctx, ctx.theme.text);
+        let text = inlines_to_text(&inlines, &ctx, ctx.theme.text, 0);
         assert_eq!(text.lines.len(), 1);
         // Text + Strong wrapper is split into separate spans.
         assert_eq!(text.lines[0].spans.len(), 3);
+    }
+
+    #[test]
+    fn inlines_to_text_highlights_search_query() {
+        let mut ctx = test_render_context();
+        ctx.search_query = Some("world".to_string());
+        let inlines = vec![
+            Inline::Text("Hello ".into()),
+            Inline::Strong(vec![Inline::Text("world".into())]),
+        ];
+        let text = inlines_to_text(&inlines, &ctx, ctx.theme.text, 0);
+        let spans = &text.lines[0].spans;
+        let has_highlight = spans.iter().any(|s| s.style == ctx.theme.search_match);
+        assert!(has_highlight);
+    }
+
+    #[test]
+    fn inlines_to_text_selected_search_match_line_uses_selected_style() {
+        let mut ctx = test_render_context();
+        ctx.search_query = Some("hello".to_string());
+        ctx.selected_match_line_offset = Some(0);
+        let inlines = vec![Inline::Text("hello".into())];
+        let text = inlines_to_text(&inlines, &ctx, ctx.theme.text, 0);
+        let styles: Vec<Style> = text.lines[0].spans.iter().map(|s| s.style).collect();
+        assert!(styles.contains(&ctx.theme.search_match_selected));
+    }
+
+    #[test]
+    fn inlines_to_text_non_selected_search_match_line_uses_match_style() {
+        let mut ctx = test_render_context();
+        ctx.search_query = Some("hello".to_string());
+        ctx.selected_match_line_offset = Some(5);
+        let inlines = vec![Inline::Text("hello".into())];
+        let text = inlines_to_text(&inlines, &ctx, ctx.theme.text, 0);
+        let styles: Vec<Style> = text.lines[0].spans.iter().map(|s| s.style).collect();
+        assert!(!styles.contains(&ctx.theme.search_match_selected));
+        assert!(styles.contains(&ctx.theme.search_match));
+    }
+
+    #[test]
+    fn inlines_to_text_case_insensitive_highlight() {
+        let mut ctx = test_render_context();
+        ctx.search_query = Some("WORLD".to_string());
+        let inlines = vec![Inline::Text("hello world".into())];
+        let text = inlines_to_text(&inlines, &ctx, ctx.theme.text, 0);
+        let spans = &text.lines[0].spans;
+        let highlighted: Vec<&str> = spans
+            .iter()
+            .filter(|s| s.style == ctx.theme.search_match)
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(highlighted, vec!["world"]);
+    }
+
+    #[test]
+    fn wrapped_lines_highlight_search_on_second_visual_row() {
+        let mut ctx = test_render_context();
+        ctx.search_query = Some("target".to_string());
+        ctx.selected_match_line_offset = Some(1);
+        let inlines = vec![Inline::Text("aaa target".into())];
+        let rows = inlines_to_wrapped_lines(&inlines, &ctx, ctx.theme.text, 0, 5);
+        assert_eq!(rows.len(), 2);
+        let selected_styles: Vec<Style> = rows[1]
+            .1
+             .spans
+            .iter()
+            .map(|s| s.style)
+            .collect();
+        assert!(selected_styles.contains(&ctx.theme.search_match_selected));
+    }
+
+    #[test]
+    fn table_cell_highlights_search_query() {
+        let mut ctx = test_render_context();
+        ctx.search_query = Some("needle".to_string());
+        let lines = wrap_cell_inlines(
+            &[Inline::Text("needle here".into())],
+            12,
+            ctx.theme.table_cell,
+            &ctx,
+            3,
+        );
+        assert_eq!(lines.len(), 1);
+        let has_highlight = lines[0]
+            .spans
+            .iter()
+            .any(|s| s.style == ctx.theme.search_match);
+        assert!(has_highlight);
+    }
+
+    #[test]
+    fn highlight_text_increments_line_offset_for_hard_breaks() {
+        let mut ctx = test_render_context();
+        ctx.search_query = Some("line".to_string());
+        ctx.selected_match_line_offset = Some(1);
+        let text = Text::from(vec![
+            Line::from("first"),
+            Line::from("second line"),
+        ]);
+        let highlighted = highlight_text(
+            text,
+            Some("line"),
+            ctx.theme.search_match,
+            ctx.theme.search_match_selected,
+            Some(1),
+            0,
+        );
+        let first_styles: Vec<Style> = highlighted.lines[0]
+            .spans
+            .iter()
+            .map(|s| s.style)
+            .collect();
+        let second_styles: Vec<Style> = highlighted.lines[1]
+            .spans
+            .iter()
+            .map(|s| s.style)
+            .collect();
+        assert!(!first_styles.contains(&ctx.theme.search_match_selected));
+        assert!(second_styles.contains(&ctx.theme.search_match_selected));
+    }
+
+    #[test]
+    fn highlight_span_handles_case_folding_byte_length_changes() {
+        let span = Span::styled("groß".to_string(), Style::default());
+        let matched = highlight_span(
+            span,
+            "gross",
+            Style::default().fg(Color::Yellow),
+            Style::default().fg(Color::Green),
+            false,
+        );
+        let text: String = matched.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "groß");
     }
 
     #[test]
@@ -1302,7 +2204,7 @@ mod tests {
     fn render_table_row_pads_short_cells() {
         let ctx = test_render_context();
         let cells = vec![vec![Inline::Text("hi".into())]];
-        let lines = render_table_row(&cells, &[8], ctx.theme.table_cell, &ctx);
+        let lines = render_table_row(&cells, &[8], ctx.theme.table_cell, &ctx, 0);
         assert_eq!(lines.len(), 1);
         let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.contains("hi"));
@@ -1318,7 +2220,7 @@ mod tests {
             content: "fn main() {}".into(),
         };
         let mut buf = Buffer::empty(Rect::new(0, 0, 20, 5));
-        render_code_block(&cb, Rect::new(0, 0, 20, 5), &mut buf, 0, &ctx);
+        render_code_block(&cb, Rect::new(0, 0, 20, 5), &mut buf, 0, &ctx, 0);
         let row_0 = (0..20)
             .map(|x| buf.cell((x, 0)).map_or(" ", |c| c.symbol()))
             .collect::<String>();
