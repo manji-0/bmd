@@ -31,13 +31,19 @@ pub struct App {
     document_cache: DocumentRenderCache,
     /// Animated scroll position; lerps toward `view_state.scroll().offset()`.
     scroll_visual: f32,
-    /// Lines per second for the current scroll animation.
+    /// Exponential smoothing rate for the current scroll animation.
     scroll_anim_speed: f32,
     /// When the current j/k hold sequence started (`Press`); cleared on `Release`.
     scroll_key_down_at: Option<Instant>,
     /// Timestamp of the last line scroll triggered by key repeat.
     last_scroll_repeat: Instant,
     last_tick: Instant,
+    /// Fractional scroll position used to detect motion for image deferral.
+    tracked_scroll_position: f32,
+    /// When to turn terminal images back on after scrolling stops.
+    images_reenable_at: Option<Instant>,
+    /// Whether mermaid/markdown images are drawn in the current cache.
+    pub(crate) show_terminal_images: bool,
     syntax_assets: SyntaxAssets,
     theme: Theme,
     should_quit: bool,
@@ -66,6 +72,9 @@ impl App {
             scroll_key_down_at: None,
             last_scroll_repeat: now,
             last_tick: now,
+            tracked_scroll_position: scroll_visual,
+            images_reenable_at: None,
+            show_terminal_images: true,
             syntax_assets: SyntaxAssets::new(),
             theme: Theme::default(),
             should_quit: false,
@@ -105,8 +114,10 @@ impl App {
             }
 
             let animating = self.tick_scroll_animation(dt);
+            let image_dirty = self.update_terminal_image_visibility(now);
+            let awaiting_images = self.images_reenable_at.is_some();
 
-            if dirty || animating {
+            if dirty || animating || image_dirty {
                 self.draw_frame(terminal)?;
                 last_draw = now;
                 if self.error_message.is_some() {
@@ -114,7 +125,7 @@ impl App {
                 }
             }
 
-            let frame_budget = if animating {
+            let frame_budget = if animating || awaiting_images {
                 ACTIVE_FRAME_INTERVAL
             } else {
                 IDLE_POLL_INTERVAL
@@ -123,7 +134,7 @@ impl App {
             if event::poll(wait)? {
                 continue;
             }
-            if animating {
+            if animating || awaiting_images {
                 continue;
             }
         }

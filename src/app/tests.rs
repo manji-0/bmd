@@ -60,13 +60,14 @@ fn renders_document_to_test_backend() {
                 app.syntax_assets.theme(),
                 &app.rendered,
                 &app.view_state,
+                app.show_terminal_images,
             );
             let width = app.view_state.terminal_size().width();
             let mut cache = DocumentRenderCache::default();
             cache.ensure(&app.document, &ctx, &app.view_state, width);
             let widget = CachedMarkdownView {
                 cache: &cache,
-                scroll: app.view_state.scroll().offset(),
+                scroll: app.view_state.scroll().offset() as f32,
             };
             f.render_widget(widget, f.area());
         })
@@ -104,16 +105,44 @@ fn jump_commands_snap_visual_scroll() {
 
     app.scroll_down(50);
     assert_ne!(app.view_state.scroll().offset(), 0);
-    assert_ne!(app.display_scroll_offset(), 0);
+    assert_ne!(app.scroll_visual.round() as usize, 0);
 
     app.jump_to_top();
     assert_eq!(app.view_state.scroll().offset(), 0);
-    assert_eq!(app.display_scroll_offset(), 0);
+    assert_eq!(app.scroll_visual.round() as usize, 0);
 
     app.jump_to_bottom();
     let max = app.max_scroll();
     assert_eq!(app.view_state.scroll().offset(), max);
-    assert_eq!(app.display_scroll_offset(), max);
+    assert_eq!(app.scroll_visual.round() as usize, max);
+}
+
+#[test]
+fn terminal_images_defer_until_scroll_idle() {
+    use std::time::{Duration, Instant};
+
+    use super::scroll::IMAGE_REENABLE_DELAY;
+
+    let mut input = String::from("# Title\n\n");
+    for i in 0..50 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    let doc = parse(&input).unwrap();
+    let picker = Picker::halfblocks();
+    let mut app = App::new(doc, picker, None).unwrap();
+    assert!(app.show_terminal_images);
+
+    let t0 = Instant::now();
+    app.scroll_down(4);
+    assert!(app.update_terminal_image_visibility(t0));
+    assert!(!app.show_terminal_images);
+
+    assert!(!app.update_terminal_image_visibility(t0));
+    assert!(!app.show_terminal_images);
+
+    let after_idle = t0 + IMAGE_REENABLE_DELAY + Duration::from_millis(1);
+    assert!(app.update_terminal_image_visibility(after_idle));
+    assert!(app.show_terminal_images);
 }
 
 #[test]

@@ -9,6 +9,7 @@ mod measure;
 mod mermaid;
 mod search;
 mod search_state;
+pub(crate) mod subpixel;
 mod syntax;
 mod table;
 mod theme;
