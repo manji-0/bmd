@@ -1,9 +1,8 @@
 //! Application loop and state.
 
-use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crossterm::event;
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Terminal,
     backend::Backend,
@@ -21,10 +20,16 @@ use crate::render::{
     find_search_matches, measure_document_height,
 };
 
-/// Per-frame lerp factor for scroll animation (0 < x <= 1).
-const SCROLL_ANIMATION_LERP: f32 = 0.35;
-/// Delay between animation frames while the visual scroll catches up to the target.
-const SCROLL_ANIMATION_FRAME: Duration = Duration::from_millis(8);
+/// Delay before line-scroll auto-repeat begins after the initial key press.
+const SCROLL_REPEAT_DELAY: Duration = Duration::from_millis(180);
+/// Fixed interval between repeated line scrolls while j/k is held.
+const SCROLL_REPEAT_INTERVAL: Duration = Duration::from_millis(33);
+/// Target frame interval while scrolling or animating (~60 fps).
+const ACTIVE_FRAME_INTERVAL: Duration = Duration::from_millis(16);
+/// Poll interval when idle (no scroll animation or held keys).
+const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(50);
+/// Line-scroll animation speed for half-page, jump, and search navigation.
+const SCROLL_ANIM_SPEED: f32 = 20.0;
 
 #[cfg(test)]
 use crate::parse::parse;
@@ -36,6 +41,11 @@ pub struct App {
     document_cache: DocumentRenderCache,
     /// Animated scroll position; lerps toward `view_state.scroll().offset()`.
     scroll_visual: f32,
+    /// When the current j/k hold sequence started (`Press`); cleared on `Release`.
+    scroll_key_down_at: Option<Instant>,
+    /// Timestamp of the last line scroll triggered by key repeat.
+    last_scroll_repeat: Instant,
+    last_tick: Instant,
     syntax_assets: SyntaxAssets,
     theme: Theme,
     should_quit: bool,
@@ -48,12 +58,16 @@ impl App {
         let rendered = RenderedDocument::new(&document, &picker, size.width())?;
         let view_state = ViewState::new(size);
         let scroll_visual = view_state.scroll().offset() as f32;
+        let now = Instant::now();
         Ok(Self {
             document,
             rendered,
             view_state,
             document_cache: DocumentRenderCache::default(),
             scroll_visual,
+            scroll_key_down_at: None,
+            last_scroll_repeat: now,
+            last_tick: now,
             syntax_assets: SyntaxAssets::new(),
             theme: Theme::default(),
             should_quit: false,
@@ -65,86 +79,171 @@ impl App {
     where
         AppError: From<B::Error>,
     {
-        // Poll with a short timeout so quit keys are handled promptly without busy-waiting.
-        let poll_timeout = Duration::from_millis(1);
+        self.last_tick = Instant::now();
+        let mut last_draw = Instant::now();
+        self.draw_frame(terminal)?;
 
         while !self.should_quit {
-            // Drain all available input before rendering. If a quit key is queued, handle
-            // it immediately and skip the draw call. The keymap mode is recomputed for
-            // each event so that a SearchConfirm transition is reflected immediately.
-            while event::poll(poll_timeout)? {
-                let mode = self.keymap_mode();
-                let command = map_event(event::read()?, mode, self.view_state.is_search_active());
-                if self.is_quit(&command) {
-                    self.should_quit = true;
+            let now = Instant::now();
+            let dt = now.saturating_duration_since(self.last_tick);
+            self.last_tick = now;
+            let mut dirty = false;
+
+            while event::poll(Duration::ZERO)? {
+                if self.handle_crossterm_event(event::read()?)? {
+                    dirty = true;
+                }
+                if self.should_quit {
                     break;
                 }
-                self.handle_command(command)?;
             }
 
             if self.should_quit {
                 break;
             }
 
-            self.poll_terminal_resize()?;
+            if self.poll_terminal_resize()? {
+                dirty = true;
+            }
 
-            loop {
-                let animating = self.tick_scroll_animation();
+            let animating = self.tick_scroll_animation(dt);
 
-                terminal.draw(|f| {
-                    let full_area = f.area();
-                    let (main_area, prompt_area) =
-                        split_main_and_prompt(full_area, self.keymap_mode());
-
-                    let ctx = RenderContext::new(
-                        &self.theme,
-                        &self.syntax_assets.syntax_set,
-                        self.syntax_assets.theme(),
-                        &self.rendered,
-                        &self.view_state,
-                    );
-                    let width = self.view_state.terminal_size().width();
-                    self.document_cache
-                        .ensure(&self.document, &ctx, &self.view_state, width);
-                    let scroll = self.display_scroll_offset();
-                    let widget = CachedMarkdownView {
-                        cache: &self.document_cache,
-                        scroll,
-                    };
-                    f.render_widget(widget, main_area);
-
-                    if let Some(ref msg) = self.error_message {
-                        let popup = centered_rect(60, 20, main_area);
-                        f.render_widget(Clear, popup);
-                        let block = Block::bordered().title("Error");
-                        let para = Paragraph::new(msg.clone()).block(block);
-                        f.render_widget(para, popup);
-                    }
-
-                    if let SearchState::Input { direction, query } = self.view_state.search_state()
-                    {
-                        let prefix = match direction {
-                            SearchDirection::Forward => "/",
-                            SearchDirection::Backward => "?",
-                        };
-                        let prompt = format!("{}{}", prefix, query);
-                        let para = Paragraph::new(prompt);
-                        f.render_widget(para, prompt_area);
-                    }
-                })?;
-
-                // Auto-clear transient error messages after one rendered frame.
+            if dirty || animating {
+                self.draw_frame(terminal)?;
+                last_draw = now;
                 if self.error_message.is_some() {
                     self.error_message = None;
                 }
+            }
 
-                if !animating {
-                    break;
-                }
-                thread::sleep(SCROLL_ANIMATION_FRAME);
+            let frame_budget = if animating {
+                ACTIVE_FRAME_INTERVAL
+            } else {
+                IDLE_POLL_INTERVAL
+            };
+            let wait = frame_budget.saturating_sub(last_draw.elapsed());
+            if event::poll(wait)? {
+                continue;
+            }
+            if animating {
+                continue;
             }
         }
         Ok(())
+    }
+
+    fn draw_frame<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), AppError>
+    where
+        AppError: From<B::Error>,
+    {
+        terminal.draw(|f| {
+            let full_area = f.area();
+            let (main_area, prompt_area) = split_main_and_prompt(full_area, self.keymap_mode());
+
+            let ctx = RenderContext::new(
+                &self.theme,
+                &self.syntax_assets.syntax_set,
+                self.syntax_assets.theme(),
+                &self.rendered,
+                &self.view_state,
+            );
+            let width = self.view_state.terminal_size().width();
+            self.document_cache
+                .ensure(&self.document, &ctx, &self.view_state, width);
+            let scroll = self.display_scroll_offset();
+            let widget = CachedMarkdownView {
+                cache: &self.document_cache,
+                scroll,
+            };
+            f.render_widget(widget, main_area);
+
+            if let Some(ref msg) = self.error_message {
+                let popup = centered_rect(60, 20, main_area);
+                f.render_widget(Clear, popup);
+                let block = Block::bordered().title("Error");
+                let para = Paragraph::new(msg.clone()).block(block);
+                f.render_widget(para, popup);
+            }
+
+            if let SearchState::Input { direction, query } = self.view_state.search_state() {
+                let prefix = match direction {
+                    SearchDirection::Forward => "/",
+                    SearchDirection::Backward => "?",
+                };
+                let prompt = format!("{}{}", prefix, query);
+                let para = Paragraph::new(prompt);
+                f.render_widget(para, prompt_area);
+            }
+        })?;
+        Ok(())
+    }
+
+    /// Handle a crossterm event. Returns `true` when the frame should be redrawn.
+    fn handle_crossterm_event(&mut self, event: Event) -> Result<bool, AppError> {
+        if let Event::Key(key) = &event {
+            if self.keymap_mode() == KeymapMode::Normal {
+                if is_line_scroll_key(&key.code) {
+                    return self.handle_line_scroll_key(key);
+                }
+                if key.kind == KeyEventKind::Press {
+                    self.scroll_key_down_at = None;
+                }
+            }
+            if key.kind == KeyEventKind::Release {
+                return Ok(false);
+            }
+            if key.kind == KeyEventKind::Repeat
+                && self.keymap_mode() == KeymapMode::Normal
+                && is_single_press_key(&key.code)
+                && !is_line_scroll_key(&key.code)
+            {
+                return Ok(false);
+            }
+        }
+
+        let mode = self.keymap_mode();
+        let command = map_event(event, mode, self.view_state.is_search_active());
+        if self.is_quit(&command) {
+            self.should_quit = true;
+            return Ok(true);
+        }
+        self.handle_command(command)?;
+        Ok(true)
+    }
+
+    /// Handle j/k/arrow line scrolling with rate-limited OS key repeat.
+    ///
+    /// We do not track key hold state because most terminals do not deliver
+    /// `KeyEventKind::Release` without keyboard enhancement flags.
+    fn handle_line_scroll_key(&mut self, key: &KeyEvent) -> Result<bool, AppError> {
+        let now = Instant::now();
+        match key.kind {
+            KeyEventKind::Press => {
+                self.scroll_key_down_at = Some(now);
+                self.handle_command(line_scroll_command(&key.code))?;
+                Ok(true)
+            }
+            KeyEventKind::Repeat => {
+                let Some(pressed_at) = self.scroll_key_down_at else {
+                    self.scroll_key_down_at = Some(now);
+                    self.handle_command(line_scroll_command(&key.code))?;
+                    return Ok(true);
+                };
+                if now < pressed_at + SCROLL_REPEAT_DELAY {
+                    return Ok(false);
+                }
+                if now < self.last_scroll_repeat + SCROLL_REPEAT_INTERVAL {
+                    return Ok(false);
+                }
+                self.handle_command(line_scroll_command(&key.code))?;
+                self.last_scroll_repeat = now;
+                Ok(true)
+            }
+            KeyEventKind::Release => {
+                self.scroll_key_down_at = None;
+                Ok(false)
+            }
+        }
     }
 
     fn handle_command(&mut self, command: Command) -> Result<(), AppError> {
@@ -199,10 +298,12 @@ impl App {
     fn scroll_down(&mut self, n: usize) {
         let max = self.max_scroll();
         self.view_state = self.view_state.clone().scroll_down(n, max);
+        self.snap_scroll_visual();
     }
 
     fn scroll_up(&mut self, n: usize) {
         self.view_state = self.view_state.clone().scroll_up(n);
+        self.snap_scroll_visual();
     }
 
     fn half_page_down(&mut self) {
@@ -357,29 +458,66 @@ impl App {
         self.scroll_visual.round() as usize
     }
 
-    /// Advance the visual scroll toward the logical target. Returns `true` while animating.
-    fn tick_scroll_animation(&mut self) -> bool {
+    fn snap_scroll_visual(&mut self) {
+        self.scroll_visual = self.view_state.scroll().offset() as f32;
+    }
+
+    /// Advance the visual scroll toward the logical target at a fixed line rate.
+    /// Returns `true` while the target has not been reached.
+    fn tick_scroll_animation(&mut self, dt: Duration) -> bool {
         let target = self.view_state.scroll().offset() as f32;
         let delta = target - self.scroll_visual;
         if delta.abs() < 0.5 {
             self.scroll_visual = target;
             return false;
         }
-        self.scroll_visual += delta * SCROLL_ANIMATION_LERP;
+        let step = SCROLL_ANIM_SPEED * dt.as_secs_f32().max(1.0 / 120.0);
+        if step <= f32::EPSILON {
+            return true;
+        }
+        if delta.abs() <= step {
+            self.scroll_visual = target;
+            return false;
+        }
+        self.scroll_visual += step * delta.signum();
         true
     }
 
-    fn poll_terminal_resize(&mut self) -> Result<(), AppError> {
+    /// Returns `true` when the terminal size changed.
+    fn poll_terminal_resize(&mut self) -> Result<bool, AppError> {
         let (width, height) = crossterm::terminal::size()?;
         let size = TerminalSize::new(width, height).map_err(AppError::TerminalSize)?;
         if size == self.view_state.terminal_size() {
-            return Ok(());
+            return Ok(false);
         }
         self.view_state = self.view_state.clone().resize(size);
         let max = self.max_scroll();
         let clamped = self.view_state.scroll().offset().min(max) as f32;
         self.scroll_visual = clamped;
-        Ok(())
+        Ok(true)
+    }
+}
+
+fn is_line_scroll_key(code: &KeyCode) -> bool {
+    matches!(
+        code,
+        KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up
+    )
+}
+
+/// Keys that should fire once per physical press; OS repeat is ignored.
+fn is_single_press_key(code: &KeyCode) -> bool {
+    is_line_scroll_key(code)
+        || matches!(
+            code,
+            KeyCode::Char('d') | KeyCode::Char('u') | KeyCode::PageDown | KeyCode::PageUp
+        )
+}
+
+fn line_scroll_command(code: &KeyCode) -> Command {
+    match code {
+        KeyCode::Char('k') | KeyCode::Up => Command::ScrollUp,
+        _ => Command::ScrollDown,
     }
 }
 
@@ -463,6 +601,18 @@ mod tests {
                 title: None,
             }],
         }
+    }
+
+    #[test]
+    fn line_scroll_key_helpers() {
+        assert!(is_line_scroll_key(&KeyCode::Char('j')));
+        assert!(is_line_scroll_key(&KeyCode::Up));
+        assert!(!is_line_scroll_key(&KeyCode::Char('d')));
+        assert_eq!(
+            line_scroll_command(&KeyCode::Char('j')),
+            Command::ScrollDown
+        );
+        assert_eq!(line_scroll_command(&KeyCode::Char('k')), Command::ScrollUp);
     }
 
     #[test]
