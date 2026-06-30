@@ -3,6 +3,7 @@
 use crate::browser::open_link;
 
 use super::App;
+use super::scroll::HALF_PAGE_SCROLL_ANIM_SPEED;
 
 impl App {
     pub(crate) fn scroll_down(&mut self, n: usize) {
@@ -17,21 +18,25 @@ impl App {
     }
 
     pub(crate) fn half_page_down(&mut self) {
+        self.scroll_anim_speed = HALF_PAGE_SCROLL_ANIM_SPEED;
         let max = self.max_scroll();
         self.view_state = self.view_state.clone().half_page_down(max);
     }
 
     pub(crate) fn half_page_up(&mut self) {
+        self.scroll_anim_speed = HALF_PAGE_SCROLL_ANIM_SPEED;
         self.view_state = self.view_state.clone().half_page_up();
     }
 
     pub(crate) fn jump_to_top(&mut self) {
         self.view_state = self.view_state.clone().jump_to_top();
+        self.snap_scroll_visual();
     }
 
     pub(crate) fn jump_to_bottom(&mut self) {
         let max = self.max_scroll();
         self.view_state = self.view_state.clone().jump_to_bottom(max);
+        self.snap_scroll_visual();
     }
 
     pub(crate) fn next_link(&mut self) {

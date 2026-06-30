@@ -16,6 +16,8 @@ pub(crate) const SCROLL_REPEAT_INTERVAL: Duration = Duration::from_millis(33);
 pub(crate) const ACTIVE_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 pub(crate) const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(50);
 pub(crate) const SCROLL_ANIM_SPEED: f32 = 20.0;
+pub(crate) const HALF_PAGE_SCROLL_ANIM_SPEED: f32 = 80.0;
+pub(crate) const LINE_SCROLL_LINES: usize = 2;
 
 impl App {
     pub(crate) fn max_scroll(&self) -> usize {
@@ -56,14 +58,16 @@ impl App {
         let delta = target - self.scroll_visual;
         if delta.abs() < 0.5 {
             self.scroll_visual = target;
+            self.scroll_anim_speed = SCROLL_ANIM_SPEED;
             return false;
         }
-        let step = SCROLL_ANIM_SPEED * dt.as_secs_f32().max(1.0 / 120.0);
+        let step = self.scroll_anim_speed * dt.as_secs_f32().max(1.0 / 120.0);
         if step <= f32::EPSILON {
             return true;
         }
         if delta.abs() <= step {
             self.scroll_visual = target;
+            self.scroll_anim_speed = SCROLL_ANIM_SPEED;
             return false;
         }
         self.scroll_visual += step * delta.signum();
