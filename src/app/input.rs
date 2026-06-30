@@ -109,7 +109,7 @@ impl App {
 
         if self.help_visible && self.view_state.mode().is_normal() {
             match command {
-                Command::ToggleHelp | Command::SearchCancel => {
+                Command::ToggleHelp | Command::SearchCancel | Command::NavReset => {
                     self.help_visible = false;
                 }
                 Command::Quit => self.should_quit = true,
@@ -144,6 +144,8 @@ impl App {
             Command::PrevHeading => self.prev_heading(),
             Command::OpenLink => self.open_current_link(),
             Command::ClosePreview => self.close_preview(),
+            Command::NavBack => self.nav_back(),
+            Command::NavReset => self.nav_reset(),
             Command::StartSearchForward => self.start_search(SearchDirection::Forward),
             Command::StartSearchBackward => self.start_search(SearchDirection::Backward),
             Command::SearchConfirm => self.confirm_search(),

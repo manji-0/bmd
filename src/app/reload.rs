@@ -101,6 +101,7 @@ impl App {
         self.checklist_state =
             crate::domain::ChecklistState::new(crate::domain::ChecklistStyle::from_env());
         self.help_visible = false;
+        self.nav_stack.clear();
 
         let max_scroll = self.max_scroll();
         self.view_state = self

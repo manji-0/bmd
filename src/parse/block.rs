@@ -150,7 +150,8 @@ impl<'a> ParserState<'a> {
                     BlockFrame::Paragraph(p) | BlockFrame::Heading(p) | BlockFrame::TableCell(p),
                 ) = self.stack.last_mut()
                 {
-                    p.start_link(&mut self.links, dest, title, LinkKind::Web);
+                    let kind = LinkKind::for_link_dest(&dest);
+                    p.start_link(&mut self.links, dest, title, kind);
                 }
             }
             Tag::Image {
@@ -478,7 +479,8 @@ impl<'a> ParserState<'a> {
         // Temporarily take the stack, start the link, then restore it.
         let mut stack = std::mem::take(&mut self.stack);
         if let Some(parser) = Self::inline_parser_from_stack(&mut stack) {
-            parser.start_link(&mut self.links, dest, String::new(), LinkKind::Web);
+            let kind = LinkKind::for_link_dest(&dest);
+            parser.start_link(&mut self.links, dest, String::new(), kind);
         }
         self.stack = stack;
     }

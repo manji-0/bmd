@@ -17,10 +17,10 @@ bmd — Markdown viewer (press h or Esc to close)
 
 Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   wheel scroll
 Headings      {{}} prev/next section   #anchor links jump in-document
-Links         n/N next/prev   o/Enter open   (auto-scrolls into view)
+Links         n/N next/prev in viewport   o/Enter open   O back one step   Esc reset to origin
 Search        / forward   ? backward   n/N next/prev match   Esc clear
 Tasks         click checkbox   x toggle at top line
-Other         h help   q/Esc/Ctrl-c quit";
+Other         h help   q/Ctrl-c quit";
 
 pub(crate) fn format_status_bar(
     source_label: Option<&str>,

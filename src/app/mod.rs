@@ -20,7 +20,7 @@ use crossterm::event;
 use ratatui::{Terminal, backend::Backend};
 use ratatui_image::picker::Picker;
 
-use crate::domain::{ChecklistState, ChecklistStyle, Document, TerminalSize, ViewState};
+use crate::domain::{ChecklistState, ChecklistStyle, Document, NavStack, TerminalSize, ViewState};
 use crate::error::AppError;
 use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
 
@@ -60,6 +60,7 @@ pub struct App {
     picker: Picker,
     pub(crate) file_watch: Option<FileWatch>,
     next_reload_poll: Instant,
+    nav_stack: NavStack,
     should_quit: bool,
 }
 
@@ -111,6 +112,7 @@ impl App {
             picker,
             file_watch,
             next_reload_poll: now,
+            nav_stack: NavStack::default(),
             should_quit: false,
         })
     }

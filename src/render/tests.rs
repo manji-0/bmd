@@ -6,13 +6,14 @@ use super::measure::measure_code_block_height;
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
 use super::{
     DocumentRenderCache, MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme,
-    checklist, collect_heading_offsets, find_heading_line_by_anchor, find_search_matches,
-    measure_block_height, measure_document_height, next_heading_line, prev_heading_line,
-    slugify_heading,
+    checklist, collect_heading_offsets, collect_visible_links, find_heading_line_by_anchor,
+    find_search_matches, measure_block_height, measure_document_height, next_heading_line,
+    prev_heading_line, slugify_heading,
 };
 use crate::domain::{
     Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, Heading, HeadingLevel,
-    Inline, List, ListItem, SearchDirection, SearchMatch, Table, TerminalSize, ViewState,
+    Inline, Link, LinkId, LinkKind, LinkUrl, List, ListItem, SearchDirection, SearchMatch, Table,
+    TerminalSize, ViewState,
 };
 use crate::parse::parse;
 use ratatui::Terminal;
@@ -691,6 +692,47 @@ fn find_heading_line_by_anchor_matches_slug() {
         find_heading_line_by_anchor(&doc, 80, &ctx, "foo-bar"),
         Some(collect_heading_offsets(&doc, 80, &ctx)[1].0)
     );
+}
+
+#[test]
+fn collect_visible_links_filters_by_viewport() {
+    let doc = Document::new(
+        vec![
+            Block::Paragraph(vec![Inline::Link(
+                LinkId(0),
+                vec![Inline::Text("top".into())],
+            )]),
+            Block::Paragraph(vec![Inline::Text("filler".into())]),
+            Block::Paragraph(vec![Inline::Link(
+                LinkId(1),
+                vec![Inline::Text("bottom".into())],
+            )]),
+        ],
+        vec![
+            Link {
+                url: LinkUrl::new("https://a".into()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            },
+            Link {
+                url: LinkUrl::new("https://b".into()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            },
+        ],
+        vec![],
+    )
+    .unwrap();
+    let ctx = test_render_context();
+    let top_line = super::find_link_line_offset(&doc, 80, &ctx, LinkId(0)).unwrap();
+    let bottom_line = super::find_link_line_offset(&doc, 80, &ctx, LinkId(1)).unwrap();
+    assert!(bottom_line > top_line);
+
+    let visible = collect_visible_links(&doc, 80, &ctx, top_line, 1);
+    assert_eq!(visible, vec![LinkId(0)]);
+
+    let visible = collect_visible_links(&doc, 80, &ctx, bottom_line, 1);
+    assert_eq!(visible, vec![LinkId(1)]);
 }
 
 #[test]

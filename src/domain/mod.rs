@@ -9,6 +9,7 @@ mod checklist;
 mod link;
 mod markdown;
 mod mode;
+mod nav_stack;
 mod view;
 
 #[cfg(test)]
@@ -21,6 +22,7 @@ pub use markdown::{
     MermaidDiagram, Table,
 };
 pub use mode::{NormalSearch, UiMode};
+pub use nav_stack::NavStack;
 pub use view::{
     Scroll, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, TerminalSize,
     TerminalSizeError, ViewState,

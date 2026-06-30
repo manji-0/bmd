@@ -15,6 +15,7 @@ impl fmt::Display for LinkId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LinkKind {
     Web,
+    Anchor,
     Image,
     Mermaid,
 }
@@ -22,6 +23,15 @@ pub enum LinkKind {
 impl LinkKind {
     pub fn is_preview(self) -> bool {
         matches!(self, Self::Image | Self::Mermaid)
+    }
+
+    /// Classify a markdown link destination (not image URLs).
+    pub fn for_link_dest(dest: &str) -> Self {
+        if dest.starts_with('#') {
+            Self::Anchor
+        } else {
+            Self::Web
+        }
     }
 }
 

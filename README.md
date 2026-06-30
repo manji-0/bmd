@@ -26,7 +26,7 @@ Scroll position is tracked in logical lines; the on-screen position is animated 
 | Scroll down / up 2 lines | `j` `↓` / `k` `↑` |
 | Half page down / up | `d` `PageDown` / `u` `PageUp` |
 | Jump to top / bottom | `g` / `G` |
-| Quit | `q` `Esc` `Ctrl-c` |
+| Quit | `q` `Ctrl-c` |
 
 ### In-document search
 
@@ -39,15 +39,16 @@ Press `/` for forward search or `?` for backward search. A prompt appears at the
 
 ### Links and preview
 
-Cycle through links in the document with `n` / `N`. Behavior depends on link type:
+Cycle through links in the document with `n` / `N`. Only links currently visible on screen are included; pressing `n` wraps within that set without scrolling.
 
 | Type | Example | `o` / `Enter` |
 |------|---------|---------------|
-| Web | `[text](https://…)` | Opens in the browser via macOS `open` |
+| Web | `[text](https://…)` | Opens in the browser via macOS `open` / Linux `xdg-open` |
+| Anchor | `[text](#section)` | Jumps to the matching heading; prior scroll positions are stacked |
 | Image | `![alt](path.png)` | Floating in-terminal preview |
 | Mermaid | Link from a mermaid code block | Floating preview of the rendered diagram |
 
-Close the preview overlay with `Esc` or `o`. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
+Close the preview overlay with `Esc` or `o`. After anchor jumps, `O` (Shift+o) returns to the previous position one step at a time; `Esc` jumps back to where you were before the first anchor jump and clears the stack. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
 
 ### Task lists
 
@@ -118,14 +119,15 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `u` / `PageUp` | Half page up |
 | `g` / `G` | Jump to top / bottom |
 | `{` / `}` | Previous / next heading |
-| `Tab` / `n` | Next link (or next search match when search is active) |
-| `Shift-Tab` / `N` | Previous link (or previous search match) |
+| `Tab` / `n` | Next visible link (or next search match when search is active) |
+| `Shift-Tab` / `N` | Previous visible link (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
+| `O` | Back one step along the anchor navigation stack |
 | `/` / `?` | Start forward / backward search |
 | `h` | Show help overlay |
 | `x` | Toggle task-list item on top visible line |
 | Mouse wheel | Scroll up / down |
-| `q` / `Esc` / `Ctrl-c` | Quit (`Esc` clears search when search is active) |
+| `q` / `Ctrl-c` | Quit (`Esc` clears search when search is active; `Esc` resets anchor stack otherwise) |
 | Left click on checkbox | Toggle task-list item (normal mode) |
 
 ### Search input mode
