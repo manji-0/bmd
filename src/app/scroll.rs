@@ -60,7 +60,6 @@ impl App {
             self.images_reenable_at = None;
             if self.show_terminal_images {
                 self.show_terminal_images = false;
-                self.document_cache.invalidate();
                 dirty = true;
             }
         } else if !self.show_terminal_images && self.images_reenable_at.is_none() {
@@ -72,7 +71,6 @@ impl App {
         {
             self.images_reenable_at = None;
             self.show_terminal_images = true;
-            self.document_cache.invalidate();
             dirty = true;
         }
 

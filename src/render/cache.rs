@@ -17,7 +17,6 @@ struct RenderCacheKey {
     selected_link: Option<LinkId>,
     selected_match_line_offset: Option<usize>,
     checklist_revision: u64,
-    show_terminal_images: bool,
 }
 
 impl RenderCacheKey {
@@ -28,7 +27,6 @@ impl RenderCacheKey {
             selected_link: ctx.selected_link,
             selected_match_line_offset: ctx.selected_match_line_offset,
             checklist_revision: ctx.checklist_state.revision(),
-            show_terminal_images: ctx.show_terminal_images,
         }
     }
 }
