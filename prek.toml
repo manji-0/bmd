@@ -18,7 +18,7 @@ hooks = [
     entry = "cargo fmt --all -- --check",
     types = ["rust"],
     pass_filenames = false,
-    env = { RUSTFLAGS = "-C linker=clang", RUSTC_WRAPPER = "sccache" },
+    env = { RUSTFLAGS = "-C linker=clang" },
   },
   {
     id = "cargo-clippy",
@@ -27,6 +27,6 @@ hooks = [
     entry = "cargo clippy --all-targets -- -D warnings",
     types = ["rust"],
     pass_filenames = false,
-    env = { RUSTFLAGS = "-C linker=clang", RUSTC_WRAPPER = "sccache" },
+    env = { RUSTFLAGS = "-C linker=clang" },
   },
 ]
