@@ -4,16 +4,19 @@
     "rustup@latest",
     "clang@latest",
     "libiconv@latest",
-    "prek@latest"
+    "prek@latest",
+    "sccache@latest"
   ],
   "env": {
     "RUSTUP_HOME": "$PWD/.rustup",
     "CARGO_HOME": "$PWD/.cargo",
-    "RUSTFLAGS": "-C linker=clang"
+    "SCCACHE_DIR": "$PWD/.sccache",
+    "RUSTFLAGS": "-C linker=clang",
+    "RUSTC_WRAPPER": "sccache"
   },
   "shell": {
     "init_hook": [
-      "mkdir -p \"$RUSTUP_HOME\" \"$CARGO_HOME\""
+      "mkdir -p \"$RUSTUP_HOME\" \"$CARGO_HOME\" \"$SCCACHE_DIR\""
     ],
     "scripts": {
       "setup": [
@@ -27,7 +30,8 @@
       "clippy": "cargo clippy --all-targets -- -D warnings",
       "fmt": "cargo fmt --all",
       "fmt-check": "cargo fmt --all -- --check",
-      "prek": "prek run --all-files"
+      "prek": "prek run --all-files",
+      "cache-stats": "sccache --show-stats"
     }
   }
 }

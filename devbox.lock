@@ -177,6 +177,54 @@
           "store_path": "/nix/store/dpqx1vygrisrvnnwgym1226x317vqp4a-rustup-1.29.0"
         }
       }
+    },
+    "sccache@latest": {
+      "last_modified": "2026-06-22T09:00:13Z",
+      "resolved": "github:NixOS/nixpkgs/b3c092d3c36d91e2f61f3dfb39a159f180a56659#sccache",
+      "source": "devbox-search",
+      "version": "0.16.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lpadplvxbv6rwfl03pf8fabglqh4180z-sccache-0.16.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lpadplvxbv6rwfl03pf8fabglqh4180z-sccache-0.16.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/74fin0hjcy3j6807izbq5kqf75mji8s2-sccache-0.16.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/74fin0hjcy3j6807izbq5kqf75mji8s2-sccache-0.16.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/sfrj09a3iqghwgyn0ah2ih9jm6cr2frl-sccache-0.16.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/sfrj09a3iqghwgyn0ah2ih9jm6cr2frl-sccache-0.16.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/s5hdqpy3s6cyw2rrlr5bwwvfhviz2a9f-sccache-0.16.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/s5hdqpy3s6cyw2rrlr5bwwvfhviz2a9f-sccache-0.16.0"
+        }
+      }
     }
   }
 }
