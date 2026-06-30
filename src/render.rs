@@ -1521,15 +1521,23 @@ impl Default for SyntaxAssets {
 
 /// Find all logical lines in the rendered document that contain `query`.
 ///
+/// Line offsets follow the same layout as [`MarkdownWidget`] rendering so that
+/// selected-match highlighting lines up with navigation targets.
+///
 /// The returned matches are sorted by ascending line offset and can be passed
 /// to `ViewState::confirm_search`.
-pub fn find_search_matches(document: &Document, width: u16, query: &str) -> Vec<SearchMatch> {
+pub fn find_search_matches(
+    document: &Document,
+    width: u16,
+    query: &str,
+    ctx: &RenderContext,
+) -> Vec<SearchMatch> {
     if width == 0 || query.is_empty() {
         return Vec::new();
     }
     let query_lower = query.to_lowercase();
     let mut match_index = 0usize;
-    collect_searchable_lines(document, width)
+    collect_searchable_lines(document, width, ctx)
         .into_iter()
         .filter_map(|(offset, text)| {
             if text.to_lowercase().contains(&query_lower) {
@@ -1543,96 +1551,67 @@ pub fn find_search_matches(document: &Document, width: u16, query: &str) -> Vec<
         .collect()
 }
 
-fn collect_searchable_lines(document: &Document, width: u16) -> Vec<(usize, String)> {
+fn collect_searchable_lines(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext,
+) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut line_offset: usize = 0;
     for (idx, block) in document.blocks.iter().enumerate() {
         let gap = if idx == 0 { 0 } else { 1 };
-        line_offset += gap;
-        let block_lines = block_searchable_lines(block, width);
-        for line in block_lines {
-            out.push((line_offset, line));
-            line_offset += 1;
+        let block_lines = block_searchable_lines(block, width, ctx);
+        let block_height = measure_block_height(block, width, ctx).max(block_lines.len());
+        for (i, line) in block_lines.iter().enumerate().take(block_height) {
+            out.push((line_offset + i, line.clone()));
         }
+        // Keep in sync with `MarkdownWidget::render`: gap rows trail block content.
+        line_offset += block_height + gap;
     }
     out
 }
 
-fn block_searchable_lines(block: &Block, width: u16) -> Vec<String> {
+fn line_plain_text(line: &Line<'_>) -> String {
+    line.spans.iter().map(|s| s.content.as_ref()).collect()
+}
+
+fn block_searchable_lines(block: &Block, width: u16, ctx: &RenderContext) -> Vec<String> {
     match block {
         Block::Heading(heading) => {
+            let (style, _) = heading_styles(heading.level, ctx.theme);
             let prefix_width = heading.level.prefix().width();
             let content_width = if (width as usize) > prefix_width + 1 {
                 (width as usize).saturating_sub(prefix_width)
             } else {
                 width as usize
             };
-            wrap_inlines_to_lines(&heading.content, content_width.max(1))
+            inlines_to_wrapped_lines(&heading.content, ctx, style, 0, content_width.max(1))
+                .into_iter()
+                .map(|(_, line)| line_plain_text(&line))
+                .collect()
         }
-        Block::Paragraph(inlines) => wrap_inlines_to_lines(inlines, width as usize),
+        Block::Paragraph(inlines) => {
+            inlines_to_wrapped_lines(inlines, ctx, ctx.theme.text, 0, width as usize)
+                .into_iter()
+                .map(|(_, line)| line_plain_text(&line))
+                .collect()
+        }
         Block::CodeBlock(cb) => code_block_searchable_lines(cb),
         Block::BlockQuote(blocks) => {
             let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
             let mut lines = Vec::new();
             for child in blocks {
-                lines.extend(block_searchable_lines(child, inner_width));
+                lines.extend(block_searchable_lines(child, inner_width, ctx));
             }
             // `measure_blockquote_height` adds one logical row of padding.
             lines.push(String::new());
             lines
         }
-        Block::List(list) => list_searchable_lines(list, width),
-        Block::Table(table) => table_searchable_lines(table, width),
+        Block::List(list) => list_searchable_lines(list, width, ctx),
+        Block::Table(table) => table_searchable_lines(table, width, ctx),
         Block::Mermaid(diag) => diag.source.lines().map(|s| s.to_string()).collect(),
         Block::Rule => Vec::new(),
     }
-}
-
-fn wrap_plain_text(text: &str, width: usize) -> Vec<String> {
-    if text.trim().is_empty() {
-        return Vec::new();
-    }
-    textwrap::fill(text, width)
-        .lines()
-        .map(|s| s.to_string())
-        .collect()
-}
-
-/// Extract plain-text lines from inline content, respecting `HardBreak` as a line
-/// boundary. This mirrors how `inlines_to_text` splits lines for rendering.
-fn inlines_to_plain_lines(inlines: &[Inline]) -> Vec<String> {
-    let mut lines: Vec<String> = vec![String::new()];
-    fn append(inlines: &[Inline], lines: &mut Vec<String>) {
-        for inline in inlines {
-            match inline {
-                Inline::Text(t) | Inline::Code(t) => {
-                    lines.last_mut().unwrap().push_str(t);
-                }
-                Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => {
-                    append(c, lines);
-                }
-                Inline::HardBreak => {
-                    lines.push(String::new());
-                }
-                Inline::SoftBreak => {
-                    lines.last_mut().unwrap().push(' ');
-                }
-            }
-        }
-    }
-    append(inlines, &mut lines);
-    if lines.last().map(|s| s.is_empty()).unwrap_or(false) {
-        lines.pop();
-    }
-    lines
-}
-
-fn wrap_inlines_to_lines(inlines: &[Inline], width: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    for line in inlines_to_plain_lines(inlines) {
-        out.extend(wrap_plain_text(&line, width));
-    }
-    out
 }
 
 fn code_block_searchable_lines(cb: &CodeBlock) -> Vec<String> {
@@ -1653,7 +1632,7 @@ fn code_block_searchable_lines(cb: &CodeBlock) -> Vec<String> {
     lines
 }
 
-fn list_searchable_lines(list: &List, width: u16) -> Vec<String> {
+fn list_searchable_lines(list: &List, width: u16, ctx: &RenderContext) -> Vec<String> {
     let mut lines = Vec::new();
     for (idx, item) in list.items.iter().enumerate() {
         let marker_width = if list.ordered {
@@ -1667,7 +1646,7 @@ fn list_searchable_lines(list: &List, width: u16) -> Vec<String> {
             continue;
         }
         for child in &item.content {
-            lines.extend(block_searchable_lines(child, inner_width));
+            lines.extend(block_searchable_lines(child, inner_width, ctx));
         }
     }
     if lines.is_empty() {
@@ -1676,7 +1655,7 @@ fn list_searchable_lines(list: &List, width: u16) -> Vec<String> {
     lines
 }
 
-fn table_searchable_lines(table: &Table, width: u16) -> Vec<String> {
+fn table_searchable_lines(table: &Table, width: u16, ctx: &RenderContext) -> Vec<String> {
     let col_count = table
         .headers
         .len()
@@ -1689,29 +1668,45 @@ fn table_searchable_lines(table: &Table, width: u16) -> Vec<String> {
 
     // `measure_table_height` counts: top border + header + separator + body + bottom border.
     lines.push(String::new());
-    lines.extend(render_table_search_lines(&table.headers, &widths));
+    lines.extend(render_table_search_lines(
+        &table.headers,
+        &widths,
+        ctx.theme.table_header,
+        ctx,
+    ));
     lines.push(String::new());
     for row in &table.rows {
-        lines.extend(render_table_search_lines(row, &widths));
+        lines.extend(render_table_search_lines(
+            row,
+            &widths,
+            ctx.theme.table_cell,
+            ctx,
+        ));
     }
     lines.push(String::new());
 
     lines
 }
 
-fn render_table_search_lines(cells: &[Vec<Inline>], widths: &[usize]) -> Vec<String> {
+fn render_table_search_lines(
+    cells: &[Vec<Inline>],
+    widths: &[usize],
+    style: Style,
+    ctx: &RenderContext,
+) -> Vec<String> {
     let col_count = widths.len();
     let mut wrapped_columns: Vec<Vec<String>> = Vec::with_capacity(col_count);
     for (i, width) in widths.iter().enumerate() {
-        let cell_lines = cells
+        let wrapped = cells
             .get(i)
-            .map(|cell| inlines_to_plain_lines(cell))
-            .unwrap_or_default();
-        let mut wrapped = Vec::new();
-        for line in cell_lines {
-            wrapped.extend(wrap_plain_text(&line, *width));
-        }
-        wrapped_columns.push(wrapped);
+            .map(|cell| wrap_cell_inlines(cell, *width, style, ctx, 0))
+            .unwrap_or_else(|| vec![Line::from(" ")]);
+        wrapped_columns.push(
+            wrapped
+                .into_iter()
+                .map(|line| line_plain_text(&line))
+                .collect(),
+        );
     }
     let max_height = wrapped_columns
         .iter()
@@ -1743,8 +1738,8 @@ fn render_table_search_lines(cells: &[Vec<Inline>], widths: &[usize]) -> Vec<Str
 mod tests {
     use super::*;
     use crate::domain::{
-        Alignment, Block, CodeBlock, Document, Inline, List, ListItem, Table, TerminalSize,
-        ViewState,
+        Alignment, Block, CodeBlock, Document, Inline, List, ListItem, SearchDirection,
+        SearchMatch, Table, TerminalSize, ViewState,
     };
     use crate::parse::parse;
     use ratatui::Terminal;
@@ -1805,6 +1800,10 @@ mod tests {
         lines
     }
 
+    fn find_matches(document: &Document, width: u16, query: &str) -> Vec<SearchMatch> {
+        find_search_matches(document, width, query, &test_render_context())
+    }
+
     #[test]
     fn find_search_matches_finds_text_in_paragraphs() {
         let document = Document::new(
@@ -1816,10 +1815,10 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let matches = find_search_matches(&document, 80, "hello");
+        let matches = find_matches(&document, 80, "hello");
         assert_eq!(matches.len(), 2);
         assert_eq!(matches[0].line_offset, 0);
-        assert_eq!(matches[1].line_offset, 4);
+        assert_eq!(matches[1].line_offset, 3);
     }
 
     #[test]
@@ -1831,7 +1830,7 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let matches = find_search_matches(&document, 80, "world");
+        let matches = find_matches(&document, 80, "world");
         assert_eq!(matches.len(), 1);
     }
 
@@ -1845,7 +1844,7 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let matches = find_search_matches(&document, 80, "main");
+        let matches = find_matches(&document, 80, "main");
         assert_eq!(matches.len(), 1);
     }
 
@@ -1856,7 +1855,7 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        assert!(find_search_matches(&document, 80, "").is_empty());
+        assert!(find_matches(&document, 80, "").is_empty());
     }
 
     #[test]
@@ -1866,7 +1865,7 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        assert!(find_search_matches(&document, 0, "hello").is_empty());
+        assert!(find_matches(&document, 0, "hello").is_empty());
     }
 
     #[test]
@@ -1880,7 +1879,7 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let matches = find_search_matches(&document, 80, "second");
+        let matches = find_matches(&document, 80, "second");
         assert_eq!(matches.len(), 1);
         // Hard break creates a second logical line within the same paragraph.
         assert_eq!(matches[0].line_offset, 1);
@@ -1906,7 +1905,7 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let matches = find_search_matches(&document, 80, "gamma");
+        let matches = find_matches(&document, 80, "gamma");
         assert_eq!(matches.len(), 1);
         // alpha (line 0), beta (line 1), gamma (line 2) — no synthetic gaps.
         assert_eq!(matches[0].line_offset, 2);
@@ -1924,10 +1923,10 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let matches = find_search_matches(&document, 80, "after");
+        let matches = find_matches(&document, 80, "after");
         assert_eq!(matches.len(), 1);
         // quoted (line 0) + blockquote padding (line 1) + gap (line 2) -> after at line 3.
-        assert_eq!(matches[0].line_offset, 3);
+        assert_eq!(matches[0].line_offset, 2);
     }
 
     #[test]
@@ -1944,10 +1943,80 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let matches = find_search_matches(&document, 80, "after");
+        let matches = find_matches(&document, 80, "after");
         assert_eq!(matches.len(), 1);
         // top border (0) + header (1) + separator (2) + cell (3) + bottom border (4) + gap (5) -> after at 6.
-        assert_eq!(matches[0].line_offset, 6);
+        assert_eq!(matches[0].line_offset, 5);
+    }
+
+    #[test]
+    fn selected_search_match_renders_selected_style_in_buffer() {
+        let theme = Theme::default();
+        let ctx_base = test_render_context();
+        let document = Document::new(
+            vec![
+                Block::Paragraph(vec![Inline::Text("alpha needle".to_string())]),
+                Block::Paragraph(vec![Inline::Text("beta needle here".to_string())]),
+            ],
+            Vec::new(),
+        )
+        .unwrap();
+
+        let width = 80u16;
+        let height = 10u16;
+        let matches = find_search_matches(&document, width, "needle", &ctx_base);
+        assert_eq!(matches.len(), 2);
+
+        let size = TerminalSize::new(width, height).unwrap();
+        let view_state = ViewState::new(size)
+            .confirm_search("needle".to_string(), SearchDirection::Forward, matches)
+            .unwrap()
+            .next_search_match(1000)
+            .scroll_to(0);
+
+        let ctx = RenderContext::new(
+            ctx_base.theme,
+            ctx_base.syntax_set,
+            ctx_base.syntax_theme,
+            ctx_base.rendered,
+            &view_state,
+        );
+
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                let widget = MarkdownWidget::new(&document, &ctx, &view_state);
+                f.render_widget(widget, f.area());
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        let selected_bg = theme.search_match_selected.bg.unwrap();
+        let normal_bg = theme.search_match.bg.unwrap();
+
+        let mut selected_needle = false;
+        let mut normal_needle = false;
+        for y in 0..height {
+            for x in 0..width {
+                let cell = buf.cell((x, y)).unwrap();
+                if cell.bg == selected_bg && cell.symbol() != " " {
+                    selected_needle = true;
+                }
+                if cell.bg == normal_bg && cell.symbol() != " " {
+                    normal_needle = true;
+                }
+            }
+        }
+
+        assert!(
+            selected_needle,
+            "expected selected search match background in buffer"
+        );
+        assert!(
+            normal_needle,
+            "expected non-selected search match background in buffer"
+        );
     }
 
     #[test]
