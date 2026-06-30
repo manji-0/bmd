@@ -52,7 +52,7 @@ fn collect_searchable_lines(
     for (idx, block) in document.blocks.iter().enumerate() {
         let gap = if idx == 0 { 0 } else { 1 };
         let block_lines = block_searchable_lines(block, width, ctx);
-        let block_height = measure_block_height(block, width, ctx).max(block_lines.len());
+        let block_height = measure_block_height(block, idx, width, ctx).max(block_lines.len());
         for (i, line) in block_lines.iter().enumerate().take(block_height) {
             out.push((line_offset + i, line.clone()));
         }
@@ -101,6 +101,13 @@ fn block_searchable_lines(block: &Block, width: u16, ctx: &RenderContext) -> Vec
         Block::List(list) => list_searchable_lines(list, width, ctx),
         Block::Table(table) => table_searchable_lines(table, width, ctx),
         Block::Mermaid(diag) => diag.source.lines().map(|s| s.to_string()).collect(),
+        Block::Image(img) => {
+            if img.alt.is_empty() {
+                vec![img.src.clone()]
+            } else {
+                vec![img.alt.clone()]
+            }
+        }
         Block::Rule => Vec::new(),
     }
 }

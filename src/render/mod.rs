@@ -3,6 +3,7 @@
 mod blocks;
 mod cache;
 mod context;
+mod image;
 mod inline;
 mod measure;
 mod mermaid;

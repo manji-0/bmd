@@ -4,6 +4,7 @@
 use std::{
     env, fs,
     io::{self, Read},
+    path::PathBuf,
     process,
     time::Duration,
 };
@@ -30,7 +31,7 @@ fn main() {
 }
 
 fn run() -> Result<(), AppError> {
-    let input = read_input()?;
+    let (input, base_path) = read_input()?;
     let document = parse(&input)?;
 
     enable_raw_mode()?;
@@ -51,20 +52,24 @@ fn run() -> Result<(), AppError> {
     let mut terminal =
         Terminal::new(backend).map_err(|e| AppError::TerminalSetup(e.to_string()))?;
 
-    let app = App::new(document, picker)?;
+    let app = App::new(document, picker, base_path)?;
     let result = app.run(&mut terminal);
 
     restore_terminal(&mut terminal)?;
     result
 }
 
-fn read_input() -> Result<String, AppError> {
+fn read_input() -> Result<(String, Option<PathBuf>), AppError> {
     match env::args().nth(1) {
-        Some(path) if path != "-" => fs::read_to_string(&path).map_err(AppError::Io),
+        Some(path) if path != "-" => {
+            let path = PathBuf::from(path);
+            let content = fs::read_to_string(&path).map_err(AppError::Io)?;
+            Ok((content, Some(path)))
+        }
         _ => {
             let mut buffer = String::new();
             io::stdin().read_to_string(&mut buffer)?;
-            Ok(buffer)
+            Ok((buffer, None))
         }
     }
 }
