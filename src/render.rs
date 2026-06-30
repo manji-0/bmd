@@ -245,7 +245,9 @@ impl Widget for MarkdownWidget<'_> {
             let rows_above = scroll.saturating_sub(line_offset);
             debug_assert!(rows_above < total_height);
 
-            let visible_height = total_height.saturating_sub(rows_above).min((max_y - y) as usize);
+            let visible_height = total_height
+                .saturating_sub(rows_above)
+                .min((max_y - y) as usize);
             if visible_height == 0 {
                 break;
             }
@@ -348,7 +350,7 @@ fn measure_text_height(text: &Text, width: usize) -> usize {
 fn measure_heading_height(heading: &Heading, width: u16, ctx: &RenderContext) -> usize {
     let (style, _prefix_style) = heading_styles(heading.level, ctx.theme);
     let text = inlines_to_text(&heading.content, ctx, style);
-    let prefix_width = heading_prefix(heading.level).width();
+    let prefix_width = heading.level.prefix().width();
     let total_width = width as usize;
     // Keep this condition in sync with render_heading.
     let content_width = if total_width > prefix_width + 1 {
@@ -361,8 +363,7 @@ fn measure_heading_height(heading: &Heading, width: u16, ctx: &RenderContext) ->
 
 fn measure_code_block_height(cb: &CodeBlock, width: u16) -> usize {
     let _ = width; // width only matters for rendering, not for height.
-    let line_count = cb.content.matches('\n').count() + 1;
-    line_count + 1 // language label + content lines
+    cb.logical_height()
 }
 
 fn measure_blockquote_height(blocks: &[Block], width: u16, ctx: &RenderContext) -> usize {
@@ -411,8 +412,13 @@ fn measure_table_height(table: &Table, width: u16, ctx: &RenderContext) -> usize
         .iter()
         .enumerate()
         .map(|(i, cell)| {
-            wrap_cell_inlines(cell, widths.get(i).copied().unwrap_or(1), ctx.theme.table_header, ctx)
-                .len()
+            wrap_cell_inlines(
+                cell,
+                widths.get(i).copied().unwrap_or(1),
+                ctx.theme.table_header,
+                ctx,
+            )
+            .len()
         })
         .max()
         .unwrap_or(1);
@@ -478,7 +484,7 @@ fn render_heading(
 ) {
     let (style, prefix_style) = heading_styles(heading.level, ctx.theme);
     let text = inlines_to_text(&heading.content, ctx, style);
-    let prefix = heading_prefix(heading.level);
+    let prefix = heading.level.prefix();
     let prefix_width = prefix.width();
     if area.width as usize > prefix_width + 1 {
         render_prefixed_text(prefix, prefix_style, &text, area, buf, skip_rows);
@@ -542,18 +548,6 @@ fn render_prefixed_text(
         .wrap(Wrap { trim: true })
         .scroll((skip_rows as u16, 0));
     para.render(text_area, buf);
-}
-
-/// Returns a textual marker for a heading level.
-fn heading_prefix(level: HeadingLevel) -> &'static str {
-    match level {
-        HeadingLevel::H1 => "# ",
-        HeadingLevel::H2 => "## ",
-        HeadingLevel::H3 => "### ",
-        HeadingLevel::H4 => "#### ",
-        HeadingLevel::H5 => "##### ",
-        HeadingLevel::H6 => "###### ",
-    }
 }
 
 /// Returns the text style and prefix style for a heading level.
@@ -732,7 +726,13 @@ fn render_list(list: &List, area: Rect, buf: &mut Buffer, skip_rows: usize, ctx:
             if !drew_marker && item_line_offset + height > scroll {
                 let marker_y = item_y + block_skip as u16;
                 if marker_y < max_y {
-                    buf.set_stringn(area.x, marker_y, &marker, marker_width, ctx.theme.list_marker);
+                    buf.set_stringn(
+                        area.x,
+                        marker_y,
+                        &marker,
+                        marker_width,
+                        ctx.theme.list_marker,
+                    );
                 }
                 drew_marker = true;
             }
@@ -921,107 +921,7 @@ fn wrap_cell_inlines(
 }
 
 fn allocate_column_widths(table: &Table, total_width: usize) -> Vec<usize> {
-    let col_count = table
-        .headers
-        .len()
-        .max(table.rows.first().map(|r| r.len()).unwrap_or(0));
-    if col_count == 0 {
-        return Vec::new();
-    }
-
-    let border_width = col_count + 1; // one vertical border between each column + sides
-    let available = total_width.saturating_sub(border_width).max(col_count);
-
-    let mut ideal = vec![0usize; col_count];
-    let mut min = vec![0usize; col_count];
-
-    for (i, header) in table.headers.iter().enumerate() {
-        ideal[i] = ideal[i].max(inlines_width(header));
-        min[i] = min[i].max(min_word_width(header));
-    }
-    for row in &table.rows {
-        for (i, cell) in row.iter().enumerate() {
-            ideal[i] = ideal[i].max(inlines_width(cell));
-            min[i] = min[i].max(min_word_width(cell));
-        }
-    }
-
-    let total_ideal: usize = ideal.iter().sum();
-    if total_ideal <= available {
-        return ideal;
-    }
-
-    let total_min: usize = min.iter().sum();
-    if total_min >= available {
-        // Even minimums don't fit; distribute proportionally to mins, floor at 1.
-        return distribute(available, &min, &min);
-    }
-
-    let extra = available - total_min;
-    let desire: Vec<usize> = ideal.iter().zip(&min).map(|(i, m)| i - m).collect();
-    let mut widths = min.clone();
-    let total_desire: usize = desire.iter().sum();
-    if total_desire > 0 {
-        for i in 0..col_count {
-            widths[i] += (extra * desire[i]).div_ceil(total_desire);
-        }
-    } else {
-        widths = distribute(available, &min, &min);
-    }
-    widths
-}
-
-fn distribute(available: usize, weights: &[usize], floors: &[usize]) -> Vec<usize> {
-    let total_weight: usize = weights.iter().sum();
-    if total_weight == 0 {
-        return floors.iter().map(|_| 1usize).collect();
-    }
-    let mut out = Vec::with_capacity(weights.len());
-    for (w, floor) in weights.iter().zip(floors) {
-        let v = (available * w).div_ceil(total_weight).max(*floor).max(1);
-        out.push(v);
-    }
-    // Trim if rounding pushed us over.
-    while out.iter().sum::<usize>() > available {
-        if let Some(max_idx) = out
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, v)| *v)
-            .map(|(i, _)| i)
-        {
-            if out[max_idx] > 1 {
-                out[max_idx] -= 1;
-            } else {
-                break;
-            }
-        }
-    }
-    out
-}
-
-fn inlines_width(inlines: &[Inline]) -> usize {
-    inlines
-        .iter()
-        .map(|i| match i {
-            Inline::Text(t) | Inline::Code(t) => t.width(),
-            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => inlines_width(c),
-            Inline::HardBreak | Inline::SoftBreak => 1,
-        })
-        .sum()
-}
-
-fn min_word_width(inlines: &[Inline]) -> usize {
-    inlines
-        .iter()
-        .map(|i| match i {
-            Inline::Text(t) | Inline::Code(t) => {
-                t.split_whitespace().map(|w| w.width()).max().unwrap_or(0)
-            }
-            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => min_word_width(c),
-            Inline::HardBreak | Inline::SoftBreak => 0,
-        })
-        .max()
-        .unwrap_or(0)
+    table.allocate_column_widths(total_width)
 }
 
 fn render_mermaid(
@@ -1226,11 +1126,11 @@ mod tests {
         Alignment, Block, CodeBlock, Document, Inline, Table, TerminalSize, ViewState,
     };
     use crate::parse::parse;
+    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
-    use ratatui::Terminal;
     use syntect::highlighting::ThemeSet;
     use syntect::parsing::SyntaxSet;
 
@@ -1297,6 +1197,7 @@ mod tests {
             language: Some("rust".to_string()),
             content: "line one\nline two".to_string(),
         };
+        assert_eq!(cb.logical_height(), 3);
         assert_eq!(measure_code_block_height(&cb, 80), 3);
     }
 
@@ -1306,6 +1207,7 @@ mod tests {
             language: None,
             content: String::new(),
         };
+        assert_eq!(cb.logical_height(), 2);
         assert_eq!(measure_code_block_height(&cb, 80), 2);
     }
 
@@ -1514,10 +1416,16 @@ mod tests {
         let buf = terminal.backend().buffer();
         for y in 0..height {
             let row: String = (0..width)
-                .map(|x| buf.cell((x, y)).map_or(' ', |c| {
-                    let s = c.symbol();
-                    if s.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) { ' ' } else { s.chars().next().unwrap() }
-                }))
+                .map(|x| {
+                    buf.cell((x, y)).map_or(' ', |c| {
+                        let s = c.symbol();
+                        if s.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) {
+                            ' '
+                        } else {
+                            s.chars().next().unwrap()
+                        }
+                    })
+                })
                 .collect();
             eprintln!("{y:02}: {row:?}");
         }
@@ -1545,10 +1453,16 @@ mod tests {
         let buf = terminal.backend().buffer();
         for y in 0..height {
             let row: String = (0..width)
-                .map(|x| buf.cell((x, y)).map_or(' ', |c| {
-                    let s = c.symbol();
-                    if s.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) { ' ' } else { s.chars().next().unwrap() }
-                }))
+                .map(|x| {
+                    buf.cell((x, y)).map_or(' ', |c| {
+                        let s = c.symbol();
+                        if s.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) {
+                            ' '
+                        } else {
+                            s.chars().next().unwrap()
+                        }
+                    })
+                })
                 .collect();
             eprintln!("{y:02}: {row:?}");
         }
@@ -1583,10 +1497,16 @@ mod tests {
         let buf = terminal.backend().buffer();
         for y in 0..height {
             let row: String = (0..width)
-                .map(|x| buf.cell((x, y)).map_or(' ', |c| {
-                    let s = c.symbol();
-                    if s.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) { ' ' } else { s.chars().next().unwrap() }
-                }))
+                .map(|x| {
+                    buf.cell((x, y)).map_or(' ', |c| {
+                        let s = c.symbol();
+                        if s.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) {
+                            ' '
+                        } else {
+                            s.chars().next().unwrap()
+                        }
+                    })
+                })
                 .collect();
             eprintln!("{y:02}: {row:?}");
         }

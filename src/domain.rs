@@ -7,6 +7,8 @@
 
 use std::fmt;
 
+use unicode_width::UnicodeWidthStr;
+
 /// A parsed markdown document.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Document {
@@ -144,6 +146,18 @@ impl HeadingLevel {
             Self::H6 => 6,
         }
     }
+
+    /// Returns the textual marker used for this heading level (e.g. "## ").
+    pub fn prefix(self) -> &'static str {
+        match self {
+            Self::H1 => "# ",
+            Self::H2 => "## ",
+            Self::H3 => "### ",
+            Self::H4 => "#### ",
+            Self::H5 => "##### ",
+            Self::H6 => "###### ",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -158,10 +172,26 @@ pub struct CodeBlock {
     pub content: String,
 }
 
+impl CodeBlock {
+    /// Logical height of the code block: one row for the language label plus
+    /// the number of content lines.
+    pub fn logical_height(&self) -> usize {
+        let line_count = self.content.matches('\n').count() + 1;
+        line_count + 1
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct List {
     pub ordered: bool,
     pub items: Vec<ListItem>,
+}
+
+impl Heading {
+    /// Returns the textual marker used to prefix this heading in the terminal.
+    pub fn prefix(&self) -> &'static str {
+        self.level.prefix()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -174,6 +204,95 @@ pub struct Table {
     pub headers: Vec<Vec<Inline>>,
     pub rows: Vec<Vec<Vec<Inline>>>,
     pub alignments: Vec<Alignment>,
+}
+
+impl Table {
+    /// Number of columns, derived from headers and first row.
+    pub fn column_count(&self) -> usize {
+        self.headers
+            .len()
+            .max(self.rows.first().map(|r| r.len()).unwrap_or(0))
+    }
+
+    /// Compute column widths within the given total terminal width.
+    ///
+    /// The returned widths do not include the Unicode border columns; the caller
+    /// must add `widths.len() + 1` to get the full table width.
+    pub fn allocate_column_widths(&self, total_width: usize) -> Vec<usize> {
+        let col_count = self.column_count();
+        if col_count == 0 {
+            return Vec::new();
+        }
+
+        let border_width = col_count + 1; // one vertical border between each column + sides
+        let available = total_width.saturating_sub(border_width).max(col_count);
+
+        let mut ideal = vec![0usize; col_count];
+        let mut min = vec![0usize; col_count];
+
+        for (i, header) in self.headers.iter().enumerate() {
+            ideal[i] = ideal[i].max(Inline::text_width(header));
+            min[i] = min[i].max(Inline::min_word_width(header));
+        }
+        for row in &self.rows {
+            for (i, cell) in row.iter().enumerate() {
+                ideal[i] = ideal[i].max(Inline::text_width(cell));
+                min[i] = min[i].max(Inline::min_word_width(cell));
+            }
+        }
+
+        let total_ideal: usize = ideal.iter().sum();
+        if total_ideal <= available {
+            return ideal;
+        }
+
+        let total_min: usize = min.iter().sum();
+        if total_min >= available {
+            // Even minimums don't fit; distribute proportionally to mins, floor at 1.
+            return distribute_table_width(available, &min, &min);
+        }
+
+        let extra = available - total_min;
+        let desire: Vec<usize> = ideal.iter().zip(&min).map(|(i, m)| i - m).collect();
+        let mut widths = min.clone();
+        let total_desire: usize = desire.iter().sum();
+        if total_desire > 0 {
+            for i in 0..col_count {
+                widths[i] += (extra * desire[i]).div_ceil(total_desire);
+            }
+        } else {
+            widths = distribute_table_width(available, &min, &min);
+        }
+        widths
+    }
+}
+
+fn distribute_table_width(available: usize, weights: &[usize], floors: &[usize]) -> Vec<usize> {
+    let total_weight: usize = weights.iter().sum();
+    if total_weight == 0 {
+        return floors.iter().map(|_| 1usize).collect();
+    }
+    let mut out = Vec::with_capacity(weights.len());
+    for (w, floor) in weights.iter().zip(floors) {
+        let v = (available * w).div_ceil(total_weight).max(*floor).max(1);
+        out.push(v);
+    }
+    // Trim if rounding pushed us over.
+    while out.iter().sum::<usize>() > available {
+        if let Some(max_idx) = out
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, v)| *v)
+            .map(|(i, _)| i)
+        {
+            if out[max_idx] > 1 {
+                out[max_idx] -= 1;
+            } else {
+                break;
+            }
+        }
+    }
+    out
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -216,6 +335,37 @@ pub enum Inline {
     Link(LinkId, Vec<Inline>),
     HardBreak,
     SoftBreak,
+}
+
+impl Inline {
+    /// Width of the inline content in terminal columns.
+    pub fn text_width(inlines: &[Inline]) -> usize {
+        inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Text(t) | Inline::Code(t) => t.width(),
+                Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => Self::text_width(c),
+                Inline::HardBreak | Inline::SoftBreak => 1,
+            })
+            .sum()
+    }
+
+    /// Maximum width of any single whitespace-separated word in the inlines.
+    pub fn min_word_width(inlines: &[Inline]) -> usize {
+        inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Text(t) | Inline::Code(t) => {
+                    t.split_whitespace().map(|w| w.width()).max().unwrap_or(0)
+                }
+                Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => {
+                    Self::min_word_width(c)
+                }
+                Inline::HardBreak | Inline::SoftBreak => 0,
+            })
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 /// Opaque identifier for a link stored in `Document.links`.
@@ -517,5 +667,73 @@ mod tests {
         assert_eq!(state.selected_link(), Some(LinkId(1)));
         let state = state.select_next_link(&doc);
         assert_eq!(state.selected_link(), Some(LinkId(0)));
+    }
+
+    #[test]
+    fn heading_level_prefixes() {
+        assert_eq!(HeadingLevel::H1.prefix(), "# ");
+        assert_eq!(HeadingLevel::H6.prefix(), "###### ");
+    }
+
+    #[test]
+    fn heading_prefix_delegates_to_level() {
+        let h = Heading {
+            level: HeadingLevel::H2,
+            content: vec![],
+        };
+        assert_eq!(h.prefix(), "## ");
+    }
+
+    #[test]
+    fn code_block_logical_height() {
+        let cb = CodeBlock {
+            language: Some("rust".to_string()),
+            content: "line one\nline two".to_string(),
+        };
+        assert_eq!(cb.logical_height(), 3);
+    }
+
+    #[test]
+    fn inline_text_width_counts_code_and_text() {
+        let inlines = vec![
+            Inline::Text("hello".to_string()),
+            Inline::Code("world".to_string()),
+        ];
+        assert_eq!(Inline::text_width(&inlines), 10);
+    }
+
+    #[test]
+    fn inline_min_word_width_ignores_breaks() {
+        let inlines = vec![Inline::Text("a longword".to_string()), Inline::SoftBreak];
+        assert_eq!(Inline::min_word_width(&inlines), 8);
+    }
+
+    #[test]
+    fn table_column_count_derives_from_headers_and_rows() {
+        let table = Table {
+            headers: vec![vec![], vec![]],
+            rows: vec![vec![vec![]]],
+            alignments: vec![],
+        };
+        assert_eq!(table.column_count(), 2);
+    }
+
+    #[test]
+    fn table_allocate_column_widths_fits_total_width() {
+        let table = Table {
+            headers: vec![
+                vec![Inline::Text("A".to_string())],
+                vec![Inline::Text("B".to_string())],
+            ],
+            rows: vec![vec![
+                vec![Inline::Text("wide".to_string())],
+                vec![Inline::Text("x".to_string())],
+            ]],
+            alignments: vec![Alignment::Left, Alignment::Left],
+        };
+        let widths = table.allocate_column_widths(20);
+        let border_width = widths.len() + 1;
+        assert!(widths.iter().sum::<usize>() + border_width <= 20);
+        assert!(widths.iter().all(|w| *w >= 1));
     }
 }
