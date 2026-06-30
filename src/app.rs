@@ -12,11 +12,12 @@ use ratatui::{
 use ratatui_image::picker::Picker;
 
 use crate::browser::open_link;
-use crate::domain::{Document, TerminalSize, ViewState};
+use crate::domain::{Document, SearchDirection, SearchState, TerminalSize, ViewState};
 use crate::error::AppError;
-use crate::keymap::{Command, map_event};
+use crate::keymap::{Command, KeymapMode, map_event};
 use crate::render::{
-    MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme, measure_document_height,
+    MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme, find_search_matches,
+    measure_document_height,
 };
 
 #[cfg(test)]
@@ -57,10 +58,12 @@ impl App {
 
         while !self.should_quit {
             // Drain all available input before rendering. If a quit key is queued, handle
-            // it immediately and skip the draw call.
+            // it immediately and skip the draw call. The keymap mode is recomputed for
+            // each event so that a SearchConfirm transition is reflected immediately.
             while event::poll(poll_timeout)? {
-                let command = map_event(event::read()?);
-                if self.is_quit(command) {
+                let mode = self.keymap_mode();
+                let command = map_event(event::read()?, mode);
+                if self.is_quit(&command) {
                     self.should_quit = true;
                     break;
                 }
@@ -72,7 +75,9 @@ impl App {
             }
 
             terminal.draw(|f| {
-                let main_area = f.area();
+                let full_area = f.area();
+                let (main_area, prompt_area) = split_main_and_prompt(full_area, self.keymap_mode());
+
                 let ctx = RenderContext::new(
                     &self.theme,
                     &self.syntax_assets.syntax_set,
@@ -89,6 +94,16 @@ impl App {
                     let block = Block::bordered().title("Error");
                     let para = Paragraph::new(msg.clone()).block(block);
                     f.render_widget(para, popup);
+                }
+
+                if let SearchState::Input { direction, query } = self.view_state.search_state() {
+                    let prefix = match direction {
+                        SearchDirection::Forward => "/",
+                        SearchDirection::Backward => "?",
+                    };
+                    let prompt = format!("{}{}", prefix, query);
+                    let para = Paragraph::new(prompt);
+                    f.render_widget(para, prompt_area);
                 }
             })?;
 
@@ -112,16 +127,41 @@ impl App {
             Command::HalfPageUp => self.half_page_up(),
             Command::JumpToTop => self.jump_to_top(),
             Command::JumpToBottom => self.jump_to_bottom(),
-            Command::NextLink => self.next_link(),
-            Command::PrevLink => self.prev_link(),
+            Command::NextLink => {
+                if self.view_state.is_search_active() {
+                    self.next_search_match();
+                } else {
+                    self.next_link();
+                }
+            }
+            Command::PrevLink => {
+                if self.view_state.is_search_active() {
+                    self.prev_search_match();
+                } else {
+                    self.prev_link();
+                }
+            }
             Command::OpenLink => self.open_current_link(),
+            Command::StartSearchForward => self.start_search(SearchDirection::Forward),
+            Command::StartSearchBackward => self.start_search(SearchDirection::Backward),
+            Command::SearchConfirm => self.confirm_search(),
+            Command::SearchCancel => self.cancel_search(),
+            Command::SearchInput(c) => self.append_search_input(c),
+            Command::SearchBackspace => self.backspace_search_input(),
             Command::Quit => self.should_quit = true,
         }
         Ok(())
     }
 
-    fn is_quit(&self, command: Command) -> bool {
+    fn is_quit(&self, command: &Command) -> bool {
         matches!(command, Command::Quit)
+    }
+
+    fn keymap_mode(&self) -> KeymapMode {
+        match self.view_state.search_state() {
+            SearchState::Input { .. } => KeymapMode::Search,
+            _ => KeymapMode::Normal,
+        }
     }
 
     fn scroll_down(&mut self, n: usize) {
@@ -181,6 +221,80 @@ impl App {
         // A future improvement would compute the Y position of each link occurrence.
     }
 
+    fn start_search(&mut self, direction: SearchDirection) {
+        self.view_state = self.view_state.clone().start_search(direction);
+    }
+
+    fn cancel_search(&mut self) {
+        self.view_state = self.view_state.clone().cancel_search();
+    }
+
+    fn append_search_input(&mut self, c: char) {
+        self.view_state = self.view_state.clone().append_search_input(c);
+    }
+
+    fn backspace_search_input(&mut self) {
+        self.view_state = self.view_state.clone().backspace_search_input();
+    }
+
+    fn confirm_search(&mut self) {
+        let (direction, query) = match self.view_state.search_state() {
+            SearchState::Input { direction, query } => (*direction, query.clone()),
+            _ => return,
+        };
+
+        let trimmed = query.trim().to_string();
+        if trimmed.is_empty() {
+            self.view_state = self.view_state.clone().cancel_search();
+            return;
+        }
+
+        let matches = find_search_matches(
+            &self.document,
+            self.view_state.terminal_size().width(),
+            &trimmed,
+        );
+
+        match self
+            .view_state
+            .clone()
+            .confirm_search(trimmed, direction, matches)
+        {
+            Ok(state) => {
+                self.view_state = state;
+                // If matches were found, jump directly to the selected match line.
+                if let SearchState::Active {
+                    matches,
+                    current_index,
+                    ..
+                } = self.view_state.search_state()
+                {
+                    if let Some(m) = matches.get(*current_index) {
+                        let max = self.max_scroll();
+                        let target = m.line_offset.min(max);
+                        self.view_state = self.view_state.clone().scroll_to(target);
+                    } else {
+                        self.error_message = Some("no matches found".to_string());
+                    }
+                }
+            }
+            Err(e) => {
+                self.error_message = Some(e.to_string());
+                self.view_state = self.view_state.clone().cancel_search();
+            }
+        }
+    }
+
+    fn next_search_match(&mut self) {
+        let max = self.max_scroll();
+        self.view_state = self.view_state.clone().next_search_match(max);
+    }
+
+    fn prev_search_match(&mut self) {
+        let max = self.max_scroll();
+        self.view_state = self.view_state.clone().prev_search_match(max);
+    }
+
     fn max_scroll(&self) -> usize {
         let total_height = measure_document_height(
             &self.document,
@@ -211,6 +325,43 @@ fn terminal_size() -> Result<TerminalSize, AppError> {
     TerminalSize::new(width, height).map_err(AppError::TerminalSize)
 }
 
+/// Split the terminal area into the main content area and a one-line prompt area
+/// when the application is in search input mode.
+fn split_main_and_prompt(area: Rect, mode: KeymapMode) -> (Rect, Rect) {
+    match mode {
+        KeymapMode::Search => {
+            let main_height = area.height.saturating_sub(1).max(1);
+            let main = Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: main_height,
+            };
+            let prompt = Rect {
+                x: area.x,
+                y: area.y + main_height,
+                width: area.width,
+                height: 1,
+            };
+            (main, prompt)
+        }
+        KeymapMode::Normal => (
+            Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: area.height,
+            },
+            Rect {
+                x: area.x,
+                y: area.y + area.height,
+                width: area.width,
+                height: 0,
+            },
+        ),
+    }
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -234,7 +385,9 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Block, Heading, HeadingLevel, Inline, Link, LinkUrl};
+    use crate::domain::{
+        Block, Heading, HeadingLevel, Inline, Link, LinkUrl, SearchDirection, SearchState,
+    };
 
     fn dummy_document() -> Document {
         Document {
@@ -294,5 +447,39 @@ mod tests {
 
         // On a 30-row terminal the content fits, so max_scroll should be 0.
         assert_eq!(app.max_scroll(), 0);
+    }
+
+    #[test]
+    fn search_command_flow_scrolls_to_match() {
+        let mut input = String::from("# Alpha\n\n");
+        for i in 0..100 {
+            input.push_str(&format!("paragraph {}\n\n", i));
+        }
+        input.push_str("target line\n");
+        let doc = parse(&input).unwrap();
+        let picker = Picker::halfblocks();
+        let mut app = App::new(doc, picker).unwrap();
+
+        app.start_search(SearchDirection::Forward);
+        assert!(matches!(
+            app.view_state.search_state(),
+            SearchState::Input { .. }
+        ));
+
+        for c in "target".chars() {
+            app.append_search_input(c);
+        }
+        app.confirm_search();
+
+        assert!(app.view_state.is_search_active());
+        // The document is long enough that the target line is below the first screen.
+        let max_scroll = app.max_scroll();
+        assert!(max_scroll > 0);
+        assert!(app.view_state.scroll().offset() > 0);
+
+        let before = app.view_state.scroll().offset();
+        app.next_search_match();
+        // With a single match, cycling wraps back to the same position.
+        assert_eq!(app.view_state.scroll().offset(), before);
     }
 }

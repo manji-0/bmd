@@ -52,9 +52,14 @@ some-generator | bmd
 | `u` / `Ctrl-u` | half page up |
 | `g` `g` | jump to top |
 | `G` | jump to bottom |
-| `Tab` / `n` | next link |
-| `Shift-Tab` / `N` | previous link |
+| `Tab` / `n` | next link (or next search match when a search is active) |
+| `Shift-Tab` / `N` | previous link (or previous search match when a search is active) |
 | `o` / `Enter` | open selected link in browser |
+| `/` | start forward search |
+| `?` | start backward search |
+| `Enter` | confirm search query |
+| `Esc` | cancel search input |
+| `Backspace` | delete last search character |
 | `q` / `Ctrl-c` | quit |
 
 ## Architecture

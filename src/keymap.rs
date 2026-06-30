@@ -2,8 +2,15 @@
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
-/// User command produced by a key event.
+/// Input mode used when interpreting key events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeymapMode {
+    Normal,
+    Search,
+}
+
+/// User command produced by a key event.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     ScrollDown,
     ScrollUp,
@@ -14,19 +21,28 @@ pub enum Command {
     NextLink,
     PrevLink,
     OpenLink,
+    StartSearchForward,
+    StartSearchBackward,
+    SearchConfirm,
+    SearchCancel,
+    SearchInput(char),
+    SearchBackspace,
     Quit,
     None,
 }
 
 /// Map a crossterm event to a command.
-pub fn map_event(event: Event) -> Command {
+pub fn map_event(event: Event, mode: KeymapMode) -> Command {
     match event {
-        Event::Key(key) => map_key(key),
+        Event::Key(key) => match mode {
+            KeymapMode::Normal => map_normal_key(key),
+            KeymapMode::Search => map_search_key(key),
+        },
         _ => Command::None,
     }
 }
 
-fn map_key(key: KeyEvent) -> Command {
+fn map_normal_key(key: KeyEvent) -> Command {
     if std::env::var("BMD_DEBUG").is_ok() {
         eprintln!("[bmd debug] key event: {:?}", key);
     }
@@ -51,6 +67,22 @@ fn map_key(key: KeyEvent) -> Command {
         KeyCode::Char('n') | KeyCode::Tab => Command::NextLink,
         KeyCode::Char('N') | KeyCode::BackTab => Command::PrevLink,
         KeyCode::Char('o') | KeyCode::Enter => Command::OpenLink,
+        KeyCode::Char('/') => Command::StartSearchForward,
+        KeyCode::Char('?') => Command::StartSearchBackward,
+        _ => Command::None,
+    }
+}
+
+fn map_search_key(key: KeyEvent) -> Command {
+    if std::env::var("BMD_DEBUG").is_ok() {
+        eprintln!("[bmd debug] search key event: {:?}", key);
+    }
+
+    match key.code {
+        KeyCode::Enter => Command::SearchConfirm,
+        KeyCode::Esc => Command::SearchCancel,
+        KeyCode::Backspace => Command::SearchBackspace,
+        KeyCode::Char(c) => Command::SearchInput(c),
         _ => Command::None,
     }
 }
@@ -61,16 +93,61 @@ mod tests {
 
     #[test]
     fn vim_bindings() {
-        assert_eq!(map_key(key('j')), Command::ScrollDown);
-        assert_eq!(map_key(key('k')), Command::ScrollUp);
-        assert_eq!(map_key(key('d')), Command::HalfPageDown);
-        assert_eq!(map_key(key('u')), Command::HalfPageUp);
-        assert_eq!(map_key(key('g')), Command::JumpToTop);
-        assert_eq!(map_key(shift('G')), Command::JumpToBottom);
-        assert_eq!(map_key(key('n')), Command::NextLink);
-        assert_eq!(map_key(shift('N')), Command::PrevLink);
-        assert_eq!(map_key(key('o')), Command::OpenLink);
-        assert_eq!(map_key(key('q')), Command::Quit);
+        assert_eq!(map(key('j')), Command::ScrollDown);
+        assert_eq!(map(key('k')), Command::ScrollUp);
+        assert_eq!(map(key('d')), Command::HalfPageDown);
+        assert_eq!(map(key('u')), Command::HalfPageUp);
+        assert_eq!(map(key('g')), Command::JumpToTop);
+        assert_eq!(map(shift('G')), Command::JumpToBottom);
+        assert_eq!(map(key('n')), Command::NextLink);
+        assert_eq!(map(shift('N')), Command::PrevLink);
+        assert_eq!(map(key('o')), Command::OpenLink);
+        assert_eq!(map(key('q')), Command::Quit);
+    }
+
+    #[test]
+    fn search_bindings() {
+        assert_eq!(map(key('/')), Command::StartSearchForward);
+        assert_eq!(map(shift('?')), Command::StartSearchBackward);
+    }
+
+    #[test]
+    fn search_mode_maps_input() {
+        assert_eq!(
+            map_event(Event::Key(key('a')), KeymapMode::Search),
+            Command::SearchInput('a')
+        );
+        assert_eq!(
+            map_event(
+                Event::Key(KeyEvent::from(KeyCode::Backspace)),
+                KeymapMode::Search
+            ),
+            Command::SearchBackspace
+        );
+        assert_eq!(
+            map_event(
+                Event::Key(KeyEvent::from(KeyCode::Enter)),
+                KeymapMode::Search
+            ),
+            Command::SearchConfirm
+        );
+        assert_eq!(
+            map_event(Event::Key(KeyEvent::from(KeyCode::Esc)), KeymapMode::Search),
+            Command::SearchCancel
+        );
+    }
+
+    #[test]
+    fn search_mode_ignores_normal_commands() {
+        // While typing a query, 'q' should be input rather than quit.
+        assert_eq!(
+            map_event(Event::Key(key('q')), KeymapMode::Search),
+            Command::SearchInput('q')
+        );
+    }
+
+    fn map(key: KeyEvent) -> Command {
+        map_event(Event::Key(key), KeymapMode::Normal)
     }
 
     fn key(c: char) -> KeyEvent {
