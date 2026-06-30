@@ -140,6 +140,8 @@ impl App {
                     self.prev_link();
                 }
             }
+            Command::NextHeading => self.next_heading(),
+            Command::PrevHeading => self.prev_heading(),
             Command::OpenLink => self.open_current_link(),
             Command::ClosePreview => self.close_preview(),
             Command::StartSearchForward => self.start_search(SearchDirection::Forward),

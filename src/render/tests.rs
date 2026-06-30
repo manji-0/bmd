@@ -6,11 +6,13 @@ use super::measure::measure_code_block_height;
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
 use super::{
     DocumentRenderCache, MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme,
-    checklist, find_search_matches, measure_block_height, measure_document_height,
+    checklist, collect_heading_offsets, find_heading_line_by_anchor, find_search_matches,
+    measure_block_height, measure_document_height, next_heading_line, prev_heading_line,
+    slugify_heading,
 };
 use crate::domain::{
-    Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, Inline, List, ListItem,
-    SearchDirection, SearchMatch, Table, TerminalSize, ViewState,
+    Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, Heading, HeadingLevel,
+    Inline, List, ListItem, SearchDirection, SearchMatch, Table, TerminalSize, ViewState,
 };
 use crate::parse::parse;
 use ratatui::Terminal;
@@ -618,10 +620,77 @@ fn allocate_column_widths_fits_within_total_width() {
         alignments: vec![Alignment::Left, Alignment::Left],
     };
     let widths = allocate_column_widths(&table, 20);
-    // Widths fit within total width; may not fill it when content is smaller.
-    let border_width = widths.len() + 1;
-    assert!(widths.iter().sum::<usize>() + border_width <= 20);
+    assert_eq!(Table::table_frame_width(&widths), 20);
     assert!(widths.iter().all(|w| *w >= 1));
+}
+
+#[test]
+fn render_table_row_spans_full_terminal_width() {
+    let ctx = test_render_context();
+    let table = Table {
+        headers: vec![
+            vec![Inline::Text("long header column".into())],
+            vec![Inline::Text("b".into())],
+        ],
+        rows: vec![vec![
+            vec![Inline::Text("wrapped cell content here".into())],
+            vec![Inline::Text("x".into())],
+        ]],
+        alignments: vec![Alignment::Left, Alignment::Left],
+    };
+    let total = 40usize;
+    let widths = allocate_column_widths(&table, total);
+    let lines = render_table_row(&table.headers, &widths, ctx.theme.table_header, &ctx, 0);
+    let rendered_width: usize = lines[0].spans.iter().map(|s| s.content.width()).sum();
+    assert_eq!(rendered_width, total);
+}
+
+#[test]
+fn collect_heading_offsets_finds_each_heading() {
+    let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
+    let ctx = test_render_context();
+    let headings = collect_heading_offsets(&doc, 80, &ctx);
+    assert_eq!(headings.len(), 2);
+    assert_eq!(headings[0].1, HeadingLevel::H1);
+    assert!(headings[1].0 > headings[0].0);
+}
+
+#[test]
+fn heading_navigation_picks_adjacent_sections() {
+    let doc = Document::new(
+        vec![
+            Block::Heading(Heading {
+                level: HeadingLevel::H1,
+                content: vec![Inline::Text("A".into())],
+            }),
+            Block::Paragraph(vec![Inline::Text("gap".into())]),
+            Block::Heading(Heading {
+                level: HeadingLevel::H2,
+                content: vec![Inline::Text("B".into())],
+            }),
+        ],
+        vec![],
+        vec![],
+    )
+    .unwrap();
+    let ctx = test_render_context();
+    let headings = collect_heading_offsets(&doc, 80, &ctx);
+    assert_eq!(next_heading_line(&headings, 0), Some(headings[1].0));
+    assert_eq!(
+        prev_heading_line(&headings, headings[1].0),
+        Some(headings[0].0)
+    );
+}
+
+#[test]
+fn find_heading_line_by_anchor_matches_slug() {
+    let doc = parse("# Hello World\n\n## Foo Bar\n\nbody\n").unwrap();
+    let ctx = test_render_context();
+    assert_eq!(slugify_heading("Hello World"), "hello-world");
+    assert_eq!(
+        find_heading_line_by_anchor(&doc, 80, &ctx, "foo-bar"),
+        Some(collect_heading_offsets(&doc, 80, &ctx)[1].0)
+    );
 }
 
 #[test]

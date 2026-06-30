@@ -4,6 +4,7 @@ mod blocks;
 mod cache;
 pub(crate) mod checklist;
 mod context;
+mod headings;
 mod image;
 mod inline;
 mod links;
@@ -23,6 +24,10 @@ mod tests;
 
 pub use cache::{CachedMarkdownView, DocumentRenderCache};
 pub use context::RenderContext;
+pub use headings::{
+    collect_heading_offsets, find_heading_line_by_anchor, next_heading_line, prev_heading_line,
+    slugify_heading,
+};
 pub(crate) use image::{PREVIEW_POPUP_PERCENT, render_floating_image};
 pub use links::find_link_line_offset;
 pub use measure::{measure_block_height, measure_document_height};
