@@ -165,9 +165,10 @@ impl Default for Theme {
                 .bg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
             search_match_selected: Style::default()
-                .fg(Color::Black)
-                .bg(Color::Green)
-                .add_modifier(Modifier::BOLD),
+                .fg(Color::White)
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
             rule: Style::default().fg(Color::DarkGray),
             table_header: Style::default()
                 .fg(Color::White)
@@ -362,15 +363,9 @@ fn measure_heading_height(heading: &Heading, width: u16, ctx: &RenderContext) ->
     } else {
         total_width
     };
-    inlines_to_wrapped_lines(
-        &heading.content,
-        ctx,
-        style,
-        0,
-        content_width.max(1),
-    )
-    .len()
-    .max(1)
+    inlines_to_wrapped_lines(&heading.content, ctx, style, 0, content_width.max(1))
+        .len()
+        .max(1)
 }
 
 fn measure_code_block_height(cb: &CodeBlock, width: u16) -> usize {
@@ -507,17 +502,17 @@ fn render_heading(
     let prefix_width = prefix.width();
     if area.width as usize > prefix_width + 1 {
         let content_width = (area.width as usize).saturating_sub(prefix_width).max(1);
+        let rows =
+            inlines_to_wrapped_lines(&heading.content, ctx, style, line_offset, content_width);
+        render_prefixed_offset_lines(prefix, prefix_style, &rows, area, buf, skip_rows);
+    } else {
         let rows = inlines_to_wrapped_lines(
             &heading.content,
             ctx,
             style,
             line_offset,
-            content_width,
+            area.width as usize,
         );
-        render_prefixed_offset_lines(prefix, prefix_style, &rows, area, buf, skip_rows);
-    } else {
-        let rows =
-            inlines_to_wrapped_lines(&heading.content, ctx, style, line_offset, area.width as usize);
         render_offset_lines(&rows, area, buf, skip_rows);
     }
 }
@@ -1088,6 +1083,7 @@ fn render_rule(area: Rect, buf: &mut Buffer) {
 
 /// Convert inline content to ratatui `Text`, respecting hard breaks and collapsing
 /// consecutive whitespace (including SoftBreak) into single spaces.
+#[cfg(test)]
 fn inlines_to_text(
     inlines: &[Inline],
     ctx: &RenderContext,
@@ -1121,7 +1117,10 @@ fn inlines_to_wrapped_lines(
             out.push((next_offset, Line::from(" ")));
             next_offset += 1;
         } else {
-            next_offset = wrapped.last().map(|(offset, _)| offset + 1).unwrap_or(next_offset);
+            next_offset = wrapped
+                .last()
+                .map(|(offset, _)| offset + 1)
+                .unwrap_or(next_offset);
             out.extend(wrapped);
         }
     }
@@ -1195,17 +1194,18 @@ fn append_span_text(spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
     if text.is_empty() {
         return;
     }
-    if let Some(last) = spans.last_mut() {
-        if last.style == style {
-            let mut merged = last.content.to_string();
-            merged.push_str(text);
-            last.content = merged.into();
-            return;
-        }
+    if let Some(last) = spans.last_mut()
+        && last.style == style
+    {
+        let mut merged = last.content.to_string();
+        merged.push_str(text);
+        last.content = merged.into();
+        return;
     }
     spans.push(Span::styled(text.to_string(), style));
 }
 
+#[cfg(test)]
 fn highlight_text(
     text: Text<'static>,
     query: Option<&str>,
@@ -2086,12 +2086,7 @@ mod tests {
         let inlines = vec![Inline::Text("aaa target".into())];
         let rows = inlines_to_wrapped_lines(&inlines, &ctx, ctx.theme.text, 0, 5);
         assert_eq!(rows.len(), 2);
-        let selected_styles: Vec<Style> = rows[1]
-            .1
-             .spans
-            .iter()
-            .map(|s| s.style)
-            .collect();
+        let selected_styles: Vec<Style> = rows[1].1.spans.iter().map(|s| s.style).collect();
         assert!(selected_styles.contains(&ctx.theme.search_match_selected));
     }
 
@@ -2119,10 +2114,7 @@ mod tests {
         let mut ctx = test_render_context();
         ctx.search_query = Some("line".to_string());
         ctx.selected_match_line_offset = Some(1);
-        let text = Text::from(vec![
-            Line::from("first"),
-            Line::from("second line"),
-        ]);
+        let text = Text::from(vec![Line::from("first"), Line::from("second line")]);
         let highlighted = highlight_text(
             text,
             Some("line"),
@@ -2131,16 +2123,9 @@ mod tests {
             Some(1),
             0,
         );
-        let first_styles: Vec<Style> = highlighted.lines[0]
-            .spans
-            .iter()
-            .map(|s| s.style)
-            .collect();
-        let second_styles: Vec<Style> = highlighted.lines[1]
-            .spans
-            .iter()
-            .map(|s| s.style)
-            .collect();
+        let first_styles: Vec<Style> = highlighted.lines[0].spans.iter().map(|s| s.style).collect();
+        let second_styles: Vec<Style> =
+            highlighted.lines[1].spans.iter().map(|s| s.style).collect();
         assert!(!first_styles.contains(&ctx.theme.search_match_selected));
         assert!(second_styles.contains(&ctx.theme.search_match_selected));
     }
