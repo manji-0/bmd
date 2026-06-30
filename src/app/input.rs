@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use crossterm::event::{Event, KeyEvent, KeyEventKind};
+use crossterm::event::{Event, KeyEvent, KeyEventKind, MouseEventKind};
 
 use crate::domain::SearchDirection;
 use crate::error::AppError;
@@ -17,6 +17,19 @@ use super::scroll::{
 impl App {
     pub(crate) fn handle_crossterm_event(&mut self, event: Event) -> Result<bool, AppError> {
         if let Event::Mouse(mouse) = &event {
+            if self.view_state.mode().is_normal() && !self.help_visible {
+                match mouse.kind {
+                    MouseEventKind::ScrollDown => {
+                        self.handle_command(Command::ScrollDown)?;
+                        return Ok(true);
+                    }
+                    MouseEventKind::ScrollUp => {
+                        self.handle_command(Command::ScrollUp)?;
+                        return Ok(true);
+                    }
+                    _ => {}
+                }
+            }
             return self.handle_mouse_event(mouse.column, mouse.row, mouse.kind);
         }
 
@@ -93,6 +106,18 @@ impl App {
         if std::env::var("BMD_DEBUG").is_ok() {
             eprintln!("[bmd debug] command: {:?}", command);
         }
+
+        if self.help_visible && self.view_state.mode().is_normal() {
+            match command {
+                Command::ToggleHelp | Command::SearchCancel => {
+                    self.help_visible = false;
+                }
+                Command::Quit => self.should_quit = true,
+                _ => {}
+            }
+            return Ok(());
+        }
+
         match command {
             Command::None => {}
             Command::ScrollDown => self.scroll_down(LINE_SCROLL_LINES),
@@ -123,6 +148,8 @@ impl App {
             Command::SearchCancel => self.cancel_search(),
             Command::SearchInput(c) => self.append_search_input(c),
             Command::SearchBackspace => self.backspace_search_input(),
+            Command::ToggleHelp => self.help_visible = true,
+            Command::ToggleChecklist => self.toggle_checklist_at_viewport(),
             Command::Quit => self.should_quit = true,
         }
         Ok(())

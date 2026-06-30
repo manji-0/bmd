@@ -58,4 +58,24 @@ impl App {
         self.document_cache.invalidate();
         Ok(true)
     }
+
+    pub(crate) fn toggle_checklist_at_viewport(&mut self) {
+        if !self.view_state.mode().is_normal() {
+            return;
+        }
+        if self.view_state.mode().preview_link().is_some() {
+            return;
+        }
+
+        let logical_row = self.scroll_visual.floor() as usize;
+        let ctx = self.render_context();
+        let width = self.view_state.terminal_size().width();
+
+        let Some(item) = checklist_at_click(&self.document, width, &ctx, logical_row, 0) else {
+            return;
+        };
+
+        self.checklist_state.toggle(item);
+        self.document_cache.invalidate();
+    }
 }

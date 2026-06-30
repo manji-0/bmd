@@ -7,6 +7,7 @@ mod layout;
 mod navigation;
 mod scroll;
 mod search;
+pub mod status;
 
 #[cfg(test)]
 mod tests;
@@ -23,7 +24,9 @@ use crate::error::AppError;
 use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
 
 use layout::terminal_size;
-use scroll::{ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED};
+use scroll::{
+    ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED, STATUS_MESSAGE_DURATION,
+};
 
 pub struct App {
     document: Document,
@@ -48,8 +51,11 @@ pub struct App {
     syntax_assets: SyntaxAssets,
     theme: Theme,
     checklist_state: ChecklistState,
+    source_label: Option<String>,
+    help_visible: bool,
+    status_message: Option<String>,
+    status_message_until: Option<Instant>,
     should_quit: bool,
-    error_message: Option<String>,
 }
 
 impl App {
@@ -57,14 +63,16 @@ impl App {
         document: Document,
         picker: Picker,
         base_path: Option<std::path::PathBuf>,
+        source_label: Option<String>,
     ) -> Result<Self, AppError> {
-        Self::new_with_terminal_size(document, picker, base_path, terminal_size()?)
+        Self::new_with_terminal_size(document, picker, base_path, source_label, terminal_size()?)
     }
 
     pub fn new_with_terminal_size(
         document: Document,
         picker: Picker,
         base_path: Option<std::path::PathBuf>,
+        source_label: Option<String>,
         terminal_size: TerminalSize,
     ) -> Result<Self, AppError> {
         let rendered =
@@ -88,9 +96,33 @@ impl App {
             syntax_assets: SyntaxAssets::new(),
             theme: Theme::default(),
             checklist_state: ChecklistState::new(ChecklistStyle::from_env()),
+            source_label,
+            help_visible: false,
+            status_message: None,
+            status_message_until: None,
             should_quit: false,
-            error_message: None,
         })
+    }
+
+    pub(crate) fn set_status_message(&mut self, msg: String) {
+        self.status_message = Some(msg);
+        self.status_message_until = Some(Instant::now() + STATUS_MESSAGE_DURATION);
+    }
+
+    pub(crate) fn tick_status_message(&mut self, now: Instant) {
+        if let Some(until) = self.status_message_until
+            && now >= until
+        {
+            self.status_message = None;
+            self.status_message_until = None;
+        }
+    }
+
+    pub(crate) fn content_height(&self) -> u16 {
+        layout::content_height(
+            self.view_state.terminal_size().height(),
+            self.view_state.mode(),
+        )
     }
 
     pub fn run<B: Backend>(mut self, terminal: &mut Terminal<B>) -> Result<(), AppError>
@@ -127,13 +159,11 @@ impl App {
             let animating = self.tick_scroll_animation(dt);
             let image_dirty = self.update_terminal_image_visibility(now);
             let awaiting_images = self.images_reenable_at.is_some();
+            self.tick_status_message(now);
 
             if dirty || animating || image_dirty {
                 self.draw_frame(terminal)?;
                 last_draw = now;
-                if self.error_message.is_some() {
-                    self.error_message = None;
-                }
             }
 
             let frame_budget = if animating || awaiting_images {

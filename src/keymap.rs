@@ -23,6 +23,8 @@ pub enum Command {
     SearchCancel,
     SearchInput(char),
     SearchBackspace,
+    ToggleHelp,
+    ToggleChecklist,
     Quit,
     None,
 }
@@ -70,6 +72,8 @@ fn map_normal_key(key: KeyEvent, normal_search: &NormalSearch) -> Command {
         KeyCode::Char('o') | KeyCode::Enter => Command::OpenLink,
         KeyCode::Char('/') => Command::StartSearchForward,
         KeyCode::Char('?') => Command::StartSearchBackward,
+        KeyCode::Char('h') => Command::ToggleHelp,
+        KeyCode::Char('x') => Command::ToggleChecklist,
         _ => Command::None,
     }
 }

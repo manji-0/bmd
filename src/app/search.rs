@@ -55,12 +55,12 @@ impl App {
                         let target = m.line_offset.min(max);
                         self.view_state = self.view_state.clone().scroll_to(target);
                     } else {
-                        self.error_message = Some("no matches found".to_string());
+                        self.set_status_message("no matches found".into());
                     }
                 }
             }
             Err(e) => {
-                self.error_message = Some(e.to_string());
+                self.set_status_message(e.to_string());
                 self.view_state = self.view_state.clone().cancel_search();
             }
         }

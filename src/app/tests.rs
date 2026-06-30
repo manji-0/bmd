@@ -14,7 +14,14 @@ fn test_terminal_size() -> TerminalSize {
 }
 
 fn new_test_app(document: Document) -> App {
-    App::new_with_terminal_size(document, Picker::halfblocks(), None, test_terminal_size()).unwrap()
+    App::new_with_terminal_size(
+        document,
+        Picker::halfblocks(),
+        None,
+        None,
+        test_terminal_size(),
+    )
+    .unwrap()
 }
 
 fn dummy_document() -> Document {
@@ -49,7 +56,7 @@ fn open_link_without_selection_records_error() {
     let doc = dummy_document();
     let mut app = new_test_app(doc);
     app.open_current_link();
-    assert!(app.error_message.is_some());
+    assert!(app.status_message.is_some());
 }
 
 #[test]
@@ -170,6 +177,20 @@ fn short_document_cannot_scroll() {
     let doc = parse(input).unwrap();
     let app = new_test_app(doc);
     assert_eq!(app.max_scroll(), 0);
+}
+
+#[test]
+fn next_link_scrolls_toward_link() {
+    let mut input = String::from("# Top\n\n");
+    for i in 0..80 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    input.push_str("[link at bottom](https://example.com)\n");
+    let doc = parse(&input).unwrap();
+    let mut app = new_test_app(doc);
+
+    app.next_link();
+    assert!(app.view_state.scroll().offset() > 0);
 }
 
 #[test]
