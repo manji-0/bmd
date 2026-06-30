@@ -1,5 +1,6 @@
 //! Application loop and state.
 
+use std::thread;
 use std::time::Duration;
 
 use crossterm::event;
@@ -16,9 +17,14 @@ use crate::domain::{Document, SearchDirection, SearchState, TerminalSize, ViewSt
 use crate::error::AppError;
 use crate::keymap::{Command, KeymapMode, map_event};
 use crate::render::{
-    MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme, find_search_matches,
-    measure_document_height,
+    CachedMarkdownView, DocumentRenderCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
+    find_search_matches, measure_document_height,
 };
+
+/// Per-frame lerp factor for scroll animation (0 < x <= 1).
+const SCROLL_ANIMATION_LERP: f32 = 0.35;
+/// Delay between animation frames while the visual scroll catches up to the target.
+const SCROLL_ANIMATION_FRAME: Duration = Duration::from_millis(8);
 
 #[cfg(test)]
 use crate::parse::parse;
@@ -27,6 +33,9 @@ pub struct App {
     document: Document,
     rendered: RenderedDocument,
     view_state: ViewState,
+    document_cache: DocumentRenderCache,
+    /// Animated scroll position; lerps toward `view_state.scroll().offset()`.
+    scroll_visual: f32,
     syntax_assets: SyntaxAssets,
     theme: Theme,
     should_quit: bool,
@@ -38,10 +47,13 @@ impl App {
         let size = terminal_size()?;
         let rendered = RenderedDocument::new(&document, &picker, size.width())?;
         let view_state = ViewState::new(size);
+        let scroll_visual = view_state.scroll().offset() as f32;
         Ok(Self {
             document,
             rendered,
             view_state,
+            document_cache: DocumentRenderCache::default(),
+            scroll_visual,
             syntax_assets: SyntaxAssets::new(),
             theme: Theme::default(),
             should_quit: false,
@@ -74,42 +86,62 @@ impl App {
                 break;
             }
 
-            terminal.draw(|f| {
-                let full_area = f.area();
-                let (main_area, prompt_area) = split_main_and_prompt(full_area, self.keymap_mode());
+            self.poll_terminal_resize()?;
 
-                let ctx = RenderContext::new(
-                    &self.theme,
-                    &self.syntax_assets.syntax_set,
-                    self.syntax_assets.theme(),
-                    &self.rendered,
-                    &self.view_state,
-                );
-                let widget = MarkdownWidget::new(&self.document, &ctx, &self.view_state);
-                f.render_widget(widget, main_area);
+            loop {
+                let animating = self.tick_scroll_animation();
 
-                if let Some(ref msg) = self.error_message {
-                    let popup = centered_rect(60, 20, main_area);
-                    f.render_widget(Clear, popup);
-                    let block = Block::bordered().title("Error");
-                    let para = Paragraph::new(msg.clone()).block(block);
-                    f.render_widget(para, popup);
-                }
+                terminal.draw(|f| {
+                    let full_area = f.area();
+                    let (main_area, prompt_area) =
+                        split_main_and_prompt(full_area, self.keymap_mode());
 
-                if let SearchState::Input { direction, query } = self.view_state.search_state() {
-                    let prefix = match direction {
-                        SearchDirection::Forward => "/",
-                        SearchDirection::Backward => "?",
+                    let ctx = RenderContext::new(
+                        &self.theme,
+                        &self.syntax_assets.syntax_set,
+                        self.syntax_assets.theme(),
+                        &self.rendered,
+                        &self.view_state,
+                    );
+                    let width = self.view_state.terminal_size().width();
+                    self.document_cache
+                        .ensure(&self.document, &ctx, &self.view_state, width);
+                    let scroll = self.display_scroll_offset();
+                    let widget = CachedMarkdownView {
+                        cache: &self.document_cache,
+                        scroll,
                     };
-                    let prompt = format!("{}{}", prefix, query);
-                    let para = Paragraph::new(prompt);
-                    f.render_widget(para, prompt_area);
-                }
-            })?;
+                    f.render_widget(widget, main_area);
 
-            // Auto-clear transient error messages after one rendered frame.
-            if self.error_message.is_some() {
-                self.error_message = None;
+                    if let Some(ref msg) = self.error_message {
+                        let popup = centered_rect(60, 20, main_area);
+                        f.render_widget(Clear, popup);
+                        let block = Block::bordered().title("Error");
+                        let para = Paragraph::new(msg.clone()).block(block);
+                        f.render_widget(para, popup);
+                    }
+
+                    if let SearchState::Input { direction, query } = self.view_state.search_state()
+                    {
+                        let prefix = match direction {
+                            SearchDirection::Forward => "/",
+                            SearchDirection::Backward => "?",
+                        };
+                        let prompt = format!("{}{}", prefix, query);
+                        let para = Paragraph::new(prompt);
+                        f.render_widget(para, prompt_area);
+                    }
+                })?;
+
+                // Auto-clear transient error messages after one rendered frame.
+                if self.error_message.is_some() {
+                    self.error_message = None;
+                }
+
+                if !animating {
+                    break;
+                }
+                thread::sleep(SCROLL_ANIMATION_FRAME);
             }
         }
         Ok(())
@@ -320,6 +352,35 @@ impl App {
             &self.view_state,
         )
     }
+
+    fn display_scroll_offset(&self) -> usize {
+        self.scroll_visual.round() as usize
+    }
+
+    /// Advance the visual scroll toward the logical target. Returns `true` while animating.
+    fn tick_scroll_animation(&mut self) -> bool {
+        let target = self.view_state.scroll().offset() as f32;
+        let delta = target - self.scroll_visual;
+        if delta.abs() < 0.5 {
+            self.scroll_visual = target;
+            return false;
+        }
+        self.scroll_visual += delta * SCROLL_ANIMATION_LERP;
+        true
+    }
+
+    fn poll_terminal_resize(&mut self) -> Result<(), AppError> {
+        let (width, height) = crossterm::terminal::size()?;
+        let size = TerminalSize::new(width, height).map_err(AppError::TerminalSize)?;
+        if size == self.view_state.terminal_size() {
+            return Ok(());
+        }
+        self.view_state = self.view_state.clone().resize(size);
+        let max = self.max_scroll();
+        let clamped = self.view_state.scroll().offset().min(max) as f32;
+        self.scroll_visual = clamped;
+        Ok(())
+    }
 }
 
 fn terminal_size() -> Result<TerminalSize, AppError> {
@@ -432,7 +493,13 @@ mod tests {
                     &app.rendered,
                     &app.view_state,
                 );
-                let widget = MarkdownWidget::new(&app.document, &ctx, &app.view_state);
+                let width = app.view_state.terminal_size().width();
+                let mut cache = DocumentRenderCache::default();
+                cache.ensure(&app.document, &ctx, &app.view_state, width);
+                let widget = CachedMarkdownView {
+                    cache: &cache,
+                    scroll: app.view_state.scroll().offset(),
+                };
                 f.render_widget(widget, f.area());
             })
             .unwrap();
