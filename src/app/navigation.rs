@@ -53,7 +53,18 @@ impl App {
         match self.view_state.selected_link() {
             Some(id) => {
                 if let Some(link) = self.document.links.get(id.0) {
-                    if let Err(e) = open_link(&link.url) {
+                    if link.kind.is_preview() {
+                        if self
+                            .rendered
+                            .preview_protocol(id.0, link.kind, link.url.as_str())
+                            .is_some()
+                        {
+                            self.view_state = self.view_state.clone().open_preview(id);
+                        } else {
+                            self.error_message =
+                                Some(format!("failed to load preview: {}", link.url.as_str()));
+                        }
+                    } else if let Err(e) = open_link(&link.url) {
                         self.error_message = Some(e.to_string());
                     }
                 } else {
@@ -62,6 +73,10 @@ impl App {
             }
             None => self.error_message = Some("no link selected".to_string()),
         }
+    }
+
+    pub(crate) fn close_preview(&mut self) {
+        self.view_state = self.view_state.clone().close_preview();
     }
 
     pub(crate) fn scroll_to_selected_link(&mut self) {

@@ -2,6 +2,7 @@
 
 use super::link::LinkId;
 use super::markdown::Document;
+use super::mode::{NormalSearch, UiMode};
 
 /// Terminal dimensions with the invariant that neither dimension is zero.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,39 +108,14 @@ impl SearchMatch {
     }
 }
 
-/// Search state with typed transitions.
-///
-/// Invalid transitions are modelled out by the `ViewState` API: callers can only
-/// mutate the query while in `Input`, and can only navigate matches while in
-/// `Active`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SearchState {
-    Inactive,
-    Input {
-        direction: SearchDirection,
-        query: String,
-    },
-    Active {
-        direction: SearchDirection,
-        query: SearchQuery,
-        matches: Vec<SearchMatch>,
-        current_index: usize,
-    },
-}
-
-impl SearchState {
-    pub const fn inactive() -> Self {
-        Self::Inactive
-    }
-}
-
 /// View state with typed transitions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewState {
     scroll: Scroll,
     selected_link: Option<LinkId>,
     terminal_size: TerminalSize,
-    search_state: SearchState,
+    mode: UiMode,
+    normal_search: NormalSearch,
 }
 
 impl ViewState {
@@ -148,8 +124,21 @@ impl ViewState {
             scroll: Scroll::new(),
             selected_link: None,
             terminal_size,
-            search_state: SearchState::inactive(),
+            mode: UiMode::normal(),
+            normal_search: NormalSearch::inactive(),
         }
+    }
+
+    pub fn mode(&self) -> &UiMode {
+        &self.mode
+    }
+
+    pub fn normal_search(&self) -> &NormalSearch {
+        &self.normal_search
+    }
+
+    pub fn is_search_active(&self) -> bool {
+        self.normal_search.is_active()
     }
 
     /// Scroll down by `n` lines, clamped to `max_scroll`.
@@ -216,65 +205,64 @@ impl ViewState {
     /// Any previously active search is discarded and the query input starts empty.
     pub fn start_search(self, direction: SearchDirection) -> Self {
         Self {
-            search_state: SearchState::Input {
+            mode: UiMode::SearchInput {
                 direction,
                 query: String::new(),
             },
+            normal_search: NormalSearch::inactive(),
             ..self
         }
     }
 
-    /// Cancel search input or an active search and return to normal navigation.
+    /// Cancel search input or clear an active search overlay.
     pub fn cancel_search(self) -> Self {
-        Self {
-            search_state: SearchState::Inactive,
-            ..self
+        match self.mode {
+            UiMode::SearchInput { .. } => Self {
+                mode: UiMode::Normal,
+                normal_search: NormalSearch::inactive(),
+                ..self
+            },
+            UiMode::Normal => Self {
+                normal_search: NormalSearch::inactive(),
+                ..self
+            },
+            UiMode::Preview { .. } => self,
         }
     }
 
     /// Append a character to the query while in search input mode.
-    ///
-    /// If the view is not in search input mode, this is a no-op.
     pub fn append_search_input(self, c: char) -> Self {
-        let search_state = match self.search_state {
-            SearchState::Input { direction, query } => {
+        let mode = match self.mode {
+            UiMode::SearchInput { direction, query } => {
                 let mut next = query;
                 next.push(c);
-                SearchState::Input {
+                UiMode::SearchInput {
                     direction,
                     query: next,
                 }
             }
             other => other,
         };
-        Self {
-            search_state,
-            ..self
-        }
+        Self { mode, ..self }
     }
 
     /// Remove the last character from the query while in search input mode.
-    ///
-    /// If the view is not in search input mode, this is a no-op.
     pub fn backspace_search_input(self) -> Self {
-        let search_state = match self.search_state {
-            SearchState::Input { direction, query } => {
+        let mode = match self.mode {
+            UiMode::SearchInput { direction, query } => {
                 let mut next = query;
                 next.pop();
-                SearchState::Input {
+                UiMode::SearchInput {
                     direction,
                     query: next,
                 }
             }
             other => other,
         };
-        Self {
-            search_state,
-            ..self
-        }
+        Self { mode, ..self }
     }
 
-    /// Confirm the current search query, build matches, and activate search.
+    /// Confirm the current search query, build matches, and return to normal mode.
     ///
     /// `matches` must be sorted by ascending `line_offset`. The first match that
     /// is at or after the current scroll offset is selected for forward searches;
@@ -283,13 +271,11 @@ impl ViewState {
     /// # Errors
     ///
     /// Returns `SearchQueryError::Empty` if the trimmed query is empty.
-    pub fn confirm_search(
-        self,
-        query: String,
-        direction: SearchDirection,
-        matches: Vec<SearchMatch>,
-    ) -> Result<Self, SearchQueryError> {
-        let query = SearchQuery::new(query)?;
+    pub fn confirm_search(self, matches: Vec<SearchMatch>) -> Result<Self, SearchQueryError> {
+        let UiMode::SearchInput { direction, query } = self.mode else {
+            return Ok(self);
+        };
+        let query = SearchQuery::new(query.trim().to_string())?;
         let current_index = if matches.is_empty() {
             0
         } else {
@@ -304,24 +290,44 @@ impl ViewState {
                     .unwrap_or(matches.len() - 1),
             }
         };
-        let search_state = SearchState::Active {
-            direction,
-            query,
-            matches,
-            current_index,
-        };
         Ok(Self {
-            search_state,
+            mode: UiMode::Normal,
+            normal_search: NormalSearch::Active {
+                direction,
+                query,
+                matches,
+                current_index,
+            },
             ..self
         })
     }
 
+    /// Open a floating preview for the given preview link.
+    pub fn open_preview(self, link_id: LinkId) -> Self {
+        Self {
+            mode: UiMode::Preview { link_id },
+            ..self
+        }
+    }
+
+    /// Close the floating preview and resume normal navigation.
+    pub fn close_preview(self) -> Self {
+        match self.mode {
+            UiMode::Preview { .. } => Self {
+                mode: UiMode::Normal,
+                ..self
+            },
+            other => Self {
+                mode: other,
+                ..self
+            },
+        }
+    }
+
     /// Move to the next search match and scroll to it.
-    ///
-    /// If no search is active, this is a no-op.
     pub fn next_search_match(self, max_scroll: usize) -> Self {
-        let (search_state, line_offset) = match self.search_state {
-            SearchState::Active {
+        let (normal_search, line_offset) = match self.normal_search {
+            NormalSearch::Active {
                 direction,
                 query,
                 matches,
@@ -329,7 +335,7 @@ impl ViewState {
             } => {
                 if matches.is_empty() {
                     (
-                        SearchState::Active {
+                        NormalSearch::Active {
                             direction,
                             query,
                             matches,
@@ -341,7 +347,7 @@ impl ViewState {
                     let next_index = (current_index + 1) % matches.len();
                     let line_offset = Some(matches[next_index].line_offset);
                     (
-                        SearchState::Active {
+                        NormalSearch::Active {
                             direction,
                             query,
                             matches,
@@ -360,18 +366,16 @@ impl ViewState {
             None => self.scroll,
         };
         Self {
-            search_state,
+            normal_search,
             scroll,
             ..self
         }
     }
 
     /// Move to the previous search match and scroll to it.
-    ///
-    /// If no search is active, this is a no-op.
     pub fn prev_search_match(self, max_scroll: usize) -> Self {
-        let (search_state, line_offset) = match self.search_state {
-            SearchState::Active {
+        let (normal_search, line_offset) = match self.normal_search {
+            NormalSearch::Active {
                 direction,
                 query,
                 matches,
@@ -379,7 +383,7 @@ impl ViewState {
             } => {
                 if matches.is_empty() {
                     (
-                        SearchState::Active {
+                        NormalSearch::Active {
                             direction,
                             query,
                             matches,
@@ -395,7 +399,7 @@ impl ViewState {
                     };
                     let line_offset = Some(matches[prev_index].line_offset);
                     (
-                        SearchState::Active {
+                        NormalSearch::Active {
                             direction,
                             query,
                             matches,
@@ -414,18 +418,10 @@ impl ViewState {
             None => self.scroll,
         };
         Self {
-            search_state,
+            normal_search,
             scroll,
             ..self
         }
-    }
-
-    pub fn search_state(&self) -> &SearchState {
-        &self.search_state
-    }
-
-    pub fn is_search_active(&self) -> bool {
-        matches!(self.search_state, SearchState::Active { .. })
     }
 
     pub fn select_next_link(self, document: &Document) -> Self {

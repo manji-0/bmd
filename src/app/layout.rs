@@ -2,9 +2,8 @@
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use crate::domain::TerminalSize;
+use crate::domain::{TerminalSize, UiMode};
 use crate::error::AppError;
-use crate::keymap::KeymapMode;
 
 pub(crate) fn terminal_size() -> Result<TerminalSize, AppError> {
     let (width, height) = crossterm::terminal::size()?;
@@ -13,9 +12,9 @@ pub(crate) fn terminal_size() -> Result<TerminalSize, AppError> {
 
 /// Split the terminal area into the main content area and a one-line prompt area
 /// when the application is in search input mode.
-pub(crate) fn split_main_and_prompt(area: Rect, mode: KeymapMode) -> (Rect, Rect) {
+pub(crate) fn split_main_and_prompt(area: Rect, mode: &UiMode) -> (Rect, Rect) {
     match mode {
-        KeymapMode::Search => {
+        UiMode::SearchInput { .. } => {
             let main_height = area.height.saturating_sub(1).max(1);
             let main = Rect {
                 x: area.x,
@@ -31,7 +30,7 @@ pub(crate) fn split_main_and_prompt(area: Rect, mode: KeymapMode) -> (Rect, Rect
             };
             (main, prompt)
         }
-        KeymapMode::Normal => (
+        UiMode::Preview { .. } | UiMode::Normal => (
             Rect {
                 x: area.x,
                 y: area.y,

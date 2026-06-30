@@ -11,17 +11,15 @@ use syntect::{easy::HighlightLines, util::LinesWithEndings};
 use unicode_width::UnicodeWidthStr;
 
 use super::context::RenderContext;
-use super::image::render_markdown_image;
 use super::inline::{heading_styles, highlight_line, inlines_to_wrapped_lines, syntect_span};
 use super::measure::measure_block_height;
-use super::mermaid::render_mermaid;
 use super::table::render_table;
 
 use crate::domain::{Block, CodeBlock, Heading, Inline, List};
 
 pub(crate) fn render_block(
     block: &Block,
-    block_idx: usize,
+    _block_idx: usize,
     area: Rect,
     buf: &mut Buffer,
     skip_rows: usize,
@@ -39,8 +37,6 @@ pub(crate) fn render_block(
         }
         Block::List(list) => render_list(list, area, buf, skip_rows, ctx, line_offset),
         Block::Table(table) => render_table(table, area, buf, skip_rows, ctx, line_offset),
-        Block::Mermaid(diag) => render_mermaid(diag, block_idx, area, buf, skip_rows, ctx),
-        Block::Image(img) => render_markdown_image(img, area, buf, skip_rows, ctx),
         Block::Rule => render_rule(area, buf),
     }
 }

@@ -1,8 +1,7 @@
 use super::App;
 use super::scroll::{is_line_scroll_key, line_scroll_command};
 use crate::domain::{
-    Document, Heading, HeadingLevel, Inline, Link, LinkUrl, SearchDirection, SearchState,
-    TerminalSize,
+    Document, Heading, HeadingLevel, Inline, Link, LinkKind, LinkUrl, SearchDirection, TerminalSize,
 };
 use crate::keymap::Command;
 use crate::parse::parse;
@@ -27,7 +26,9 @@ fn dummy_document() -> Document {
         links: vec![Link {
             url: LinkUrl::new("https://example.com".to_string()).unwrap(),
             title: None,
+            kind: LinkKind::Web,
         }],
+        mermaid_diagrams: vec![],
     }
 }
 
@@ -52,6 +53,19 @@ fn open_link_without_selection_records_error() {
 }
 
 #[test]
+fn preview_opens_and_closes() {
+    let doc = parse("```mermaid\ngraph TD; A-->B;\n```").unwrap();
+    let mut app = new_test_app(doc);
+
+    app.next_link();
+    app.open_current_link();
+    assert!(app.view_state.mode().is_preview());
+
+    app.close_preview();
+    assert!(app.view_state.mode().is_normal());
+}
+
+#[test]
 fn renders_document_to_test_backend() {
     let input = "# Title\n\nA paragraph with **bold** and [a link](https://example.com).\n\n| Name | Value |\n|------|-------|\n| A    | 1     |\n";
     let doc = parse(input).unwrap();
@@ -66,6 +80,7 @@ fn renders_document_to_test_backend() {
                 &app.syntax_assets.syntax_set,
                 app.syntax_assets.theme(),
                 &app.rendered,
+                &app.document.links,
                 &app.view_state,
                 app.show_terminal_images,
             );
@@ -168,10 +183,7 @@ fn search_command_flow_scrolls_to_match() {
     let mut app = new_test_app(doc);
 
     app.start_search(SearchDirection::Forward);
-    assert!(matches!(
-        app.view_state.search_state(),
-        SearchState::Input { .. }
-    ));
+    assert!(app.view_state.mode().is_search_input());
 
     for c in "target".chars() {
         app.append_search_input(c);

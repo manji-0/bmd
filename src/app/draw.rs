@@ -6,9 +6,11 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use crate::domain::{SearchDirection, SearchState};
+use crate::domain::{SearchDirection, UiMode};
 use crate::error::AppError;
-use crate::render::{CachedMarkdownView, RenderContext};
+use crate::render::{
+    CachedMarkdownView, PREVIEW_POPUP_PERCENT, RenderContext, render_floating_image,
+};
 
 use super::App;
 use super::layout::{centered_rect, split_main_and_prompt};
@@ -23,13 +25,14 @@ impl App {
     {
         terminal.draw(|f| {
             let full_area = f.area();
-            let (main_area, prompt_area) = split_main_and_prompt(full_area, self.keymap_mode());
+            let (main_area, prompt_area) = split_main_and_prompt(full_area, self.view_state.mode());
 
             let ctx = RenderContext::new(
                 &self.theme,
                 &self.syntax_assets.syntax_set,
                 self.syntax_assets.theme(),
                 &self.rendered,
+                &self.document.links,
                 &self.view_state,
                 self.show_terminal_images,
             );
@@ -42,6 +45,10 @@ impl App {
             };
             f.render_widget(widget, main_area);
 
+            if let Some(link_id) = self.view_state.mode().preview_link() {
+                self.draw_floating_preview(f, full_area, link_id);
+            }
+
             if let Some(ref msg) = self.error_message {
                 let popup = centered_rect(60, 20, main_area);
                 f.render_widget(Clear, popup);
@@ -50,7 +57,7 @@ impl App {
                 f.render_widget(para, popup);
             }
 
-            if let SearchState::Input { direction, query } = self.view_state.search_state() {
+            if let UiMode::SearchInput { direction, query } = self.view_state.mode() {
                 let prefix = match direction {
                     SearchDirection::Forward => "/",
                     SearchDirection::Backward => "?",
@@ -61,5 +68,40 @@ impl App {
             }
         })?;
         Ok(())
+    }
+
+    fn draw_floating_preview(
+        &self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        link_id: crate::domain::LinkId,
+    ) {
+        let Some(link) = self.document.links.get(link_id.0) else {
+            return;
+        };
+        if !link.kind.is_preview() {
+            return;
+        }
+
+        let popup = centered_rect(PREVIEW_POPUP_PERCENT, PREVIEW_POPUP_PERCENT, area);
+        frame.render_widget(Clear, popup);
+        let title = link
+            .title
+            .as_deref()
+            .unwrap_or(link.url.as_str())
+            .to_string();
+        let block = Block::bordered().title(title);
+        let inner = block.inner(popup);
+        frame.render_widget(block, popup);
+
+        if let Some(protocol) =
+            self.rendered
+                .preview_protocol(link_id.0, link.kind, link.url.as_str())
+        {
+            render_floating_image(protocol, inner, frame.buffer_mut());
+        } else {
+            let para = Paragraph::new(format!("[failed to load preview: {}]", link.url.as_str()));
+            frame.render_widget(para, inner);
+        }
     }
 }

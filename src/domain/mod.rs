@@ -7,17 +7,19 @@
 
 mod link;
 mod markdown;
+mod mode;
 mod view;
 
 #[cfg(test)]
 mod tests;
 
-pub use link::{DocumentError, Link, LinkId, LinkUrl, LinkUrlError};
+pub use link::{DocumentError, Link, LinkId, LinkKind, LinkUrl, LinkUrlError};
 pub use markdown::{
     Alignment, Block, CodeBlock, Document, Heading, HeadingLevel, Inline, List, ListItem,
-    MarkdownImage, MermaidDiagram, Table,
+    MermaidDiagram, Table,
 };
+pub use mode::{NormalSearch, UiMode};
 pub use view::{
-    Scroll, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, SearchState, TerminalSize,
+    Scroll, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, TerminalSize,
     TerminalSizeError, ViewState,
 };
