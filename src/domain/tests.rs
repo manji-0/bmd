@@ -1,7 +1,7 @@
 use super::{
-    Alignment, CodeBlock, Document, Heading, HeadingLevel, Inline, Link, LinkId, LinkUrl,
-    LinkUrlError, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, SearchState, Table,
-    TerminalSize, TerminalSizeError, ViewState,
+    Alignment, CodeBlock, Document, Heading, HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl,
+    LinkUrlError, NormalSearch, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, Table,
+    TerminalSize, TerminalSizeError, UiMode, ViewState,
 };
 
 #[test]
@@ -58,12 +58,15 @@ fn link_selection_wraps() {
             Link {
                 url: LinkUrl::new("a".to_string()).unwrap(),
                 title: None,
+                kind: LinkKind::Web,
             },
             Link {
                 url: LinkUrl::new("b".to_string()).unwrap(),
                 title: None,
+                kind: LinkKind::Web,
             },
         ],
+        mermaid_diagrams: vec![],
     };
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size);
@@ -156,8 +159,8 @@ fn view_state_starts_search_in_input_mode() {
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size).start_search(SearchDirection::Forward);
     assert!(matches!(
-        state.search_state(),
-        SearchState::Input {
+        state.mode(),
+        UiMode::SearchInput {
             direction: SearchDirection::Forward,
             query,
         } if query.is_empty()
@@ -173,8 +176,8 @@ fn view_state_appends_search_input() {
         .append_search_input('o')
         .append_search_input('o');
     assert!(matches!(
-        state.search_state(),
-        SearchState::Input { query, .. } if query == "foo"
+        state.mode(),
+        UiMode::SearchInput { query, .. } if query == "foo"
     ));
 }
 
@@ -188,22 +191,25 @@ fn view_state_backspace_search_input() {
         .append_search_input('r')
         .backspace_search_input();
     assert!(matches!(
-        state.search_state(),
-        SearchState::Input { query, .. } if query == "ba"
+        state.mode(),
+        UiMode::SearchInput { query, .. } if query == "ba"
     ));
 }
 
 #[test]
 fn view_state_confirms_search_selects_first_forward_match() {
     let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size).scroll_down(5, 100);
+    let state = ViewState::new(size)
+        .scroll_down(5, 100)
+        .start_search(SearchDirection::Forward)
+        .append_search_input('f')
+        .append_search_input('o')
+        .append_search_input('o');
     let matches = vec![SearchMatch::new(2, 0), SearchMatch::new(7, 1)];
-    let state = state
-        .confirm_search("foo".to_string(), SearchDirection::Forward, matches)
-        .unwrap();
+    let state = state.confirm_search(matches).unwrap();
     assert!(matches!(
-        state.search_state(),
-        SearchState::Active {
+        state.normal_search(),
+        NormalSearch::Active {
             current_index: 1,
             ..
         }
@@ -213,14 +219,17 @@ fn view_state_confirms_search_selects_first_forward_match() {
 #[test]
 fn view_state_confirms_search_selects_last_backward_match() {
     let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size).scroll_down(5, 100);
+    let state = ViewState::new(size)
+        .scroll_down(5, 100)
+        .start_search(SearchDirection::Backward)
+        .append_search_input('f')
+        .append_search_input('o')
+        .append_search_input('o');
     let matches = vec![SearchMatch::new(2, 0), SearchMatch::new(7, 1)];
-    let state = state
-        .confirm_search("foo".to_string(), SearchDirection::Backward, matches)
-        .unwrap();
+    let state = state.confirm_search(matches).unwrap();
     assert!(matches!(
-        state.search_state(),
-        SearchState::Active {
+        state.normal_search(),
+        NormalSearch::Active {
             current_index: 0,
             ..
         }
@@ -232,24 +241,37 @@ fn view_state_search_navigation_wraps() {
     let size = TerminalSize::new(80, 24).unwrap();
     let matches = vec![SearchMatch::new(1, 0), SearchMatch::new(3, 1)];
     let state = ViewState::new(size)
-        .confirm_search("foo".to_string(), SearchDirection::Forward, matches)
+        .start_search(SearchDirection::Forward)
+        .append_search_input('f')
+        .append_search_input('o')
+        .append_search_input('o')
+        .confirm_search(matches)
         .unwrap();
     let state = state.next_search_match(100);
     assert!(matches!(
-        state.search_state(),
-        SearchState::Active {
+        state.normal_search(),
+        NormalSearch::Active {
             current_index: 1,
             ..
         }
     ));
     let state = state.next_search_match(100);
     assert!(matches!(
-        state.search_state(),
-        SearchState::Active {
+        state.normal_search(),
+        NormalSearch::Active {
             current_index: 0,
             ..
         }
     ));
+}
+
+#[test]
+fn view_state_preview_transitions() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size).open_preview(LinkId(0));
+    assert!(state.mode().is_preview());
+    let state = state.close_preview();
+    assert!(state.mode().is_normal());
 }
 
 #[test]
@@ -258,5 +280,160 @@ fn view_state_cancel_search_returns_to_inactive() {
     let state = ViewState::new(size)
         .start_search(SearchDirection::Forward)
         .cancel_search();
-    assert!(matches!(state.search_state(), SearchState::Inactive));
+    assert!(matches!(state.normal_search(), NormalSearch::Inactive));
+    assert!(state.mode().is_normal());
+}
+
+#[test]
+fn ui_mode_helpers() {
+    let normal = UiMode::normal();
+    assert!(normal.is_normal());
+    assert!(!normal.is_search_input());
+    assert!(!normal.is_preview());
+    assert_eq!(normal.preview_link(), None);
+    assert_eq!(normal.search_input_query(), None);
+
+    let search = UiMode::SearchInput {
+        direction: SearchDirection::Backward,
+        query: "foo".to_string(),
+    };
+    assert!(search.is_search_input());
+    assert_eq!(
+        search.search_input_query(),
+        Some((&SearchDirection::Backward, "foo"))
+    );
+
+    let preview = UiMode::Preview { link_id: LinkId(3) };
+    assert!(preview.is_preview());
+    assert_eq!(preview.preview_link(), Some(LinkId(3)));
+}
+
+#[test]
+fn normal_search_active_flag() {
+    assert!(!NormalSearch::inactive().is_active());
+    let active = NormalSearch::Active {
+        direction: SearchDirection::Forward,
+        query: SearchQuery::new("x".to_string()).unwrap(),
+        matches: vec![],
+        current_index: 0,
+    };
+    assert!(active.is_active());
+}
+
+#[test]
+fn link_kind_preview_flag() {
+    assert!(!LinkKind::Web.is_preview());
+    assert!(LinkKind::Image.is_preview());
+    assert!(LinkKind::Mermaid.is_preview());
+}
+
+#[test]
+fn link_selection_prev_wraps() {
+    let doc = Document {
+        blocks: vec![],
+        links: vec![
+            Link {
+                url: LinkUrl::new("a".to_string()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            },
+            Link {
+                url: LinkUrl::new("b".to_string()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            },
+        ],
+        mermaid_diagrams: vec![],
+    };
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size).select_prev_link(&doc);
+    assert_eq!(state.selected_link(), Some(LinkId(1)));
+    let state = state.select_prev_link(&doc);
+    assert_eq!(state.selected_link(), Some(LinkId(0)));
+}
+
+#[test]
+fn clear_link_selection() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size)
+        .select_next_link(&Document {
+            blocks: vec![],
+            links: vec![Link {
+                url: LinkUrl::new("a".to_string()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            }],
+            mermaid_diagrams: vec![],
+        })
+        .clear_link_selection();
+    assert_eq!(state.selected_link(), None);
+}
+
+#[test]
+fn view_state_prev_search_match_wraps() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let matches = vec![SearchMatch::new(1, 0), SearchMatch::new(3, 1)];
+    let state = ViewState::new(size)
+        .start_search(SearchDirection::Forward)
+        .append_search_input('x')
+        .confirm_search(matches)
+        .unwrap();
+    let state = state.prev_search_match(100);
+    assert!(matches!(
+        state.normal_search(),
+        NormalSearch::Active {
+            current_index: 1,
+            ..
+        }
+    ));
+    let state = state.prev_search_match(100);
+    assert!(matches!(
+        state.normal_search(),
+        NormalSearch::Active {
+            current_index: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn half_page_scroll_uses_terminal_height() {
+    let size = TerminalSize::new(80, 20).unwrap();
+    let state = ViewState::new(size).half_page_down(100);
+    assert_eq!(state.scroll().offset(), 10);
+    let state = state.half_page_up();
+    assert_eq!(state.scroll().offset(), 0);
+}
+
+#[test]
+fn resize_preserves_scroll_offset() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size).scroll_down(5, 100);
+    let resized = TerminalSize::new(120, 40).unwrap();
+    let state = state.resize(resized);
+    assert_eq!(state.scroll().offset(), 5);
+    assert_eq!(state.terminal_size(), resized);
+}
+
+#[test]
+fn cancel_search_in_preview_is_noop() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size).open_preview(LinkId(0)).cancel_search();
+    assert!(state.mode().is_preview());
+}
+
+#[test]
+fn append_search_input_outside_search_mode_is_noop() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size).append_search_input('x');
+    assert!(state.mode().is_normal());
+}
+
+#[test]
+fn confirm_search_outside_search_input_is_noop() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size)
+        .confirm_search(vec![SearchMatch::new(0, 0)])
+        .unwrap();
+    assert!(matches!(state.normal_search(), NormalSearch::Inactive));
 }

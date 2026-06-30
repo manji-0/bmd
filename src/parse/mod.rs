@@ -19,6 +19,6 @@ pub fn parse(markdown: &str) -> Result<Document, AppError> {
     let parser = Parser::new_ext(markdown, Options::all());
     let mut state = ParserState::new(parser);
     state.run()?;
-    let (blocks, links) = state.into_parts();
-    Document::new(blocks, links).map_err(AppError::Document)
+    let (blocks, links, mermaid_diagrams) = state.into_parts();
+    Document::new(blocks, links, mermaid_diagrams).map_err(AppError::Document)
 }

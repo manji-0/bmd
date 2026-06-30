@@ -65,12 +65,8 @@ impl App {
         base_path: Option<std::path::PathBuf>,
         terminal_size: TerminalSize,
     ) -> Result<Self, AppError> {
-        let rendered = RenderedDocument::new(
-            &document,
-            &picker,
-            terminal_size.width(),
-            base_path.as_deref(),
-        )?;
+        let rendered =
+            RenderedDocument::new(&document, &picker, terminal_size, base_path.as_deref())?;
         let view_state = ViewState::new(terminal_size);
         let scroll_visual = view_state.scroll().offset() as f32;
         let now = Instant::now();

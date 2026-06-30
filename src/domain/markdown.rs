@@ -9,6 +9,7 @@ use super::link::{DocumentError, Link, LinkId};
 pub struct Document {
     pub blocks: Vec<Block>,
     pub links: Vec<Link>,
+    pub mermaid_diagrams: Vec<MermaidDiagram>,
 }
 
 impl Document {
@@ -17,8 +18,16 @@ impl Document {
     /// # Errors
     ///
     /// Returns `DocumentError::DanglingLink` if an inline references a link id that does not exist.
-    pub fn new(blocks: Vec<Block>, links: Vec<Link>) -> Result<Self, DocumentError> {
-        let doc = Self { blocks, links };
+    pub fn new(
+        blocks: Vec<Block>,
+        links: Vec<Link>,
+        mermaid_diagrams: Vec<MermaidDiagram>,
+    ) -> Result<Self, DocumentError> {
+        let doc = Self {
+            blocks,
+            links,
+            mermaid_diagrams,
+        };
         doc.validate_links()?;
         Ok(doc)
     }
@@ -43,7 +52,7 @@ impl Document {
             }) => {
                 Self::validate_inlines_links(inlines, block_idx, link_count)?;
             }
-            Block::CodeBlock(_) | Block::Mermaid(_) | Block::Image(_) | Block::Rule => {}
+            Block::CodeBlock(_) | Block::Rule => {}
             Block::BlockQuote(blocks) => {
                 for child in blocks {
                     Self::validate_block_links(child, block_idx, link_count)?;
@@ -104,8 +113,6 @@ pub enum Block {
     BlockQuote(Vec<Block>),
     List(List),
     Table(Table),
-    Mermaid(MermaidDiagram),
-    Image(MarkdownImage),
     Rule,
 }
 
@@ -297,13 +304,6 @@ pub enum Alignment {
     Left,
     Center,
     Right,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MarkdownImage {
-    pub src: String,
-    pub alt: String,
-    pub title: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

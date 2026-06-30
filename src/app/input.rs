@@ -4,9 +4,9 @@ use std::time::Instant;
 
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 
-use crate::domain::{SearchDirection, SearchState};
+use crate::domain::SearchDirection;
 use crate::error::AppError;
-use crate::keymap::{Command, KeymapMode, map_event};
+use crate::keymap::{Command, map_event};
 
 use super::App;
 use super::scroll::{
@@ -17,7 +17,7 @@ use super::scroll::{
 impl App {
     pub(crate) fn handle_crossterm_event(&mut self, event: Event) -> Result<bool, AppError> {
         if let Event::Key(key) = &event {
-            if self.keymap_mode() == KeymapMode::Normal {
+            if self.view_state.mode().is_normal() {
                 if is_line_scroll_key(&key.code) {
                     return self.handle_line_scroll_key(key);
                 }
@@ -29,7 +29,7 @@ impl App {
                 return Ok(false);
             }
             if key.kind == KeyEventKind::Repeat
-                && self.keymap_mode() == KeymapMode::Normal
+                && self.view_state.mode().is_normal()
                 && is_single_press_key(&key.code)
                 && !is_line_scroll_key(&key.code)
             {
@@ -37,8 +37,11 @@ impl App {
             }
         }
 
-        let mode = self.keymap_mode();
-        let command = map_event(event, mode, self.view_state.is_search_active());
+        let command = map_event(
+            event,
+            self.view_state.mode(),
+            self.view_state.normal_search(),
+        );
         if self.is_quit(&command) {
             self.should_quit = true;
             return Ok(true);
@@ -109,6 +112,7 @@ impl App {
                 }
             }
             Command::OpenLink => self.open_current_link(),
+            Command::ClosePreview => self.close_preview(),
             Command::StartSearchForward => self.start_search(SearchDirection::Forward),
             Command::StartSearchBackward => self.start_search(SearchDirection::Backward),
             Command::SearchConfirm => self.confirm_search(),
@@ -122,12 +126,5 @@ impl App {
 
     pub(crate) fn is_quit(&self, command: &Command) -> bool {
         matches!(command, Command::Quit)
-    }
-
-    pub(crate) fn keymap_mode(&self) -> KeymapMode {
-        match self.view_state.search_state() {
-            SearchState::Input { .. } => KeymapMode::Search,
-            _ => KeymapMode::Normal,
-        }
     }
 }

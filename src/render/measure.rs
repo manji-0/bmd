@@ -5,9 +5,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::{Block, CodeBlock, Document, Heading, Inline, List, Table};
 
 use super::context::RenderContext;
-use super::image::measure_image_height;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
-use super::mermaid::measure_mermaid_height;
 use super::table::{allocate_column_widths, wrap_cell_inlines};
 
 /// Total logical height of the whole document, including one-row gaps between
@@ -38,7 +36,7 @@ pub fn measure_document_height(document: &Document, width: u16, ctx: &RenderCont
 /// overshoot the document.
 pub fn measure_block_height(
     block: &Block,
-    block_idx: usize,
+    _block_idx: usize,
     width: u16,
     ctx: &RenderContext,
 ) -> usize {
@@ -52,8 +50,6 @@ pub fn measure_block_height(
         Block::BlockQuote(blocks) => measure_blockquote_height(blocks, width, ctx),
         Block::List(list) => measure_list_height(list, width, ctx),
         Block::Table(table) => measure_table_height(table, width, ctx),
-        Block::Mermaid(_) => measure_mermaid_height(ctx, block_idx, width),
-        Block::Image(img) => measure_image_height(img, ctx, width),
         Block::Rule => 1,
     }
 }

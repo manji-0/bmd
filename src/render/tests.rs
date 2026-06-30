@@ -31,14 +31,16 @@ fn test_render_context() -> RenderContext<'static> {
         ThemeSet::load_defaults().themes["InspiredGitHub"].clone(),
     ));
     let rendered: &'static RenderedDocument = Box::leak(Box::new(RenderedDocument {
-        images: HashMap::new(),
+        mermaid_images: HashMap::new(),
         markdown_images: HashMap::new(),
     }));
+    let links: &'static [crate::domain::Link] = Box::leak(Box::new([]));
     RenderContext {
         theme,
         syntax_set,
         syntax_theme,
         rendered,
+        links,
         selected_link: None,
         search_query: None,
         selected_search_match: None,
@@ -84,7 +86,7 @@ fn document_render_cache_blits_fractional_scroll() {
     let blocks: Vec<Block> = (0..20)
         .map(|i| Block::Paragraph(vec![Inline::Text(format!("line {i}"))]))
         .collect();
-    let document = Document::new(blocks, Vec::new()).unwrap();
+    let document = Document::new(blocks, Vec::new(), Vec::new()).unwrap();
     let width = 40u16;
     let height = 5u16;
     let size = TerminalSize::new(width, height).unwrap();
@@ -112,7 +114,7 @@ fn document_render_cache_blits_scrolled_viewport() {
     let blocks: Vec<Block> = (0..20)
         .map(|i| Block::Paragraph(vec![Inline::Text(format!("line {i}"))]))
         .collect();
-    let document = Document::new(blocks, Vec::new()).unwrap();
+    let document = Document::new(blocks, Vec::new(), Vec::new()).unwrap();
     let width = 40u16;
     let height = 5u16;
     let size = TerminalSize::new(width, height).unwrap();
@@ -147,6 +149,7 @@ fn document_render_cache_rebuilds_on_width_change() {
             "hello world with enough words to wrap when the terminal is narrow".to_string(),
         )])],
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
     let size = TerminalSize::new(80, 10).unwrap();
@@ -169,6 +172,7 @@ fn find_search_matches_finds_text_in_paragraphs() {
             Block::Paragraph(vec![Inline::Text("hello again".to_string())]),
         ],
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
     let matches = find_matches(&document, 80, "hello");
@@ -184,6 +188,7 @@ fn find_search_matches_is_case_insensitive() {
             "Hello World".to_string(),
         )])],
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
     let matches = find_matches(&document, 80, "world");
@@ -198,6 +203,7 @@ fn find_search_matches_searches_code_blocks() {
             content: "fn main() {}".to_string(),
         })],
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
     let matches = find_matches(&document, 80, "main");
@@ -209,6 +215,7 @@ fn find_search_matches_empty_query_returns_no_matches() {
     let document = Document::new(
         vec![Block::Paragraph(vec![Inline::Text("hello".to_string())])],
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
     assert!(find_matches(&document, 80, "").is_empty());
@@ -218,6 +225,7 @@ fn find_search_matches_empty_query_returns_no_matches() {
 fn find_search_matches_zero_width_returns_no_matches() {
     let document = Document::new(
         vec![Block::Paragraph(vec![Inline::Text("hello".to_string())])],
+        Vec::new(),
         Vec::new(),
     )
     .unwrap();
@@ -232,6 +240,7 @@ fn find_search_matches_respects_hard_breaks() {
             Inline::HardBreak,
             Inline::Text("second".to_string()),
         ])],
+        Vec::new(),
         Vec::new(),
     )
     .unwrap();
@@ -259,6 +268,7 @@ fn find_search_matches_list_offsets_exclude_inner_gaps() {
             ],
         })],
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
     let matches = find_matches(&document, 80, "gamma");
@@ -276,6 +286,7 @@ fn find_search_matches_blockquote_includes_padding() {
             )])]),
             Block::Paragraph(vec![Inline::Text("after".to_string())]),
         ],
+        Vec::new(),
         Vec::new(),
     )
     .unwrap();
@@ -297,6 +308,7 @@ fn find_search_matches_table_includes_borders() {
             Block::Paragraph(vec![Inline::Text("after".to_string())]),
         ],
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
     let matches = find_matches(&document, 80, "after");
@@ -315,6 +327,7 @@ fn selected_search_match_renders_selected_style_in_buffer() {
             Block::Paragraph(vec![Inline::Text("beta needle here".to_string())]),
         ],
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
 
@@ -325,7 +338,14 @@ fn selected_search_match_renders_selected_style_in_buffer() {
 
     let size = TerminalSize::new(width, height).unwrap();
     let view_state = ViewState::new(size)
-        .confirm_search("needle".to_string(), SearchDirection::Forward, matches)
+        .start_search(SearchDirection::Forward)
+        .append_search_input('n')
+        .append_search_input('e')
+        .append_search_input('e')
+        .append_search_input('d')
+        .append_search_input('l')
+        .append_search_input('e')
+        .confirm_search(matches)
         .unwrap()
         .next_search_match(1000)
         .scroll_to(0);
@@ -335,6 +355,7 @@ fn selected_search_match_renders_selected_style_in_buffer() {
         ctx_base.syntax_set,
         ctx_base.syntax_theme,
         ctx_base.rendered,
+        ctx_base.links,
         &view_state,
         true,
     );
@@ -646,7 +667,7 @@ fn long_document_renders_last_block_at_bottom_scroll() {
     let blocks: Vec<Block> = (0..50)
         .map(|i| Block::Paragraph(vec![Inline::Text(format!("Paragraph {i}"))]))
         .collect();
-    let document = Document::new(blocks, Vec::new()).unwrap();
+    let document = Document::new(blocks, Vec::new(), Vec::new()).unwrap();
     let size = TerminalSize::new(80, 10).unwrap();
     let total_height = measure_document_height(&document, 80, &ctx);
     let max_scroll = total_height.saturating_sub(size.height() as usize);

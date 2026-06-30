@@ -1,6 +1,6 @@
 //! Inline content accumulation.
 
-use crate::domain::{Inline, Link, LinkId, LinkUrl};
+use crate::domain::{Inline, Link, LinkId, LinkKind, LinkUrl};
 use crate::error::AppError;
 
 #[derive(Debug)]
@@ -120,13 +120,20 @@ impl InlineParser {
         self.output.is_empty() && self.stack.is_empty()
     }
 
-    pub(crate) fn start_link(&mut self, links: &mut Vec<Link>, dest_url: String, title: String) {
+    pub(crate) fn start_link(
+        &mut self,
+        links: &mut Vec<Link>,
+        dest_url: String,
+        title: String,
+        kind: LinkKind,
+    ) {
         match LinkUrl::new(dest_url) {
             Ok(url) => {
                 let id = LinkId(links.len());
                 links.push(Link {
                     url,
                     title: if title.is_empty() { None } else { Some(title) },
+                    kind,
                 });
                 self.stack.push(InlineFrame::Link(id, Vec::new()));
             }

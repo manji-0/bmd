@@ -12,10 +12,24 @@ impl fmt::Display for LinkId {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkKind {
+    Web,
+    Image,
+    Mermaid,
+}
+
+impl LinkKind {
+    pub fn is_preview(self) -> bool {
+        matches!(self, Self::Image | Self::Mermaid)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link {
     pub url: LinkUrl,
     pub title: Option<String>,
+    pub kind: LinkKind,
 }
 
 /// A non-empty URL string.
