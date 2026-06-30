@@ -1,0 +1,51 @@
+//! Link value objects and validation errors.
+
+use std::fmt;
+
+/// Opaque identifier for a link stored in `Document.links`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LinkId(pub usize);
+
+impl fmt::Display for LinkId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Link {
+    pub url: LinkUrl,
+    pub title: Option<String>,
+}
+
+/// A non-empty URL string.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct LinkUrl(String);
+
+impl LinkUrl {
+    /// # Errors
+    ///
+    /// Returns `LinkUrlError::Empty` if the value is empty or whitespace only.
+    pub fn new(value: String) -> Result<Self, LinkUrlError> {
+        if value.trim().is_empty() {
+            return Err(LinkUrlError::Empty);
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum LinkUrlError {
+    #[error("link URL cannot be empty")]
+    Empty,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum DocumentError {
+    #[error("dangling link {link_id} in block {block_index}")]
+    DanglingLink { block_index: usize, link_id: LinkId },
+}
