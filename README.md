@@ -14,46 +14,49 @@ A TUI markdown viewer for the terminal, built with Rust.
 
 ## Requirements
 
-- Rust 1.92+ (see `rust-toolchain.toml`)
+- [devbox](https://www.jetify.com/devbox) (recommended; provides Rust 1.92, clang, sccache, prek)
 - macOS (for the `open` browser launcher; the viewer itself is portable Rust)
 - A terminal that supports one of the image protocols for the best mermaid experience (Ghostty, Kitty, iTerm2, WezTerm, etc.)
 
 ## Quick start
 
 ```bash
-cargo build --release
+devbox run setup
+devbox run build-release
 ./target/release/bmd sample.md
 ```
 
 ## Build
 
-```bash
-cargo build --release
-```
-
-On macOS, if your default `cc` is not Apple clang, use:
+Use devbox for all builds so linker flags, `CARGO_HOME`, and sccache stay consistent:
 
 ```bash
-RUSTFLAGS="-C linker=clang" cargo build --release
+devbox run build          # debug
+devbox run build-release  # release
 ```
+
+Without devbox you must set `RUSTFLAGS="-C linker=clang"` on macOS when the default `cc` is not Apple clang. Mixing devbox and plain `cargo` invalidates incremental artifacts because `RUSTFLAGS` differ.
 
 ## Development
 
-This project uses [devbox](https://www.jetify.com/devbox) for a reproducible toolchain (Rust 1.92, clang, prek).
+This project uses [devbox](https://www.jetify.com/devbox) for a reproducible toolchain (Rust 1.92, clang, sccache, prek).
 
 ```bash
 devbox shell
-devbox run setup      # install toolchain and fetch dependencies
-devbox run build      # debug build
+devbox run setup        # install toolchain and fetch dependencies
+devbox run build        # debug build
 devbox run build-release
 devbox run test
 devbox run run -- sample.md
 devbox run clippy
 devbox run fmt
-devbox run prek       # run pre-commit hooks
+devbox run prek         # run pre-commit hooks
+devbox run cache-stats  # sccache hit rate and size
 ```
 
-`devbox.json` sets `RUSTFLAGS="-C linker=clang"` and local `RUSTUP_HOME` / `CARGO_HOME` under the project directory.
+`devbox.json` sets project-local `RUSTUP_HOME`, `CARGO_HOME`, and `SCCACHE_DIR`, plus `RUSTFLAGS="-C linker=clang"` and `RUSTC_WRAPPER=sccache`. Build artifacts live in `target/`; rustc compilations are also cached in `.sccache/`.
+
+Run builds from a normal terminal (not a sandboxed IDE shell) so `target/` is reused. Some editor sandboxes redirect `CARGO_TARGET_DIR` to a temp directory, which makes every build look like a cold start.
 
 ## Usage
 

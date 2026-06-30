@@ -2,4 +2,5 @@
 /.pi
 /.rustup
 /.cargo
+/.sccache
 /.devbox
