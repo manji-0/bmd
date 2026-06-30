@@ -31,14 +31,14 @@ impl App {
                 self.syntax_assets.theme(),
                 &self.rendered,
                 &self.view_state,
+                self.show_terminal_images,
             );
             let width = self.view_state.terminal_size().width();
             self.document_cache
                 .ensure(&self.document, &ctx, &self.view_state, width);
-            let scroll = self.display_scroll_offset();
             let widget = CachedMarkdownView {
                 cache: &self.document_cache,
-                scroll,
+                scroll: self.scroll_visual,
             };
             f.render_widget(widget, main_area);
 

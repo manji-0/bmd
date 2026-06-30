@@ -122,6 +122,10 @@ pub(crate) fn render_markdown_image(
     _skip_rows: usize,
     ctx: &RenderContext,
 ) {
+    if !ctx.show_terminal_images {
+        return;
+    }
+
     if let Some(protocol) = ctx.rendered.markdown_images.get(&img.src) {
         let image = ratatui_image::Image::new(protocol).allow_clipping(true);
         image.render(area, buf);

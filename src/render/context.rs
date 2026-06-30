@@ -21,6 +21,8 @@ pub struct RenderContext<'a> {
     pub search_query: Option<String>,
     pub selected_search_match: Option<usize>,
     pub selected_match_line_offset: Option<usize>,
+    /// When false, mermaid and markdown images render as blank space (scroll perf).
+    pub show_terminal_images: bool,
 }
 
 impl<'a> RenderContext<'a> {
@@ -30,6 +32,7 @@ impl<'a> RenderContext<'a> {
         syntax_theme: &'a SyntectTheme,
         rendered: &'a RenderedDocument,
         view_state: &'a ViewState,
+        show_terminal_images: bool,
     ) -> Self {
         Self {
             theme,
@@ -40,6 +43,7 @@ impl<'a> RenderContext<'a> {
             search_query: active_search_query(view_state.search_state()),
             selected_search_match: active_search_match_index(view_state.search_state()),
             selected_match_line_offset: active_search_match_line_offset(view_state.search_state()),
+            show_terminal_images,
         }
     }
 }

@@ -43,6 +43,7 @@ fn test_render_context() -> RenderContext<'static> {
         search_query: None,
         selected_search_match: None,
         selected_match_line_offset: None,
+        show_terminal_images: true,
     }
 }
 
@@ -78,6 +79,34 @@ fn find_matches(document: &Document, width: u16, query: &str) -> Vec<SearchMatch
 }
 
 #[test]
+fn document_render_cache_blits_fractional_scroll() {
+    let ctx = test_render_context();
+    let blocks: Vec<Block> = (0..20)
+        .map(|i| Block::Paragraph(vec![Inline::Text(format!("line {i}"))]))
+        .collect();
+    let document = Document::new(blocks, Vec::new()).unwrap();
+    let width = 40u16;
+    let height = 5u16;
+    let size = TerminalSize::new(width, height).unwrap();
+    let view_state = ViewState::new(size);
+
+    let mut cache = DocumentRenderCache::default();
+    cache.ensure(&document, &ctx, &view_state, width);
+
+    let mut integer = Buffer::empty(Rect::new(0, 0, width, height));
+    cache.blit(7.0, Rect::new(0, 0, width, height), &mut integer);
+
+    let mut fractional = Buffer::empty(Rect::new(0, 0, width, height));
+    cache.blit(7.25, Rect::new(0, 0, width, height), &mut fractional);
+
+    assert_ne!(
+        integer[(0, 0)].symbol(),
+        fractional[(0, 0)].symbol(),
+        "fractional scroll should composite adjacent rows"
+    );
+}
+
+#[test]
 fn document_render_cache_blits_scrolled_viewport() {
     let ctx = test_render_context();
     let blocks: Vec<Block> = (0..20)
@@ -95,7 +124,7 @@ fn document_render_cache_blits_scrolled_viewport() {
     // Logical layout: line N sits at offset N * 2 - 1 (gap row follows each block).
     let scroll = 7;
     let mut screen = Buffer::empty(Rect::new(0, 0, width, height));
-    cache.blit(scroll, Rect::new(0, 0, width, height), &mut screen);
+    cache.blit(7.0, Rect::new(0, 0, width, height), &mut screen);
 
     let row0: String = (0..width)
         .map(|x| {
@@ -307,6 +336,7 @@ fn selected_search_match_renders_selected_style_in_buffer() {
         ctx_base.syntax_theme,
         ctx_base.rendered,
         &view_state,
+        true,
     );
 
     let backend = TestBackend::new(width, height);

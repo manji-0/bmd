@@ -92,6 +92,10 @@ pub(crate) fn render_mermaid(
     skip_rows: usize,
     ctx: &RenderContext,
 ) {
+    if !ctx.show_terminal_images {
+        return;
+    }
+
     if let Some(protocol) = ctx.rendered.images.get(&block_idx) {
         // If partially scrolled, render with clipping.
         let image = ratatui_image::Image::new(protocol).allow_clipping(true);

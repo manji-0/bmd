@@ -6,6 +6,7 @@ use crate::domain::{Document, LinkId, ViewState};
 
 use super::context::RenderContext;
 use super::measure::measure_document_height;
+use super::subpixel::{SUBPIXEL_SNAP, compose_cells_vertical};
 use super::widget::MarkdownWidget;
 
 /// Key for invalidating a pre-rendered document buffer.
@@ -15,6 +16,7 @@ struct RenderCacheKey {
     search_query: Option<String>,
     selected_link: Option<LinkId>,
     selected_match_line_offset: Option<usize>,
+    show_terminal_images: bool,
 }
 
 impl RenderCacheKey {
@@ -24,6 +26,7 @@ impl RenderCacheKey {
             search_query: ctx.search_query.clone(),
             selected_link: ctx.selected_link,
             selected_match_line_offset: ctx.selected_match_line_offset,
+            show_terminal_images: ctx.show_terminal_images,
         }
     }
 }
@@ -81,24 +84,56 @@ impl DocumentRenderCache {
         self.total_height = total_height;
     }
 
+    /// Drop the cached buffer so the next `ensure` rebuilds it.
+    pub(crate) fn invalidate(&mut self) {
+        self.key = None;
+    }
+
     pub fn total_height(&self) -> usize {
         self.total_height
     }
 
-    /// Copy the visible viewport starting at `scroll` into `buf`.
-    pub fn blit(&self, scroll: usize, area: Rect, buf: &mut Buffer) {
+    /// Copy the visible viewport starting at fractional `scroll` into `buf`.
+    pub fn blit(&self, scroll: f32, area: Rect, buf: &mut Buffer) {
         if area.width == 0 || area.height == 0 {
             return;
         }
+        let scroll = scroll.max(0.0);
         let cache_height = self.buffer.area().height as usize;
+        let width = area.width as usize;
+
         for row in 0..area.height as usize {
-            let src_y = scroll.saturating_add(row);
-            if src_y >= cache_height {
+            let src = scroll + row as f32;
+            let src_i = src.floor() as usize;
+            let frac = src - src_i as f32;
+            if src_i >= cache_height {
                 break;
             }
-            for col in 0..area.width as usize {
-                if let Some(cell) = self.buffer.cell((col as u16, src_y as u16)) {
-                    buf[(area.x + col as u16, area.y + row as u16)] = cell.clone();
+
+            for col in 0..width {
+                let dest = (area.x + col as u16, area.y + row as u16);
+                let top = self.buffer.cell((col as u16, src_i as u16));
+
+                if frac < SUBPIXEL_SNAP {
+                    if let Some(cell) = top {
+                        buf[dest] = cell.clone();
+                    }
+                    continue;
+                }
+
+                if src_i + 1 >= cache_height {
+                    if let Some(cell) = top {
+                        buf[dest] = cell.clone();
+                    }
+                    continue;
+                }
+
+                let bottom = self.buffer.cell((col as u16, (src_i + 1) as u16));
+                match (top, bottom) {
+                    (Some(t), Some(b)) => buf[dest] = compose_cells_vertical(t, b, frac),
+                    (Some(t), None) => buf[dest] = t.clone(),
+                    (None, Some(b)) => buf[dest] = b.clone(),
+                    (None, None) => {}
                 }
             }
         }
@@ -108,7 +143,7 @@ impl DocumentRenderCache {
 /// Widget that blits a pre-rendered [`DocumentRenderCache`] viewport.
 pub struct CachedMarkdownView<'a> {
     pub cache: &'a DocumentRenderCache,
-    pub scroll: usize,
+    pub scroll: f32,
 }
 
 impl Widget for CachedMarkdownView<'_> {

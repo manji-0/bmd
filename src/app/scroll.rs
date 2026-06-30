@@ -1,22 +1,25 @@
 //! Scroll animation, bounds, and line-scroll key helpers.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 
 use crate::domain::TerminalSize;
 use crate::error::AppError;
 use crate::keymap::Command;
+use crate::render::subpixel::SUBPIXEL_SNAP;
 use crate::render::{RenderContext, measure_document_height};
 
 use super::App;
 
+pub(crate) const IMAGE_REENABLE_DELAY: Duration = Duration::from_millis(100);
 pub(crate) const SCROLL_REPEAT_DELAY: Duration = Duration::from_millis(180);
 pub(crate) const SCROLL_REPEAT_INTERVAL: Duration = Duration::from_millis(33);
 pub(crate) const ACTIVE_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 pub(crate) const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(50);
 pub(crate) const SCROLL_ANIM_SPEED: f32 = 20.0;
-pub(crate) const HALF_PAGE_SCROLL_ANIM_SPEED: f32 = 80.0;
+/// Exponential smoothing rate for half-page scroll (higher = faster convergence).
+pub(crate) const HALF_PAGE_SCROLL_ANIM_SPEED: f32 = 140.0;
 pub(crate) const LINE_SCROLL_LINES: usize = 2;
 
 impl App {
@@ -40,37 +43,63 @@ impl App {
             self.syntax_assets.theme(),
             &self.rendered,
             &self.view_state,
+            self.show_terminal_images,
         )
     }
 
-    pub(crate) fn display_scroll_offset(&self) -> usize {
-        self.scroll_visual.round() as usize
+    /// Hide terminal images while scroll position changes; show again after idle.
+    ///
+    /// Returns `true` when image visibility toggled and the frame should redraw.
+    pub(crate) fn update_terminal_image_visibility(&mut self, now: Instant) -> bool {
+        let scroll_pos = self.scroll_visual;
+        let mut dirty = false;
+
+        if (scroll_pos - self.tracked_scroll_position).abs() >= SUBPIXEL_SNAP {
+            self.tracked_scroll_position = scroll_pos;
+            self.images_reenable_at = None;
+            if self.show_terminal_images {
+                self.show_terminal_images = false;
+                self.document_cache.invalidate();
+                dirty = true;
+            }
+        } else if !self.show_terminal_images && self.images_reenable_at.is_none() {
+            self.images_reenable_at = Some(now + IMAGE_REENABLE_DELAY);
+        }
+
+        if let Some(deadline) = self.images_reenable_at
+            && now >= deadline
+        {
+            self.images_reenable_at = None;
+            self.show_terminal_images = true;
+            self.document_cache.invalidate();
+            dirty = true;
+        }
+
+        dirty
     }
 
     pub(crate) fn snap_scroll_visual(&mut self) {
         self.scroll_visual = self.view_state.scroll().offset() as f32;
     }
 
-    /// Advance the visual scroll toward the logical target at a fixed line rate.
+    /// Advance the visual scroll toward the logical target with exponential ease-out.
     /// Returns `true` while the target has not been reached.
     pub(crate) fn tick_scroll_animation(&mut self, dt: Duration) -> bool {
         let target = self.view_state.scroll().offset() as f32;
         let delta = target - self.scroll_visual;
-        if delta.abs() < 0.5 {
+        if delta.abs() < SUBPIXEL_SNAP {
             self.scroll_visual = target;
             self.scroll_anim_speed = SCROLL_ANIM_SPEED;
             return false;
         }
-        let step = self.scroll_anim_speed * dt.as_secs_f32().max(1.0 / 120.0);
-        if step <= f32::EPSILON {
-            return true;
-        }
-        if delta.abs() <= step {
+        let t = dt.as_secs_f32().max(1.0 / 120.0);
+        let factor = 1.0 - (-self.scroll_anim_speed * t).exp();
+        self.scroll_visual += delta * factor;
+        if (target - self.scroll_visual).abs() < SUBPIXEL_SNAP {
             self.scroll_visual = target;
             self.scroll_anim_speed = SCROLL_ANIM_SPEED;
             return false;
         }
-        self.scroll_visual += step * delta.signum();
         true
     }
 
