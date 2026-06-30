@@ -79,7 +79,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 ## Requirements
 
 - [devbox](https://www.jetify.com/devbox) (recommended; provides Rust 1.92, clang, sccache, prek)
-- macOS for opening web links via `open` (the viewer itself is portable Rust)
+- macOS for opening web links via `open`; Linux uses `xdg-open`
 - Kitty, Ghostty, iTerm2, WezTerm, or similar for inline Mermaid and image rendering
 
 ## Quick start
@@ -117,10 +117,14 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `d` / `PageDown` | Half page down |
 | `u` / `PageUp` | Half page up |
 | `g` / `G` | Jump to top / bottom |
+| `{` / `}` | Previous / next heading |
 | `Tab` / `n` | Next link (or next search match when search is active) |
 | `Shift-Tab` / `N` | Previous link (or previous search match) |
-| `o` / `Enter` | Open selected link / preview |
+| `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
 | `/` / `?` | Start forward / backward search |
+| `h` | Show help overlay |
+| `x` | Toggle task-list item on top visible line |
+| Mouse wheel | Scroll up / down |
 | `q` / `Esc` / `Ctrl-c` | Quit (`Esc` clears search when search is active) |
 | Left click on checkbox | Toggle task-list item (normal mode) |
 
