@@ -84,7 +84,6 @@ impl DocumentRenderCache {
         self.total_height = total_height;
     }
 
-    /// Drop the cached buffer so the next `ensure` rebuilds it.
     pub(crate) fn invalidate(&mut self) {
         self.key = None;
     }

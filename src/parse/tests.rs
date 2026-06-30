@@ -1,5 +1,5 @@
 use super::parse;
-use crate::domain::{Block, Inline};
+use crate::domain::{Block, Inline, LinkId, LinkKind};
 
 #[test]
 fn parse_simple_paragraph() {
@@ -12,10 +12,15 @@ fn parse_simple_paragraph() {
 }
 
 #[test]
-fn parse_mermaid_block() {
+fn parse_mermaid_block_becomes_preview_link() {
     let doc = parse("```mermaid\ngraph TD; A-->B;\n```").unwrap();
-    assert_eq!(doc.blocks.len(), 1);
-    assert!(matches!(doc.blocks[0], Block::Mermaid(_)));
+    assert_eq!(doc.links.len(), 1);
+    assert_eq!(doc.links[0].kind, LinkKind::Mermaid);
+    assert_eq!(doc.mermaid_diagrams.len(), 1);
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(matches!(inlines[0], Inline::Link(LinkId(0), _)));
 }
 
 #[test]
@@ -113,7 +118,8 @@ fn parse_fenced_code_block_with_language() {
 #[test]
 fn parse_fenced_code_block_language_is_case_insensitive() {
     let doc = parse("```MERMAID\ngraph TD;\n```").unwrap();
-    assert!(matches!(doc.blocks[0], Block::Mermaid(_)));
+    assert_eq!(doc.links[0].kind, LinkKind::Mermaid);
+    assert!(matches!(doc.blocks[0], Block::Paragraph(_)));
 }
 
 #[test]
@@ -127,20 +133,25 @@ fn parse_indented_code_block() {
 }
 
 #[test]
-fn parse_standalone_image_becomes_image_block() {
+fn parse_standalone_image_becomes_image_link_paragraph() {
     let doc = parse("![alt text](diagram.png)").unwrap();
-    assert!(matches!(doc.blocks[0], Block::Image(_)));
-    let Block::Image(img) = &doc.blocks[0] else {
-        panic!("expected image block");
+    assert_eq!(doc.links.len(), 1);
+    assert_eq!(doc.links[0].kind, LinkKind::Image);
+    assert_eq!(doc.links[0].url.as_str(), "diagram.png");
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
     };
-    assert_eq!(img.src, "diagram.png");
-    assert_eq!(img.alt, "alt text");
+    let Inline::Link(LinkId(0), children) = &inlines[0] else {
+        panic!("expected image link");
+    };
+    assert_eq!(children[0], Inline::Text("alt text".to_string()));
 }
 
 #[test]
 fn parse_inline_image_in_mixed_paragraph_stays_as_link() {
     let doc = parse("before ![alt](diagram.png) after").unwrap();
     assert_eq!(doc.links.len(), 1);
+    assert_eq!(doc.links[0].kind, LinkKind::Image);
     let Block::Paragraph(inlines) = &doc.blocks[0] else {
         panic!("expected paragraph");
     };

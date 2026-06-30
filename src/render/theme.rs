@@ -25,6 +25,8 @@ pub struct Theme {
     pub list_marker: Style,
     pub link: Style,
     pub link_selected: Style,
+    pub image_link: Style,
+    pub image_link_selected: Style,
     pub rule: Style,
     pub table_header: Style,
     pub table_cell: Style,
@@ -74,6 +76,13 @@ impl Default for Theme {
             link_selected: Style::default()
                 .fg(Color::Black)
                 .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+            image_link: Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::UNDERLINED),
+            image_link_selected: Style::default()
+                .fg(Color::Black)
+                .bg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
             search_match: Style::default()
                 .fg(Color::Black)

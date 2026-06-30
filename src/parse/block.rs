@@ -3,8 +3,8 @@
 use pulldown_cmark::{Alignment as CmarkAlignment, Event, Parser, Tag, TagEnd};
 
 use crate::domain::{
-    Alignment, Block, CodeBlock, Heading, HeadingLevel, Inline, Link, List, ListItem,
-    MarkdownImage, MermaidDiagram, Table,
+    Alignment, Block, CodeBlock, Heading, HeadingLevel, Inline, Link, LinkId, LinkKind, List,
+    ListItem, MermaidDiagram, Table,
 };
 use crate::error::AppError;
 
@@ -23,6 +23,7 @@ pub(crate) struct ParserState<'a> {
     iter: std::iter::Peekable<Parser<'a>>,
     blocks: Vec<Block>,
     links: Vec<Link>,
+    mermaid_diagrams: Vec<MermaidDiagram>,
     stack: Vec<BlockFrame>,
     paragraph_standalone_image: Option<PendingStandaloneImage>,
 }
@@ -59,6 +60,7 @@ impl<'a> ParserState<'a> {
             iter: parser.peekable(),
             blocks: Vec::new(),
             links: Vec::new(),
+            mermaid_diagrams: Vec::new(),
             stack: Vec::new(),
             paragraph_standalone_image: None,
         }
@@ -140,7 +142,7 @@ impl<'a> ParserState<'a> {
                     BlockFrame::Paragraph(p) | BlockFrame::Heading(p) | BlockFrame::TableCell(p),
                 ) = self.stack.last_mut()
                 {
-                    p.start_link(&mut self.links, dest, title);
+                    p.start_link(&mut self.links, dest, title, LinkKind::Web);
                 }
             }
             Tag::Image {
@@ -160,12 +162,22 @@ impl<'a> ParserState<'a> {
                             alt: String::new(),
                         });
                     } else if let Some(BlockFrame::Paragraph(p)) = self.stack.last_mut() {
-                        p.start_link(&mut self.links, dest, title.unwrap_or_default());
+                        p.start_link(
+                            &mut self.links,
+                            dest,
+                            title.unwrap_or_default(),
+                            LinkKind::Image,
+                        );
                     }
                 } else if let Some(BlockFrame::Heading(p) | BlockFrame::TableCell(p)) =
                     self.stack.last_mut()
                 {
-                    p.start_link(&mut self.links, dest, title.unwrap_or_default());
+                    p.start_link(
+                        &mut self.links,
+                        dest,
+                        title.unwrap_or_default(),
+                        LinkKind::Image,
+                    );
                 }
             }
             Tag::FootnoteDefinition(_)
@@ -186,11 +198,25 @@ impl<'a> ParserState<'a> {
                 let frame = self.pop_frame("paragraph")?;
                 if let BlockFrame::Paragraph(parser) = frame {
                     if let Some(pending) = self.paragraph_standalone_image.take() {
-                        self.finish_block(Block::Image(MarkdownImage {
-                            src: pending.src,
-                            alt: pending.alt,
-                            title: pending.title,
-                        }));
+                        let label = if pending.alt.is_empty() {
+                            pending.src.clone()
+                        } else {
+                            pending.alt
+                        };
+                        let id = LinkId(self.links.len());
+                        if let Ok(url) = crate::domain::LinkUrl::new(pending.src) {
+                            self.links.push(Link {
+                                url,
+                                title: pending.title,
+                                kind: LinkKind::Image,
+                            });
+                            self.finish_block(Block::Paragraph(vec![Inline::Link(
+                                id,
+                                vec![Inline::Text(label)],
+                            )]));
+                        } else {
+                            self.finish_block(Block::Paragraph(vec![Inline::Text(label)]));
+                        }
                     } else {
                         self.finish_block(Block::Paragraph(parser.into_inlines()));
                     }
@@ -224,7 +250,26 @@ impl<'a> ParserState<'a> {
                 } = frame
                 {
                     if is_mermaid {
-                        self.finish_block(Block::Mermaid(MermaidDiagram { source: content }));
+                        let diagram_idx = self.mermaid_diagrams.len();
+                        self.mermaid_diagrams
+                            .push(MermaidDiagram { source: content });
+                        let label = mermaid_link_label(&self.mermaid_diagrams[diagram_idx].source);
+                        let id = LinkId(self.links.len());
+                        if let Ok(url) =
+                            crate::domain::LinkUrl::new(format!("bmd:mermaid:{diagram_idx}"))
+                        {
+                            self.links.push(Link {
+                                url,
+                                title: None,
+                                kind: LinkKind::Mermaid,
+                            });
+                            self.finish_block(Block::Paragraph(vec![Inline::Link(
+                                id,
+                                vec![Inline::Text(label)],
+                            )]));
+                        } else {
+                            self.finish_block(Block::Paragraph(vec![Inline::Text(label)]));
+                        }
                     } else {
                         self.finish_block(Block::CodeBlock(CodeBlock { language, content }));
                     }
@@ -418,7 +463,7 @@ impl<'a> ParserState<'a> {
         // Temporarily take the stack, start the link, then restore it.
         let mut stack = std::mem::take(&mut self.stack);
         if let Some(parser) = Self::inline_parser_from_stack(&mut stack) {
-            parser.start_link(&mut self.links, dest, String::new());
+            parser.start_link(&mut self.links, dest, String::new(), LinkKind::Web);
         }
         self.stack = stack;
     }
@@ -525,8 +570,17 @@ impl<'a> ParserState<'a> {
             .ok_or_else(|| AppError::MarkdownParse(format!("unexpected end tag for {expected}")))
     }
 
-    pub(crate) fn into_parts(self) -> (Vec<Block>, Vec<Link>) {
-        (self.blocks, self.links)
+    pub(crate) fn into_parts(self) -> (Vec<Block>, Vec<Link>, Vec<MermaidDiagram>) {
+        (self.blocks, self.links, self.mermaid_diagrams)
+    }
+}
+
+fn mermaid_link_label(source: &str) -> String {
+    let first_line = source.lines().next().unwrap_or("").trim();
+    if first_line.is_empty() {
+        "[mermaid diagram]".to_string()
+    } else {
+        format!("[mermaid: {first_line}]")
     }
 }
 

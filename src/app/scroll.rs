@@ -42,6 +42,7 @@ impl App {
             &self.syntax_assets.syntax_set,
             self.syntax_assets.theme(),
             &self.rendered,
+            &self.document.links,
             &self.view_state,
             self.show_terminal_images,
         )

@@ -100,14 +100,6 @@ fn block_searchable_lines(block: &Block, width: u16, ctx: &RenderContext) -> Vec
         }
         Block::List(list) => list_searchable_lines(list, width, ctx),
         Block::Table(table) => table_searchable_lines(table, width, ctx),
-        Block::Mermaid(diag) => diag.source.lines().map(|s| s.to_string()).collect(),
-        Block::Image(img) => {
-            if img.alt.is_empty() {
-                vec![img.src.clone()]
-            } else {
-                vec![img.alt.clone()]
-            }
-        }
         Block::Rule => Vec::new(),
     }
 }

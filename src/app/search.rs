@@ -1,6 +1,6 @@
 //! In-document search commands.
 
-use crate::domain::{SearchDirection, SearchState};
+use crate::domain::{NormalSearch, SearchDirection, UiMode};
 use crate::render::find_search_matches;
 
 use super::App;
@@ -23,9 +23,8 @@ impl App {
     }
 
     pub(crate) fn confirm_search(&mut self) {
-        let (direction, query) = match self.view_state.search_state() {
-            SearchState::Input { direction, query } => (*direction, query.clone()),
-            _ => return,
+        let UiMode::SearchInput { query, .. } = self.view_state.mode().clone() else {
+            return;
         };
 
         let trimmed = query.trim().to_string();
@@ -42,19 +41,14 @@ impl App {
             &ctx,
         );
 
-        match self
-            .view_state
-            .clone()
-            .confirm_search(trimmed, direction, matches)
-        {
+        match self.view_state.clone().confirm_search(matches) {
             Ok(state) => {
                 self.view_state = state;
-                // If matches were found, jump directly to the selected match line.
-                if let SearchState::Active {
+                if let NormalSearch::Active {
                     matches,
                     current_index,
                     ..
-                } = self.view_state.search_state()
+                } = self.view_state.normal_search()
                 {
                     if let Some(m) = matches.get(*current_index) {
                         let max = self.max_scroll();

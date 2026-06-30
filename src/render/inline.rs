@@ -418,10 +418,21 @@ fn inlines_to_segments(
                 );
             }
             Inline::Link(id, children) => {
-                let style = if ctx.selected_link == Some(*id) {
-                    ctx.theme.link_selected
-                } else {
-                    ctx.theme.link
+                let style = match ctx.links.get(id.0) {
+                    Some(link) if link.kind.is_preview() => {
+                        if ctx.selected_link == Some(*id) {
+                            ctx.theme.image_link_selected
+                        } else {
+                            ctx.theme.image_link
+                        }
+                    }
+                    _ => {
+                        if ctx.selected_link == Some(*id) {
+                            ctx.theme.link_selected
+                        } else {
+                            ctx.theme.link
+                        }
+                    }
                 };
                 inlines_to_segments(children, ctx, style, out);
             }

@@ -1,4 +1,4 @@
-//! Markdown image loading and rendering.
+//! Markdown image loading for the floating preview overlay.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -7,29 +7,26 @@ use image::DynamicImage;
 use ratatui::{
     buffer::Buffer,
     layout::{Rect, Size},
-    text::{Line, Text},
-    widgets::{Paragraph, Widget},
+    widgets::Widget,
 };
-use ratatui_image::{Resize, protocol::Protocol};
+use ratatui_image::{FilterType, Resize, protocol::Protocol};
 
-use crate::domain::{Block, Document, MarkdownImage};
+use crate::domain::{Document, LinkKind, TerminalSize};
 use crate::error::AppError;
 
-use super::context::RenderContext;
+/// Popup size as a percentage of the terminal, matching [`centered_rect`] in preview draw.
+pub(crate) const PREVIEW_POPUP_PERCENT: u16 = 85;
+const PREVIEW_BORDER_INSET: u16 = 2;
 
-pub(crate) fn collect_markdown_images<'a>(blocks: &'a [Block], out: &mut Vec<&'a MarkdownImage>) {
-    for block in blocks {
-        match block {
-            Block::Image(img) => out.push(img),
-            Block::BlockQuote(children) => collect_markdown_images(children, out),
-            Block::List(list) => {
-                for item in &list.items {
-                    collect_markdown_images(&item.content, out);
-                }
-            }
-            _ => {}
-        }
-    }
+/// Inner content area of the bordered preview popup, in terminal cells.
+pub(crate) fn preview_content_size(terminal: TerminalSize) -> Size {
+    let w = (terminal.width() as u32 * PREVIEW_POPUP_PERCENT as u32 / 100)
+        .saturating_sub(PREVIEW_BORDER_INSET as u32)
+        .max(1) as u16;
+    let h = (terminal.height() as u32 * PREVIEW_POPUP_PERCENT as u32 / 100)
+        .saturating_sub(PREVIEW_BORDER_INSET as u32)
+        .max(1) as u16;
+    Size::new(w, h)
 }
 
 pub(crate) fn load_markdown_image(
@@ -60,94 +57,101 @@ fn resolve_image_path(src: &str, base_path: Option<&Path>) -> Result<PathBuf, Ap
     Ok(base.join(path))
 }
 
+/// Resize filter for preview images (downscale from supersampled raster).
+const PREVIEW_RESIZE_FILTER: FilterType = FilterType::Lanczos3;
+
 pub(crate) fn terminal_image_protocol(
     dyn_img: DynamicImage,
     picker: &ratatui_image::picker::Picker,
-    max_width: u16,
+    target: Size,
 ) -> Result<Protocol, AppError> {
     let font_size = picker.font_size();
-    let cols = max_width.max(20) as u32;
-    let rows = dyn_img
-        .height()
-        .saturating_mul(cols)
-        .saturating_mul(font_size.width as u32)
-        .div_ceil(dyn_img.width().max(1))
-        .div_ceil(font_size.height.max(1) as u32)
-        .max(1);
-    let size = Size::new(cols as u16, rows as u16);
+    let resize = Resize::Scale(Some(PREVIEW_RESIZE_FILTER));
+    let size = resize.size_for(&dyn_img, font_size, target);
     picker
-        .new_protocol(dyn_img, size, Resize::Fit(None))
+        .new_protocol(dyn_img, size, resize)
         .map_err(|e| AppError::TerminalImage(e.to_string()))
 }
 
 pub(crate) fn preload_markdown_images(
     document: &Document,
     picker: &ratatui_image::picker::Picker,
-    width: u16,
+    terminal: TerminalSize,
     base_path: Option<&Path>,
 ) -> HashMap<String, Protocol> {
+    let target = preview_content_size(terminal);
     let mut images = HashMap::new();
-    let mut pending = Vec::new();
-    collect_markdown_images(&document.blocks, &mut pending);
-    for img in pending {
-        if images.contains_key(&img.src) {
+    for link in &document.links {
+        if link.kind != LinkKind::Image {
             continue;
         }
-        match load_markdown_image(&img.src, base_path)
-            .and_then(|dyn_img| terminal_image_protocol(dyn_img, picker, width))
+        let src = link.url.as_str();
+        if images.contains_key(src) {
+            continue;
+        }
+        match load_markdown_image(src, base_path)
+            .and_then(|dyn_img| terminal_image_protocol(dyn_img, picker, target))
         {
             Ok(protocol) => {
-                images.insert(img.src.clone(), protocol);
+                images.insert(src.to_string(), protocol);
             }
             Err(e) => {
-                eprintln!("[bmd] failed to load image {}: {e}", img.src);
+                eprintln!("[bmd] failed to load image {src}: {e}");
             }
         }
     }
     images
 }
 
-pub(crate) fn measure_image_height(img: &MarkdownImage, ctx: &RenderContext, width: u16) -> usize {
-    if let Some(protocol) = ctx.rendered.markdown_images.get(&img.src) {
-        return protocol.size().height as usize;
+pub(crate) fn render_floating_image(protocol: &Protocol, area: Rect, buf: &mut Buffer) {
+    if area.width == 0 || area.height == 0 {
+        return;
     }
-    let cols = (width as usize).min(160);
-    (cols * 9).div_ceil(16).max(6)
+    let img_size = protocol.size();
+    if img_size.width == 0 || img_size.height == 0 {
+        return;
+    }
+    let render_area = fit_and_center(img_size, area);
+    let image = ratatui_image::Image::new(protocol).allow_clipping(true);
+    image.render(render_area, buf);
 }
 
-pub(crate) fn render_markdown_image(
-    img: &MarkdownImage,
-    area: Rect,
-    buf: &mut Buffer,
-    _skip_rows: usize,
-    ctx: &RenderContext,
-) {
-    if !ctx.show_terminal_images {
-        return;
+fn fit_and_center(image: Size, area: Rect) -> Rect {
+    let w = image.width.min(area.width);
+    let h = image.height.min(area.height);
+    Rect {
+        x: area.x + (area.width.saturating_sub(w)) / 2,
+        y: area.y + (area.height.saturating_sub(h)) / 2,
+        width: w,
+        height: h,
     }
-
-    if let Some(protocol) = ctx.rendered.markdown_images.get(&img.src) {
-        let image = ratatui_image::Image::new(protocol).allow_clipping(true);
-        image.render(area, buf);
-        return;
-    }
-
-    let label = if img.alt.is_empty() {
-        format!("[image: {}]", img.src)
-    } else {
-        format!("[image: {}]", img.alt)
-    };
-    let placeholder = Paragraph::new(Text::from(vec![Line::styled(
-        label,
-        ctx.theme.mermaid_placeholder,
-    )]));
-    placeholder.render(area, buf);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::Path;
+
+    use crate::domain::TerminalSize;
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn preview_content_size_matches_popup_inner_area() {
+        let terminal = TerminalSize::new(100, 40).unwrap();
+        let size = preview_content_size(terminal);
+        assert_eq!(size.width, 83);
+        assert_eq!(size.height, 32);
+    }
+
+    #[test]
+    fn fit_and_center_centers_smaller_image() {
+        let area = Rect::new(0, 0, 20, 10);
+        let centered = fit_and_center(Size::new(8, 4), area);
+        assert_eq!(centered.x, 6);
+        assert_eq!(centered.y, 3);
+        assert_eq!(centered.width, 8);
+        assert_eq!(centered.height, 4);
+    }
 
     #[test]
     fn resolve_relative_image_against_base_path() {
