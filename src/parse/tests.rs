@@ -42,6 +42,14 @@ fn parse_link_collects_url() {
 }
 
 #[test]
+fn parse_anchor_link_classified() {
+    let doc = parse("[section](#bottom-section)").unwrap();
+    assert_eq!(doc.links.len(), 1);
+    assert_eq!(doc.links[0].kind, LinkKind::Anchor);
+    assert_eq!(doc.links[0].url.as_str(), "#bottom-section");
+}
+
+#[test]
 fn parse_headings_all_levels() {
     let doc = parse("# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6").unwrap();
     assert_eq!(doc.blocks.len(), 6);

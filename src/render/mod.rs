@@ -29,7 +29,7 @@ pub use headings::{
     slugify_heading,
 };
 pub(crate) use image::{PREVIEW_POPUP_PERCENT, render_floating_image};
-pub use links::find_link_line_offset;
+pub use links::{collect_visible_links, find_link_line_offset};
 pub use measure::{measure_block_height, measure_document_height};
 pub use mermaid::RenderedDocument;
 pub use search::find_search_matches;

@@ -11,6 +11,27 @@ use super::inline::{heading_styles, inlines_to_wrapped_lines};
 use super::list_marker::list_marker_width_at;
 use super::measure::measure_block_height;
 
+/// Link IDs whose first line falls within the visible scroll viewport.
+pub fn collect_visible_links(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext,
+    scroll: usize,
+    visible_lines: usize,
+) -> Vec<LinkId> {
+    if width == 0 || document.links.is_empty() || visible_lines == 0 {
+        return Vec::new();
+    }
+    let viewport_end = scroll.saturating_add(visible_lines);
+    (0..document.links.len())
+        .filter_map(|i| {
+            let id = LinkId(i);
+            let line = find_link_line_offset(document, width, ctx, id)?;
+            (line >= scroll && line < viewport_end).then_some(id)
+        })
+        .collect()
+}
+
 /// First logical line offset where `link_id` appears in the rendered document.
 pub fn find_link_line_offset(
     document: &Document,

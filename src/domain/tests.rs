@@ -51,31 +51,18 @@ fn scroll_up_saturates() {
 }
 
 #[test]
-fn link_selection_wraps() {
-    let doc = Document {
-        blocks: vec![],
-        links: vec![
-            Link {
-                url: LinkUrl::new("a".to_string()).unwrap(),
-                title: None,
-                kind: LinkKind::Web,
-            },
-            Link {
-                url: LinkUrl::new("b".to_string()).unwrap(),
-                title: None,
-                kind: LinkKind::Web,
-            },
-        ],
-        mermaid_diagrams: vec![],
-    };
+fn link_selection_wraps_within_visible_set() {
+    let visible = [LinkId(1), LinkId(3), LinkId(5)];
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size);
-    let state = state.select_next_link(&doc);
-    assert_eq!(state.selected_link(), Some(LinkId(0)));
-    let state = state.select_next_link(&doc);
+    let state = state.select_next_link_in(&visible);
     assert_eq!(state.selected_link(), Some(LinkId(1)));
-    let state = state.select_next_link(&doc);
-    assert_eq!(state.selected_link(), Some(LinkId(0)));
+    let state = state.select_next_link_in(&visible);
+    assert_eq!(state.selected_link(), Some(LinkId(3)));
+    let state = state.select_next_link_in(&visible);
+    assert_eq!(state.selected_link(), Some(LinkId(5)));
+    let state = state.select_next_link_in(&visible);
+    assert_eq!(state.selected_link(), Some(LinkId(1)));
 }
 
 #[test]
@@ -181,7 +168,7 @@ fn search_query_rejects_empty() {
 #[test]
 fn view_state_reset_for_reload_preserves_clamped_scroll() {
     let size = TerminalSize::new(80, 24).unwrap();
-    let document = Document::new(
+    let _document = Document::new(
         vec![],
         vec![Link {
             url: LinkUrl::new("https://example.com".to_string()).unwrap(),
@@ -192,7 +179,7 @@ fn view_state_reset_for_reload_preserves_clamped_scroll() {
     )
     .unwrap();
     let state = ViewState::new(size)
-        .select_next_link(&document)
+        .select_next_link_in(&[LinkId(0)])
         .reset_for_reload(42, 10);
     assert_eq!(state.scroll().offset(), 10);
     assert_eq!(state.selected_link(), None);
@@ -369,48 +356,28 @@ fn normal_search_active_flag() {
 #[test]
 fn link_kind_preview_flag() {
     assert!(!LinkKind::Web.is_preview());
+    assert!(!LinkKind::Anchor.is_preview());
     assert!(LinkKind::Image.is_preview());
     assert!(LinkKind::Mermaid.is_preview());
+    assert_eq!(LinkKind::for_link_dest("#section"), LinkKind::Anchor);
+    assert_eq!(LinkKind::for_link_dest("https://x.com"), LinkKind::Web);
 }
 
 #[test]
-fn link_selection_prev_wraps() {
-    let doc = Document {
-        blocks: vec![],
-        links: vec![
-            Link {
-                url: LinkUrl::new("a".to_string()).unwrap(),
-                title: None,
-                kind: LinkKind::Web,
-            },
-            Link {
-                url: LinkUrl::new("b".to_string()).unwrap(),
-                title: None,
-                kind: LinkKind::Web,
-            },
-        ],
-        mermaid_diagrams: vec![],
-    };
+fn link_selection_prev_wraps_within_visible_set() {
+    let visible = [LinkId(1), LinkId(3)];
     let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size).select_prev_link(&doc);
+    let state = ViewState::new(size).select_prev_link_in(&visible);
+    assert_eq!(state.selected_link(), Some(LinkId(3)));
+    let state = state.select_prev_link_in(&visible);
     assert_eq!(state.selected_link(), Some(LinkId(1)));
-    let state = state.select_prev_link(&doc);
-    assert_eq!(state.selected_link(), Some(LinkId(0)));
 }
 
 #[test]
 fn clear_link_selection() {
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size)
-        .select_next_link(&Document {
-            blocks: vec![],
-            links: vec![Link {
-                url: LinkUrl::new("a".to_string()).unwrap(),
-                title: None,
-                kind: LinkKind::Web,
-            }],
-            mermaid_diagrams: vec![],
-        })
+        .select_next_link_in(&[LinkId(0)])
         .clear_link_selection();
     assert_eq!(state.selected_link(), None);
 }

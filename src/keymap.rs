@@ -27,6 +27,8 @@ pub enum Command {
     SearchBackspace,
     ToggleHelp,
     ToggleChecklist,
+    NavBack,
+    NavReset,
     Quit,
     None,
 }
@@ -52,9 +54,13 @@ fn map_normal_key(key: KeyEvent, normal_search: &NormalSearch) -> Command {
         return Command::SearchCancel;
     }
 
+    if key.code == KeyCode::Esc {
+        return Command::NavReset;
+    }
+
     // Quit commands take priority and are recognized on both Press and Repeat.
     let is_quit = match key.code {
-        KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => true,
+        KeyCode::Char('q') | KeyCode::Char('Q') => true,
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => true,
         _ => false,
     };
@@ -74,6 +80,7 @@ fn map_normal_key(key: KeyEvent, normal_search: &NormalSearch) -> Command {
         KeyCode::Char('{') => Command::PrevHeading,
         KeyCode::Char('}') => Command::NextHeading,
         KeyCode::Char('o') | KeyCode::Enter => Command::OpenLink,
+        KeyCode::Char('O') => Command::NavBack,
         KeyCode::Char('/') => Command::StartSearchForward,
         KeyCode::Char('?') => Command::StartSearchBackward,
         KeyCode::Char('h') => Command::ToggleHelp,
@@ -215,15 +222,20 @@ mod tests {
     }
 
     #[test]
-    fn inactive_search_esc_quits() {
+    fn inactive_search_esc_resets_navigation() {
         assert_eq!(
             map_event(
                 Event::Key(KeyEvent::from(KeyCode::Esc)),
                 &UiMode::Normal,
                 &NormalSearch::inactive()
             ),
-            Command::Quit
+            Command::NavReset
         );
+    }
+
+    #[test]
+    fn shift_o_navigates_back() {
+        assert_eq!(map(shift('O')), Command::NavBack);
     }
 
     #[test]

@@ -180,17 +180,28 @@ fn short_document_cannot_scroll() {
 }
 
 #[test]
-fn next_link_scrolls_toward_link() {
-    let mut input = String::from("# Top\n\n");
+fn next_link_only_selects_links_in_viewport() {
+    let mut input = String::from("# Top\n\n[visible link](https://example.com/a)\n\n");
     for i in 0..80 {
         input.push_str(&format!("paragraph {}\n\n", i));
     }
-    input.push_str("[link at bottom](https://example.com)\n");
+    input.push_str("[off-screen link](https://example.com/b)\n");
     let doc = parse(&input).unwrap();
     let mut app = new_test_app(doc);
+    let scroll_before = app.view_state.scroll().offset();
 
     app.next_link();
-    assert!(app.view_state.scroll().offset() > 0);
+    assert_eq!(app.view_state.scroll().offset(), scroll_before);
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(0))
+    );
+
+    app.next_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(0))
+    );
 }
 
 #[test]
@@ -233,4 +244,63 @@ fn search_command_flow_scrolls_to_match() {
     let before = app.view_state.scroll().offset();
     app.next_search_match();
     assert_eq!(app.view_state.scroll().offset(), before);
+}
+
+#[test]
+fn anchor_navigation_stack_push_pop_and_reset() {
+    let mut input = String::from("# Top\n\n");
+    for i in 0..60 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    input.push_str("## Middle\n\n");
+    for i in 0..60 {
+        input.push_str(&format!("filler {}\n\n", i));
+    }
+    input.push_str("## Bottom section\n\n");
+    input.push_str("[go middle](#middle)\n\n[go bottom](#bottom-section)\n");
+    let doc = parse(&input).unwrap();
+    let mut app = new_test_app(doc);
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    let before_first = app.view_state.scroll().offset();
+    app.open_current_link();
+    let at_middle = app.view_state.scroll().offset();
+    assert!(at_middle > before_first);
+    assert!(!app.nav_stack.is_empty());
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(1)]);
+    let before_second = app.view_state.scroll().offset();
+    assert_eq!(before_second, at_middle);
+    app.open_current_link();
+    let at_bottom = app.view_state.scroll().offset();
+    assert!(at_bottom > before_second);
+
+    app.nav_back();
+    assert_eq!(app.view_state.scroll().offset(), before_second);
+
+    app.nav_back();
+    assert_eq!(app.view_state.scroll().offset(), before_first);
+    assert!(app.nav_stack.is_empty());
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(1)]);
+    app.open_current_link();
+    assert!(app.view_state.scroll().offset() > before_first);
+
+    app.nav_reset();
+    assert_eq!(app.view_state.scroll().offset(), before_first);
+    assert!(app.nav_stack.is_empty());
 }

@@ -1,7 +1,6 @@
 //! View, scroll, and search state with typed transitions.
 
 use super::link::LinkId;
-use super::markdown::Document;
 use super::mode::{NormalSearch, UiMode};
 
 /// Terminal dimensions with the invariant that neither dimension is zero.
@@ -437,36 +436,46 @@ impl ViewState {
         }
     }
 
-    pub fn select_next_link(self, document: &Document) -> Self {
-        if document.links.is_empty() {
+    /// Select the next link within `visible`, wrapping at the ends.
+    pub fn select_next_link_in(self, visible: &[LinkId]) -> Self {
+        if visible.is_empty() {
             return self;
         }
         let next = match self.selected_link {
-            None => Some(LinkId(0)),
-            Some(LinkId(i)) => Some(LinkId((i + 1) % document.links.len())),
+            None => visible[0],
+            Some(current) => visible
+                .iter()
+                .position(|&id| id == current)
+                .map(|idx| visible[(idx + 1) % visible.len()])
+                .unwrap_or(visible[0]),
         };
         Self {
-            selected_link: next,
+            selected_link: Some(next),
             ..self
         }
     }
 
-    pub fn select_prev_link(self, document: &Document) -> Self {
-        if document.links.is_empty() {
+    /// Select the previous link within `visible`, wrapping at the ends.
+    pub fn select_prev_link_in(self, visible: &[LinkId]) -> Self {
+        if visible.is_empty() {
             return self;
         }
         let prev = match self.selected_link {
-            None => Some(LinkId(document.links.len() - 1)),
-            Some(LinkId(i)) => {
-                if i == 0 {
-                    Some(LinkId(document.links.len() - 1))
-                } else {
-                    Some(LinkId(i - 1))
-                }
-            }
+            None => *visible.last().expect("visible is non-empty"),
+            Some(current) => visible
+                .iter()
+                .position(|&id| id == current)
+                .map(|idx| {
+                    if idx == 0 {
+                        *visible.last().expect("visible is non-empty")
+                    } else {
+                        visible[idx - 1]
+                    }
+                })
+                .unwrap_or(*visible.last().expect("visible is non-empty")),
         };
         Self {
-            selected_link: prev,
+            selected_link: Some(prev),
             ..self
         }
     }
