@@ -76,6 +76,47 @@ fn renders_document_to_test_backend() {
 }
 
 #[test]
+fn half_page_scroll_uses_faster_animation() {
+    let mut input = String::from("# Title\n\n");
+    for i in 0..100 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    let doc = parse(&input).unwrap();
+    let picker = Picker::halfblocks();
+    let mut app = App::new(doc, picker).unwrap();
+
+    app.half_page_down();
+    assert_eq!(
+        app.scroll_anim_speed,
+        super::scroll::HALF_PAGE_SCROLL_ANIM_SPEED
+    );
+}
+
+#[test]
+fn jump_commands_snap_visual_scroll() {
+    let mut input = String::from("# Title\n\n");
+    for i in 0..100 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    let doc = parse(&input).unwrap();
+    let picker = Picker::halfblocks();
+    let mut app = App::new(doc, picker).unwrap();
+
+    app.scroll_down(50);
+    assert_ne!(app.view_state.scroll().offset(), 0);
+    assert_ne!(app.display_scroll_offset(), 0);
+
+    app.jump_to_top();
+    assert_eq!(app.view_state.scroll().offset(), 0);
+    assert_eq!(app.display_scroll_offset(), 0);
+
+    app.jump_to_bottom();
+    let max = app.max_scroll();
+    assert_eq!(app.view_state.scroll().offset(), max);
+    assert_eq!(app.display_scroll_offset(), max);
+}
+
+#[test]
 fn short_document_cannot_scroll() {
     let input = "# Title\n\nA paragraph.\n";
     let doc = parse(input).unwrap();

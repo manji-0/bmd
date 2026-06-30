@@ -21,7 +21,7 @@ use crate::error::AppError;
 use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
 
 use layout::terminal_size;
-use scroll::{ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL};
+use scroll::{ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED};
 
 pub struct App {
     document: Document,
@@ -30,6 +30,8 @@ pub struct App {
     document_cache: DocumentRenderCache,
     /// Animated scroll position; lerps toward `view_state.scroll().offset()`.
     scroll_visual: f32,
+    /// Lines per second for the current scroll animation.
+    scroll_anim_speed: f32,
     /// When the current j/k hold sequence started (`Press`); cleared on `Release`.
     scroll_key_down_at: Option<Instant>,
     /// Timestamp of the last line scroll triggered by key repeat.
@@ -54,6 +56,7 @@ impl App {
             view_state,
             document_cache: DocumentRenderCache::default(),
             scroll_visual,
+            scroll_anim_speed: SCROLL_ANIM_SPEED,
             scroll_key_down_at: None,
             last_scroll_repeat: now,
             last_tick: now,

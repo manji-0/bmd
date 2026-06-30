@@ -77,8 +77,8 @@ Set `BMD_DEBUG=1` to log key events to stderr while debugging bindings.
 
 | Key | Action |
 |-----|--------|
-| `j` / `↓` | scroll down one line |
-| `k` / `↑` | scroll up one line |
+| `j` / `↓` | scroll down two lines |
+| `k` / `↑` | scroll up two lines |
 | `d` / `Ctrl-d` / `PageDown` | half page down |
 | `u` / `Ctrl-u` / `PageUp` | half page up |
 | `g` | jump to top |

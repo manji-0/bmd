@@ -10,8 +10,8 @@ use crate::keymap::{Command, KeymapMode, map_event};
 
 use super::App;
 use super::scroll::{
-    SCROLL_REPEAT_DELAY, SCROLL_REPEAT_INTERVAL, is_line_scroll_key, is_single_press_key,
-    line_scroll_command,
+    LINE_SCROLL_LINES, SCROLL_REPEAT_DELAY, SCROLL_REPEAT_INTERVAL, is_line_scroll_key,
+    is_single_press_key, line_scroll_command,
 };
 
 impl App {
@@ -88,8 +88,8 @@ impl App {
         }
         match command {
             Command::None => {}
-            Command::ScrollDown => self.scroll_down(1),
-            Command::ScrollUp => self.scroll_up(1),
+            Command::ScrollDown => self.scroll_down(LINE_SCROLL_LINES),
+            Command::ScrollUp => self.scroll_up(LINE_SCROLL_LINES),
             Command::HalfPageDown => self.half_page_down(),
             Command::HalfPageUp => self.half_page_up(),
             Command::JumpToTop => self.jump_to_top(),
