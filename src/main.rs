@@ -11,6 +11,7 @@ use std::{
 
 use crossterm::{
     ExecutableCommand,
+    event::{DisableMouseCapture, EnableMouseCapture},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
@@ -37,6 +38,7 @@ fn run() -> Result<(), AppError> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     stdout.execute(EnterAlternateScreen)?;
+    stdout.execute(EnableMouseCapture)?;
 
     // Query the terminal (Ghostty, Kitty, iTerm2, etc.) for native graphics support.
     // Use a short timeout so an immediate 'q' is not delayed if the terminal does
@@ -77,6 +79,7 @@ fn read_input() -> Result<(String, Option<PathBuf>), AppError> {
 fn restore_terminal<B: Backend>(terminal: &mut Terminal<B>) -> Result<(), AppError> {
     disable_raw_mode()?;
     let mut stdout = io::stdout();
+    stdout.execute(DisableMouseCapture)?;
     stdout.execute(LeaveAlternateScreen)?;
     terminal
         .show_cursor()

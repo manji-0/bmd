@@ -16,6 +16,10 @@ use super::scroll::{
 
 impl App {
     pub(crate) fn handle_crossterm_event(&mut self, event: Event) -> Result<bool, AppError> {
+        if let Event::Mouse(mouse) = &event {
+            return self.handle_mouse_event(mouse.column, mouse.row, mouse.kind);
+        }
+
         if let Event::Key(key) = &event {
             if self.view_state.mode().is_normal() {
                 if is_line_scroll_key(&key.code) {

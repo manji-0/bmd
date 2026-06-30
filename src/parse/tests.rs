@@ -87,6 +87,21 @@ fn parse_ordered_list() {
 }
 
 #[test]
+fn parse_task_list() {
+    let doc = parse("- [ ] todo\n- [x] done").unwrap();
+    assert_eq!(doc.blocks.len(), 1);
+    let Block::List(list) = &doc.blocks[0] else {
+        panic!("expected list");
+    };
+    assert!(list.is_task_list());
+    assert_eq!(list.items.len(), 2);
+    assert!(list.items[0].checklist_id.is_some());
+    assert!(!list.items[0].checked);
+    assert!(list.items[1].checklist_id.is_some());
+    assert!(list.items[1].checked);
+}
+
+#[test]
 fn parse_nested_list() {
     let doc = parse("- outer\n  - inner").unwrap();
     let Block::List(outer) = &doc.blocks[0] else {

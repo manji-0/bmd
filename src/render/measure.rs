@@ -2,6 +2,8 @@
 
 use unicode_width::UnicodeWidthStr;
 
+use super::list_marker::list_marker_width_at;
+
 use crate::domain::{Block, CodeBlock, Document, Heading, Inline, List, Table};
 
 use super::context::RenderContext;
@@ -93,11 +95,7 @@ fn measure_list_height(list: &List, width: u16, ctx: &RenderContext) -> usize {
     let w = width as usize;
     let mut total = 0usize;
     for (idx, item) in list.items.iter().enumerate() {
-        let marker_width = if list.ordered {
-            format!("{}.", idx + 1).width() + 1
-        } else {
-            2
-        };
+        let marker_width = list_marker_width_at(list, idx, item, ctx.checklist_state);
         let inner_width = w.saturating_sub(marker_width).max(1) as u16;
         if item.content.is_empty() {
             total += 1;

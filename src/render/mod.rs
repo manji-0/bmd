@@ -2,9 +2,11 @@
 
 mod blocks;
 mod cache;
+pub(crate) mod checklist;
 mod context;
 mod image;
 mod inline;
+mod list_marker;
 mod measure;
 mod mermaid;
 mod search;

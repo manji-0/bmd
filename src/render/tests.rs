@@ -5,12 +5,12 @@ use super::inline::{highlight_span, highlight_text, inlines_to_text, inlines_to_
 use super::measure::measure_code_block_height;
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
 use super::{
-    DocumentRenderCache, MarkdownWidget, RenderContext, RenderedDocument, Theme,
-    find_search_matches, measure_block_height, measure_document_height,
+    DocumentRenderCache, MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme,
+    checklist, find_search_matches, measure_block_height, measure_document_height,
 };
 use crate::domain::{
-    Alignment, Block, CodeBlock, Document, Inline, List, ListItem, SearchDirection, SearchMatch,
-    Table, TerminalSize, ViewState,
+    Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, Inline, List, ListItem,
+    SearchDirection, SearchMatch, Table, TerminalSize, ViewState,
 };
 use crate::parse::parse;
 use ratatui::Terminal;
@@ -19,32 +19,34 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use syntect::highlighting::ThemeSet;
-use syntect::parsing::SyntaxSet;
 use unicode_width::UnicodeWidthStr;
+
+fn test_syntax_assets() -> &'static SyntaxAssets {
+    Box::leak(Box::new(SyntaxAssets::new()))
+}
 
 fn test_render_context() -> RenderContext<'static> {
     // Leaked for the duration of the test process; acceptable for unit tests.
     let theme: &'static Theme = Box::leak(Box::new(Theme::default()));
-    let syntax_set: &'static SyntaxSet = Box::leak(Box::new(SyntaxSet::load_defaults_newlines()));
-    let syntax_theme: &'static syntect::highlighting::Theme = Box::leak(Box::new(
-        ThemeSet::load_defaults().themes["InspiredGitHub"].clone(),
-    ));
+    let syntax_assets = test_syntax_assets();
     let rendered: &'static RenderedDocument = Box::leak(Box::new(RenderedDocument {
         mermaid_images: HashMap::new(),
         markdown_images: HashMap::new(),
     }));
     let links: &'static [crate::domain::Link] = Box::leak(Box::new([]));
+    let checklist_state: &'static ChecklistState =
+        Box::leak(Box::new(ChecklistState::new(ChecklistStyle::Unicode)));
     RenderContext {
         theme,
-        syntax_set,
-        syntax_theme,
+        syntax_set: &syntax_assets.syntax_set,
+        syntax_theme: syntax_assets.theme(),
         rendered,
         links,
         selected_link: None,
         search_query: None,
         selected_search_match: None,
         selected_match_line_offset: None,
+        checklist_state,
         show_terminal_images: true,
     }
 }
@@ -256,15 +258,13 @@ fn find_search_matches_list_offsets_exclude_inner_gaps() {
         vec![Block::List(List {
             ordered: false,
             items: vec![
-                ListItem {
-                    content: vec![
-                        Block::Paragraph(vec![Inline::Text("alpha".to_string())]),
-                        Block::Paragraph(vec![Inline::Text("beta".to_string())]),
-                    ],
-                },
-                ListItem {
-                    content: vec![Block::Paragraph(vec![Inline::Text("gamma".to_string())])],
-                },
+                ListItem::plain(vec![
+                    Block::Paragraph(vec![Inline::Text("alpha".to_string())]),
+                    Block::Paragraph(vec![Inline::Text("beta".to_string())]),
+                ]),
+                ListItem::plain(vec![Block::Paragraph(vec![Inline::Text(
+                    "gamma".to_string(),
+                )])]),
             ],
         })],
         Vec::new(),
@@ -352,12 +352,12 @@ fn selected_search_match_renders_selected_style_in_buffer() {
 
     let ctx = RenderContext::new(
         ctx_base.theme,
-        ctx_base.syntax_set,
-        ctx_base.syntax_theme,
+        test_syntax_assets(),
         ctx_base.rendered,
         ctx_base.links,
         &view_state,
         true,
+        ctx_base.checklist_state,
     );
 
     let backend = TestBackend::new(width, height);
@@ -854,4 +854,45 @@ fn list_item_with_multiple_blocks_indents_all() {
     let code_label_row = 2;
     assert_eq!(buf.cell((0, code_label_row)).map(|c| c.symbol()), Some(" "));
     assert_eq!(buf.cell((1, code_label_row)).map(|c| c.symbol()), Some(" "));
+}
+
+#[test]
+fn checklist_hit_region_matches_unicode_marker_width() {
+    let document = parse("- [ ] click me").unwrap();
+    let ctx = test_render_context();
+    let hits = checklist::collect_checklist_hits(&document, 80, &ctx);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].line, 0);
+    assert_eq!(hits[0].x, 0);
+    assert_eq!(hits[0].width, ChecklistStyle::Unicode.marker_width());
+}
+
+#[test]
+fn checklist_toggle_updates_marker_label() {
+    let document = parse("- [ ] task").unwrap();
+    let list = match &document.blocks[0] {
+        Block::List(list) => list,
+        _ => panic!("expected list"),
+    };
+    let item = &list.items[0];
+    let mut state = ChecklistState::default();
+
+    assert_eq!(
+        super::list_marker::list_marker_label(list, 0, item, &state),
+        "☐ "
+    );
+    state.toggle(item);
+    assert_eq!(
+        super::list_marker::list_marker_label(list, 0, item, &state),
+        "☑ "
+    );
+}
+
+#[test]
+fn checklist_at_click_finds_item_on_marker_column() {
+    let document = parse("- [ ] task").unwrap();
+    let ctx = test_render_context();
+    let item = checklist::checklist_at_click(&document, 80, &ctx, 0, 0);
+    assert!(item.is_some());
+    assert!(checklist::checklist_at_click(&document, 80, &ctx, 0, 2).is_none());
 }
