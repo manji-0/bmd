@@ -5,6 +5,7 @@ mod draw;
 mod input;
 mod layout;
 mod navigation;
+mod reload;
 mod scroll;
 mod search;
 pub mod status;
@@ -24,6 +25,7 @@ use crate::error::AppError;
 use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
 
 use layout::terminal_size;
+use reload::FileWatch;
 use scroll::{
     ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED, STATUS_MESSAGE_DURATION,
 };
@@ -55,6 +57,9 @@ pub struct App {
     help_visible: bool,
     status_message: Option<String>,
     status_message_until: Option<Instant>,
+    picker: Picker,
+    pub(crate) file_watch: Option<FileWatch>,
+    next_reload_poll: Instant,
     should_quit: bool,
 }
 
@@ -80,6 +85,9 @@ impl App {
         let view_state = ViewState::new(terminal_size);
         let scroll_visual = view_state.scroll().offset() as f32;
         let now = Instant::now();
+        let file_watch = base_path
+            .as_ref()
+            .and_then(|path| FileWatch::new(path.clone()).ok());
         Ok(Self {
             document,
             rendered,
@@ -100,6 +108,9 @@ impl App {
             help_visible: false,
             status_message: None,
             status_message_until: None,
+            picker,
+            file_watch,
+            next_reload_poll: now,
             should_quit: false,
         })
     }
@@ -153,6 +164,10 @@ impl App {
             }
 
             if self.poll_terminal_resize()? {
+                dirty = true;
+            }
+
+            if self.poll_file_reload(now)? {
                 dirty = true;
             }
 

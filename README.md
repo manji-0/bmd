@@ -73,7 +73,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 
 - **Type-safe domain model** — Kamae-style state transitions (`ViewState` methods consume `self`)
 - **Document render cache** — full document buffered until width or highlight state changes; scrolling only blits the viewport
-- **stdin / file input** — path argument, `-`, or pipe
+- **stdin / file input** — path argument, `-`, or pipe; file paths reload automatically on save (scroll position preserved)
 - **Debug** — `BMD_DEBUG=1` logs key events and commands to stderr
 
 ## Requirements

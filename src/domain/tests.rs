@@ -179,6 +179,28 @@ fn search_query_rejects_empty() {
 }
 
 #[test]
+fn view_state_reset_for_reload_preserves_clamped_scroll() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let document = Document::new(
+        vec![],
+        vec![Link {
+            url: LinkUrl::new("https://example.com".to_string()).unwrap(),
+            title: None,
+            kind: LinkKind::Web,
+        }],
+        vec![],
+    )
+    .unwrap();
+    let state = ViewState::new(size)
+        .select_next_link(&document)
+        .reset_for_reload(42, 10);
+    assert_eq!(state.scroll().offset(), 10);
+    assert_eq!(state.selected_link(), None);
+    assert!(!state.is_search_active());
+    assert!(state.mode().is_normal());
+}
+
+#[test]
 fn view_state_starts_search_in_input_mode() {
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size).start_search(SearchDirection::Forward);

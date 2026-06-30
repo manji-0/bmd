@@ -129,6 +129,19 @@ impl ViewState {
         }
     }
 
+    /// Reset interactive state after a document reload, preserving scroll position.
+    pub fn reset_for_reload(self, scroll_offset: usize, max_scroll: usize) -> Self {
+        Self {
+            scroll: Scroll {
+                offset: scroll_offset.min(max_scroll),
+            },
+            selected_link: None,
+            terminal_size: self.terminal_size,
+            mode: UiMode::normal(),
+            normal_search: NormalSearch::inactive(),
+        }
+    }
+
     pub fn mode(&self) -> &UiMode {
         &self.mode
     }
