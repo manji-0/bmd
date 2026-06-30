@@ -80,7 +80,7 @@ fn map_preview_key(key: KeyEvent) -> Command {
     }
 
     match key.code {
-        KeyCode::Esc => Command::ClosePreview,
+        KeyCode::Esc | KeyCode::Char('o') => Command::ClosePreview,
         KeyCode::Char('q') | KeyCode::Char('Q') => Command::Quit,
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Command::Quit,
         _ => Command::None,
@@ -247,6 +247,20 @@ mod tests {
         assert_eq!(
             map_event(Event::Key(key), &UiMode::Normal, &NormalSearch::inactive()),
             Command::Quit
+        );
+    }
+
+    #[test]
+    fn preview_o_closes_overlay() {
+        assert_eq!(
+            map_event(
+                Event::Key(key('o')),
+                &UiMode::Preview {
+                    link_id: crate::domain::LinkId(0)
+                },
+                &NormalSearch::inactive()
+            ),
+            Command::ClosePreview
         );
     }
 
