@@ -1,0 +1,18 @@
+[package]
+name = "bmd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crossterm = "0.29"
+image = { version = "0.25", default-features = false, features = ["png"] }
+merman = { version = "0.6.2", features = ["raster"] }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+ratatui = "0.30"
+ratatui-image = { version = "11", default-features = false, features = ["crossterm", "image-defaults"] }
+syntect = "5"
+thiserror = "2"
+textwrap = "0.16"
+unicode-width = "0.2"
+unicode-segmentation = "1.13"
+url = "2"
