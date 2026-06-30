@@ -17,7 +17,7 @@ use crossterm::event;
 use ratatui::{Terminal, backend::Backend};
 use ratatui_image::picker::Picker;
 
-use crate::domain::{Document, ViewState};
+use crate::domain::{Document, TerminalSize, ViewState};
 use crate::error::AppError;
 use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
 
@@ -56,10 +56,22 @@ impl App {
         picker: Picker,
         base_path: Option<std::path::PathBuf>,
     ) -> Result<Self, AppError> {
-        let size = terminal_size()?;
-        let rendered =
-            RenderedDocument::new(&document, &picker, size.width(), base_path.as_deref())?;
-        let view_state = ViewState::new(size);
+        Self::new_with_terminal_size(document, picker, base_path, terminal_size()?)
+    }
+
+    pub fn new_with_terminal_size(
+        document: Document,
+        picker: Picker,
+        base_path: Option<std::path::PathBuf>,
+        terminal_size: TerminalSize,
+    ) -> Result<Self, AppError> {
+        let rendered = RenderedDocument::new(
+            &document,
+            &picker,
+            terminal_size.width(),
+            base_path.as_deref(),
+        )?;
+        let view_state = ViewState::new(terminal_size);
         let scroll_visual = view_state.scroll().offset() as f32;
         let now = Instant::now();
         Ok(Self {

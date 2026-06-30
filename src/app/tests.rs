@@ -2,12 +2,21 @@ use super::App;
 use super::scroll::{is_line_scroll_key, line_scroll_command};
 use crate::domain::{
     Document, Heading, HeadingLevel, Inline, Link, LinkUrl, SearchDirection, SearchState,
+    TerminalSize,
 };
 use crate::keymap::Command;
 use crate::parse::parse;
 use crate::render::{CachedMarkdownView, DocumentRenderCache, RenderContext};
 use crossterm::event::KeyCode;
 use ratatui_image::picker::Picker;
+
+fn test_terminal_size() -> TerminalSize {
+    TerminalSize::new(80, 30).unwrap()
+}
+
+fn new_test_app(document: Document) -> App {
+    App::new_with_terminal_size(document, Picker::halfblocks(), None, test_terminal_size()).unwrap()
+}
 
 fn dummy_document() -> Document {
     Document {
@@ -37,8 +46,7 @@ fn line_scroll_key_helpers() {
 #[test]
 fn open_link_without_selection_records_error() {
     let doc = dummy_document();
-    let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker, None).unwrap();
+    let mut app = new_test_app(doc);
     app.open_current_link();
     assert!(app.error_message.is_some());
 }
@@ -47,8 +55,7 @@ fn open_link_without_selection_records_error() {
 fn renders_document_to_test_backend() {
     let input = "# Title\n\nA paragraph with **bold** and [a link](https://example.com).\n\n| Name | Value |\n|------|-------|\n| A    | 1     |\n";
     let doc = parse(input).unwrap();
-    let picker = Picker::halfblocks();
-    let app = App::new(doc, picker, None).unwrap();
+    let app = new_test_app(doc);
 
     let backend = ratatui::backend::TestBackend::new(80, 30);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -83,8 +90,7 @@ fn half_page_scroll_uses_faster_animation() {
         input.push_str(&format!("paragraph {}\n\n", i));
     }
     let doc = parse(&input).unwrap();
-    let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker, None).unwrap();
+    let mut app = new_test_app(doc);
 
     app.half_page_down();
     assert_eq!(
@@ -100,8 +106,7 @@ fn jump_commands_snap_visual_scroll() {
         input.push_str(&format!("paragraph {}\n\n", i));
     }
     let doc = parse(&input).unwrap();
-    let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker, None).unwrap();
+    let mut app = new_test_app(doc);
 
     app.scroll_down(50);
     assert_ne!(app.view_state.scroll().offset(), 0);
@@ -128,8 +133,7 @@ fn terminal_images_defer_until_scroll_idle() {
         input.push_str(&format!("paragraph {}\n\n", i));
     }
     let doc = parse(&input).unwrap();
-    let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker, None).unwrap();
+    let mut app = new_test_app(doc);
     assert!(app.show_terminal_images);
 
     let t0 = Instant::now();
@@ -149,8 +153,7 @@ fn terminal_images_defer_until_scroll_idle() {
 fn short_document_cannot_scroll() {
     let input = "# Title\n\nA paragraph.\n";
     let doc = parse(input).unwrap();
-    let picker = Picker::halfblocks();
-    let app = App::new(doc, picker, None).unwrap();
+    let app = new_test_app(doc);
     assert_eq!(app.max_scroll(), 0);
 }
 
@@ -162,8 +165,7 @@ fn search_command_flow_scrolls_to_match() {
     }
     input.push_str("target line\n");
     let doc = parse(&input).unwrap();
-    let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker, None).unwrap();
+    let mut app = new_test_app(doc);
 
     app.start_search(SearchDirection::Forward);
     assert!(matches!(
