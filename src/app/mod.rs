@@ -13,6 +13,7 @@ mod tests;
 use std::time::{Duration, Instant};
 
 use crossterm::event;
+
 use ratatui::{Terminal, backend::Backend};
 use ratatui_image::picker::Picker;
 
@@ -44,9 +45,14 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(document: Document, picker: Picker) -> Result<Self, AppError> {
+    pub fn new(
+        document: Document,
+        picker: Picker,
+        base_path: Option<std::path::PathBuf>,
+    ) -> Result<Self, AppError> {
         let size = terminal_size()?;
-        let rendered = RenderedDocument::new(&document, &picker, size.width())?;
+        let rendered =
+            RenderedDocument::new(&document, &picker, size.width(), base_path.as_deref())?;
         let view_state = ViewState::new(size);
         let scroll_visual = view_state.scroll().offset() as f32;
         let now = Instant::now();

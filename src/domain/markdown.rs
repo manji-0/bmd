@@ -43,7 +43,7 @@ impl Document {
             }) => {
                 Self::validate_inlines_links(inlines, block_idx, link_count)?;
             }
-            Block::CodeBlock(_) | Block::Mermaid(_) | Block::Rule => {}
+            Block::CodeBlock(_) | Block::Mermaid(_) | Block::Image(_) | Block::Rule => {}
             Block::BlockQuote(blocks) => {
                 for child in blocks {
                     Self::validate_block_links(child, block_idx, link_count)?;
@@ -105,6 +105,7 @@ pub enum Block {
     List(List),
     Table(Table),
     Mermaid(MermaidDiagram),
+    Image(MarkdownImage),
     Rule,
 }
 
@@ -296,6 +297,13 @@ pub enum Alignment {
     Left,
     Center,
     Right,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MarkdownImage {
+    pub src: String,
+    pub alt: String,
+    pub title: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

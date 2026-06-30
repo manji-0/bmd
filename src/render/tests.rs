@@ -32,6 +32,7 @@ fn test_render_context() -> RenderContext<'static> {
     ));
     let rendered: &'static RenderedDocument = Box::leak(Box::new(RenderedDocument {
         images: HashMap::new(),
+        markdown_images: HashMap::new(),
     }));
     RenderContext {
         theme,
@@ -546,7 +547,10 @@ fn table_logical_height_accounts_for_borders_and_header() {
         rows: vec![vec![vec![Inline::Text("Cell".into())]]],
         alignments: vec![Alignment::Left],
     };
-    assert_eq!(measure_block_height(&Block::Table(table), 20, &ctx), 5);
+    assert_eq!(
+        measure_block_height(&Block::Table(table), usize::MAX, 20, &ctx),
+        5
+    );
 }
 
 #[test]

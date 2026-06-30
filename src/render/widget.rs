@@ -44,7 +44,7 @@ impl Widget for MarkdownWidget<'_> {
 
         for (block_idx, block) in self.document.blocks.iter().enumerate() {
             let gap = if block_idx == 0 { 0 } else { 1 };
-            let block_height = measure_block_height(block, area.width, ctx);
+            let block_height = measure_block_height(block, block_idx, area.width, ctx);
             let total_height = block_height + gap;
 
             // Fully above the visible region?

@@ -15,7 +15,7 @@ mod tests;
 pub use link::{DocumentError, Link, LinkId, LinkUrl, LinkUrlError};
 pub use markdown::{
     Alignment, Block, CodeBlock, Document, Heading, HeadingLevel, Inline, List, ListItem,
-    MermaidDiagram, Table,
+    MarkdownImage, MermaidDiagram, Table,
 };
 pub use view::{
     Scroll, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, SearchState, TerminalSize,

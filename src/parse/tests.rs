@@ -127,13 +127,24 @@ fn parse_indented_code_block() {
 }
 
 #[test]
-fn parse_image_is_represented_as_link_placeholder() {
+fn parse_standalone_image_becomes_image_block() {
     let doc = parse("![alt text](diagram.png)").unwrap();
+    assert!(matches!(doc.blocks[0], Block::Image(_)));
+    let Block::Image(img) = &doc.blocks[0] else {
+        panic!("expected image block");
+    };
+    assert_eq!(img.src, "diagram.png");
+    assert_eq!(img.alt, "alt text");
+}
+
+#[test]
+fn parse_inline_image_in_mixed_paragraph_stays_as_link() {
+    let doc = parse("before ![alt](diagram.png) after").unwrap();
     assert_eq!(doc.links.len(), 1);
     let Block::Paragraph(inlines) = &doc.blocks[0] else {
         panic!("expected paragraph");
     };
-    assert!(matches!(inlines[0], Inline::Link(_, _)));
+    assert!(matches!(inlines[1], Inline::Link(_, _)));
 }
 
 #[test]

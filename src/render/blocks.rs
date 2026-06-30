@@ -10,13 +10,14 @@ use ratatui::{
 use syntect::{easy::HighlightLines, util::LinesWithEndings};
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::{Block, CodeBlock, Heading, Inline, List};
-
 use super::context::RenderContext;
+use super::image::render_markdown_image;
 use super::inline::{heading_styles, highlight_line, inlines_to_wrapped_lines, syntect_span};
 use super::measure::measure_block_height;
 use super::mermaid::render_mermaid;
 use super::table::render_table;
+
+use crate::domain::{Block, CodeBlock, Heading, Inline, List};
 
 pub(crate) fn render_block(
     block: &Block,
@@ -39,6 +40,7 @@ pub(crate) fn render_block(
         Block::List(list) => render_list(list, area, buf, skip_rows, ctx, line_offset),
         Block::Table(table) => render_table(table, area, buf, skip_rows, ctx, line_offset),
         Block::Mermaid(diag) => render_mermaid(diag, block_idx, area, buf, skip_rows, ctx),
+        Block::Image(img) => render_markdown_image(img, area, buf, skip_rows, ctx),
         Block::Rule => render_rule(area, buf),
     }
 }
@@ -220,12 +222,12 @@ fn render_blockquote(
     let max_y = inner_area.y + inner_area.height;
 
     for block in blocks {
-        let height = measure_block_height(block, inner_area.width, ctx);
+        let height = measure_block_height(block, usize::MAX, inner_area.width, ctx);
         if line_offset_inner.saturating_add(height) <= scroll {
             line_offset_inner += height;
             continue;
         }
-        let height = measure_block_height(block, inner_area.width, ctx);
+        let height = measure_block_height(block, usize::MAX, inner_area.width, ctx);
         if line_offset.saturating_add(height) <= scroll {
             line_offset += height;
             continue;
@@ -297,7 +299,7 @@ fn render_list(
         let mut item_line_offset = line_offset_inner;
         let mut drew_marker = false;
         for block in &item.content {
-            let height = measure_block_height(block, inner_width, ctx);
+            let height = measure_block_height(block, usize::MAX, inner_width, ctx);
             if item_line_offset.saturating_add(height) <= scroll {
                 item_line_offset += height;
                 continue;

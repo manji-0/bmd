@@ -4,7 +4,7 @@ use pulldown_cmark::{Alignment as CmarkAlignment, Event, Parser, Tag, TagEnd};
 
 use crate::domain::{
     Alignment, Block, CodeBlock, Heading, HeadingLevel, Inline, Link, List, ListItem,
-    MermaidDiagram, Table,
+    MarkdownImage, MermaidDiagram, Table,
 };
 use crate::error::AppError;
 
@@ -12,11 +12,19 @@ use super::html::{InlineHtmlKind, InlineHtmlToken};
 use super::inline::{InlineFrame, InlineParser};
 
 #[derive(Debug)]
+struct PendingStandaloneImage {
+    src: String,
+    title: Option<String>,
+    alt: String,
+}
+
+#[derive(Debug)]
 pub(crate) struct ParserState<'a> {
     iter: std::iter::Peekable<Parser<'a>>,
     blocks: Vec<Block>,
     links: Vec<Link>,
     stack: Vec<BlockFrame>,
+    paragraph_standalone_image: Option<PendingStandaloneImage>,
 }
 
 #[derive(Debug)]
@@ -52,6 +60,7 @@ impl<'a> ParserState<'a> {
             blocks: Vec::new(),
             links: Vec::new(),
             stack: Vec::new(),
+            paragraph_standalone_image: None,
         }
     }
 
@@ -137,14 +146,26 @@ impl<'a> ParserState<'a> {
             Tag::Image {
                 dest_url, title, ..
             } => {
-                // Images are not inline-rendered; show them as a link placeholder.
                 let dest = dest_url.into_string();
-                let title = title.into_string();
-                if let Some(
-                    BlockFrame::Paragraph(p) | BlockFrame::Heading(p) | BlockFrame::TableCell(p),
-                ) = self.stack.last_mut()
+                let title = if title.is_empty() {
+                    None
+                } else {
+                    Some(title.into_string())
+                };
+                if let Some(BlockFrame::Paragraph(parser)) = self.stack.last() {
+                    if parser.is_empty() {
+                        self.paragraph_standalone_image = Some(PendingStandaloneImage {
+                            src: dest,
+                            title,
+                            alt: String::new(),
+                        });
+                    } else if let Some(BlockFrame::Paragraph(p)) = self.stack.last_mut() {
+                        p.start_link(&mut self.links, dest, title.unwrap_or_default());
+                    }
+                } else if let Some(BlockFrame::Heading(p) | BlockFrame::TableCell(p)) =
+                    self.stack.last_mut()
                 {
-                    p.start_link(&mut self.links, dest, title);
+                    p.start_link(&mut self.links, dest, title.unwrap_or_default());
                 }
             }
             Tag::FootnoteDefinition(_)
@@ -164,7 +185,15 @@ impl<'a> ParserState<'a> {
             TagEnd::Paragraph => {
                 let frame = self.pop_frame("paragraph")?;
                 if let BlockFrame::Paragraph(parser) = frame {
-                    self.finish_block(Block::Paragraph(parser.into_inlines()));
+                    if let Some(pending) = self.paragraph_standalone_image.take() {
+                        self.finish_block(Block::Image(MarkdownImage {
+                            src: pending.src,
+                            alt: pending.alt,
+                            title: pending.title,
+                        }));
+                    } else {
+                        self.finish_block(Block::Paragraph(parser.into_inlines()));
+                    }
                 }
             }
             TagEnd::Heading(level) => {
@@ -297,9 +326,13 @@ impl<'a> ParserState<'a> {
             TagEnd::Link => self.with_inline_parser(|p| {
                 p.end_link().ok();
             }),
-            TagEnd::Image => self.with_inline_parser(|p| {
-                p.end_link().ok();
-            }),
+            TagEnd::Image => {
+                if self.paragraph_standalone_image.is_none() {
+                    self.with_inline_parser(|p| {
+                        p.end_link().ok();
+                    });
+                }
+            }
             TagEnd::FootnoteDefinition
             | TagEnd::DefinitionList
             | TagEnd::DefinitionListTitle
@@ -391,6 +424,10 @@ impl<'a> ParserState<'a> {
     }
 
     fn text(&mut self, text: String) {
+        if let Some(img) = &mut self.paragraph_standalone_image {
+            img.alt.push_str(&text);
+            return;
+        }
         if let Some(BlockFrame::CodeBlock { content, .. }) = self.stack.last_mut() {
             content.push_str(&text);
             return;

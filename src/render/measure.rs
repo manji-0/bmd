@@ -5,6 +5,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::{Block, CodeBlock, Document, Heading, Inline, List, Table};
 
 use super::context::RenderContext;
+use super::image::measure_image_height;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
 use super::mermaid::measure_mermaid_height;
 use super::table::{allocate_column_widths, wrap_cell_inlines};
@@ -25,7 +26,7 @@ pub fn measure_document_height(document: &Document, width: u16, ctx: &RenderCont
         .enumerate()
         .map(|(idx, block)| {
             let gap = if idx == 0 { 0 } else { 1 };
-            measure_block_height(block, width, ctx) + gap
+            measure_block_height(block, idx, width, ctx) + gap
         })
         .sum()
 }
@@ -35,7 +36,12 @@ pub fn measure_document_height(document: &Document, width: u16, ctx: &RenderCont
 /// This must stay in lock-step with the `render_*` functions: any change to how a
 /// block is drawn must be reflected here, otherwise scrolling will truncate or
 /// overshoot the document.
-pub fn measure_block_height(block: &Block, width: u16, ctx: &RenderContext) -> usize {
+pub fn measure_block_height(
+    block: &Block,
+    block_idx: usize,
+    width: u16,
+    ctx: &RenderContext,
+) -> usize {
     if width == 0 {
         return 0;
     }
@@ -46,7 +52,8 @@ pub fn measure_block_height(block: &Block, width: u16, ctx: &RenderContext) -> u
         Block::BlockQuote(blocks) => measure_blockquote_height(blocks, width, ctx),
         Block::List(list) => measure_list_height(list, width, ctx),
         Block::Table(table) => measure_table_height(table, width, ctx),
-        Block::Mermaid(_) => measure_mermaid_height(ctx, width),
+        Block::Mermaid(_) => measure_mermaid_height(ctx, block_idx, width),
+        Block::Image(img) => measure_image_height(img, ctx, width),
         Block::Rule => 1,
     }
 }
@@ -81,7 +88,7 @@ fn measure_blockquote_height(blocks: &[Block], width: u16, ctx: &RenderContext) 
     let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
     let content_height: usize = blocks
         .iter()
-        .map(|b| measure_block_height(b, inner_width, ctx))
+        .map(|b| measure_block_height(b, usize::MAX, inner_width, ctx))
         .sum();
     content_height.saturating_add(1)
 }
@@ -102,7 +109,7 @@ fn measure_list_height(list: &List, width: u16, ctx: &RenderContext) -> usize {
             total += item
                 .content
                 .iter()
-                .map(|b| measure_block_height(b, inner_width, ctx))
+                .map(|b| measure_block_height(b, usize::MAX, inner_width, ctx))
                 .sum::<usize>();
         }
     }

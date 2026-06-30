@@ -116,6 +116,10 @@ impl InlineParser {
         Ok(())
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.output.is_empty() && self.stack.is_empty()
+    }
+
     pub(crate) fn start_link(&mut self, links: &mut Vec<Link>, dest_url: String, title: String) {
         match LinkUrl::new(dest_url) {
             Ok(url) => {

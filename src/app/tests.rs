@@ -38,7 +38,7 @@ fn line_scroll_key_helpers() {
 fn open_link_without_selection_records_error() {
     let doc = dummy_document();
     let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker).unwrap();
+    let mut app = App::new(doc, picker, None).unwrap();
     app.open_current_link();
     assert!(app.error_message.is_some());
 }
@@ -48,7 +48,7 @@ fn renders_document_to_test_backend() {
     let input = "# Title\n\nA paragraph with **bold** and [a link](https://example.com).\n\n| Name | Value |\n|------|-------|\n| A    | 1     |\n";
     let doc = parse(input).unwrap();
     let picker = Picker::halfblocks();
-    let app = App::new(doc, picker).unwrap();
+    let app = App::new(doc, picker, None).unwrap();
 
     let backend = ratatui::backend::TestBackend::new(80, 30);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -83,7 +83,7 @@ fn half_page_scroll_uses_faster_animation() {
     }
     let doc = parse(&input).unwrap();
     let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker).unwrap();
+    let mut app = App::new(doc, picker, None).unwrap();
 
     app.half_page_down();
     assert_eq!(
@@ -100,7 +100,7 @@ fn jump_commands_snap_visual_scroll() {
     }
     let doc = parse(&input).unwrap();
     let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker).unwrap();
+    let mut app = App::new(doc, picker, None).unwrap();
 
     app.scroll_down(50);
     assert_ne!(app.view_state.scroll().offset(), 0);
@@ -121,7 +121,7 @@ fn short_document_cannot_scroll() {
     let input = "# Title\n\nA paragraph.\n";
     let doc = parse(input).unwrap();
     let picker = Picker::halfblocks();
-    let app = App::new(doc, picker).unwrap();
+    let app = App::new(doc, picker, None).unwrap();
     assert_eq!(app.max_scroll(), 0);
 }
 
@@ -134,7 +134,7 @@ fn search_command_flow_scrolls_to_match() {
     input.push_str("target line\n");
     let doc = parse(&input).unwrap();
     let picker = Picker::halfblocks();
-    let mut app = App::new(doc, picker).unwrap();
+    let mut app = App::new(doc, picker, None).unwrap();
 
     app.start_search(SearchDirection::Forward);
     assert!(matches!(

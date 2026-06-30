@@ -5,33 +5,36 @@ use std::collections::HashMap;
 use merman::render::{HeadlessRenderer, raster::RasterOptions};
 use ratatui::{
     buffer::Buffer,
-    layout::{Rect, Size},
+    layout::Rect,
     text::{Line, Text},
     widgets::{Paragraph, Widget},
 };
-use ratatui_image::{Resize, protocol::Protocol};
+use ratatui_image::protocol::Protocol;
 
 use crate::domain::{Block, Document, MermaidDiagram};
 use crate::error::AppError;
 
 use super::context::RenderContext;
+use super::image::{preload_markdown_images, terminal_image_protocol};
 
-/// Cache of pre-rendered mermaid images keyed by block index.
+/// Cache of pre-rendered terminal images.
 pub struct RenderedDocument {
     pub images: HashMap<usize, Protocol>,
+    pub markdown_images: HashMap<String, Protocol>,
 }
 
 impl RenderedDocument {
-    /// Render every `mermaid` block to a terminal image protocol.
+    /// Render every `mermaid` block and markdown image to a terminal image protocol.
     ///
     /// # Errors
     ///
     /// Returns `AppError` if the terminal image protocol cannot be created. Individual
-    /// mermaid failures are logged and skipped (the widget renders a placeholder instead).
+    /// render failures are logged and skipped (the widget renders a placeholder instead).
     pub fn new(
         document: &Document,
         picker: &ratatui_image::picker::Picker,
         width: u16,
+        base_path: Option<&std::path::Path>,
     ) -> Result<Self, AppError> {
         let mut images = HashMap::new();
         for (idx, block) in document.blocks.iter().enumerate() {
@@ -46,7 +49,11 @@ impl RenderedDocument {
                 }
             }
         }
-        Ok(Self { images })
+        let markdown_images = preload_markdown_images(document, picker, width, base_path);
+        Ok(Self {
+            images,
+            markdown_images,
+        })
     }
 }
 
@@ -62,28 +69,17 @@ fn render_mermaid_image(
         .ok_or(AppError::MermaidNoDiagram)?;
     let dyn_img = image::load_from_memory(&png)?;
 
-    let font_size = picker.font_size();
-    // Use a width proportional to the diagram's natural size so nodes and
-    // text are not shrunk to an unreadable mosaic.
-    let cols = diag.estimated_width().min(max_width).max(20) as u32;
-    let rows = (dyn_img.height() as u32)
-        .saturating_mul(cols)
-        .saturating_mul(font_size.width as u32)
-        .div_ceil(dyn_img.width().max(1))
-        .div_ceil(font_size.height.max(1) as u32)
-        .max(1);
-    let size = Size::new(cols as u16, rows as u16);
-    picker
-        .new_protocol(dyn_img, size, Resize::Fit(None))
-        .map_err(|e| AppError::TerminalImage(e.to_string()))
+    terminal_image_protocol(
+        dyn_img,
+        picker,
+        diag.estimated_width().min(max_width).max(20),
+    )
 }
 
-pub(crate) fn measure_mermaid_height(ctx: &RenderContext, width: u16) -> usize {
-    // The rendered protocol has a fixed cell size; if it's cached, use it.
-    if let Some((_idx, protocol)) = ctx.rendered.images.iter().next() {
+pub(crate) fn measure_mermaid_height(ctx: &RenderContext, block_idx: usize, width: u16) -> usize {
+    if let Some(protocol) = ctx.rendered.images.get(&block_idx) {
         return protocol.size().height as usize;
     }
-    // Fallback: approximate 16:9 height for a mid-size diagram.
     let cols = (width as usize).min(160);
     (cols * 9).div_ceil(16).max(6)
 }
