@@ -190,6 +190,12 @@ pub struct List {
     pub items: Vec<ListItem>,
 }
 
+impl List {
+    pub fn is_task_list(&self) -> bool {
+        self.items.iter().any(|item| item.checklist_id.is_some())
+    }
+}
+
 impl Heading {
     /// Returns the textual marker used to prefix this heading in the terminal.
     pub fn prefix(&self) -> &'static str {
@@ -199,7 +205,19 @@ impl Heading {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ListItem {
+    pub checklist_id: Option<super::checklist::ChecklistId>,
+    pub checked: bool,
     pub content: Vec<Block>,
+}
+
+impl ListItem {
+    pub fn plain(content: Vec<Block>) -> Self {
+        Self {
+            checklist_id: None,
+            checked: false,
+            content,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

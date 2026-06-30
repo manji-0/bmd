@@ -3,8 +3,8 @@
 use pulldown_cmark::{Alignment as CmarkAlignment, Event, Parser, Tag, TagEnd};
 
 use crate::domain::{
-    Alignment, Block, CodeBlock, Heading, HeadingLevel, Inline, Link, LinkId, LinkKind, List,
-    ListItem, MermaidDiagram, Table,
+    Alignment, Block, ChecklistId, CodeBlock, Heading, HeadingLevel, Inline, Link, LinkId,
+    LinkKind, List, ListItem, MermaidDiagram, Table,
 };
 use crate::error::AppError;
 
@@ -26,6 +26,7 @@ pub(crate) struct ParserState<'a> {
     mermaid_diagrams: Vec<MermaidDiagram>,
     stack: Vec<BlockFrame>,
     paragraph_standalone_image: Option<PendingStandaloneImage>,
+    next_checklist_id: u32,
 }
 
 #[derive(Debug)]
@@ -36,7 +37,11 @@ enum BlockFrame {
         items: Vec<ListItem>,
         current_item: Vec<Block>,
     },
-    ListItem(Vec<Block>),
+    ListItem {
+        blocks: Vec<Block>,
+        checked: bool,
+        checklist_id: Option<ChecklistId>,
+    },
     Heading(InlineParser),
     Paragraph(InlineParser),
     Table {
@@ -63,6 +68,7 @@ impl<'a> ParserState<'a> {
             mermaid_diagrams: Vec::new(),
             stack: Vec::new(),
             paragraph_standalone_image: None,
+            next_checklist_id: 0,
         }
     }
 
@@ -78,10 +84,8 @@ impl<'a> ParserState<'a> {
                 Event::SoftBreak => self.soft_break(),
                 Event::HardBreak => self.hard_break(),
                 Event::Rule => self.blocks.push(Block::Rule),
-                Event::FootnoteReference(_)
-                | Event::TaskListMarker(_)
-                | Event::InlineMath(_)
-                | Event::DisplayMath(_) => {}
+                Event::FootnoteReference(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {}
+                Event::TaskListMarker(checked) => self.task_list_marker(checked),
             }
         }
         Ok(())
@@ -121,7 +125,11 @@ impl<'a> ParserState<'a> {
                 items: Vec::new(),
                 current_item: Vec::new(),
             }),
-            Tag::Item => self.stack.push(BlockFrame::ListItem(Vec::new())),
+            Tag::Item => self.stack.push(BlockFrame::ListItem {
+                blocks: Vec::new(),
+                checked: false,
+                checklist_id: None,
+            }),
             Tag::Table(alignments) => self.stack.push(BlockFrame::Table {
                 alignments: alignments.into_iter().map(map_alignment).collect(),
                 headers: Vec::new(),
@@ -293,10 +301,17 @@ impl<'a> ParserState<'a> {
             }
             TagEnd::Item => {
                 let frame = self.pop_frame("list item")?;
-                if let BlockFrame::ListItem(mut blocks) = frame {
+                if let BlockFrame::ListItem {
+                    blocks,
+                    checked,
+                    checklist_id,
+                } = frame
+                {
                     if let Some(BlockFrame::List { items, .. }) = self.stack.last_mut() {
                         items.push(ListItem {
-                            content: std::mem::take(&mut blocks),
+                            checklist_id,
+                            checked,
+                            content: blocks,
                         });
                     } else {
                         return Err(AppError::MarkdownParse(
@@ -522,12 +537,26 @@ impl<'a> ParserState<'a> {
 
     /// Append inline content directly inside a list item when no paragraph frame is active.
     fn push_inline_to_list_item(&mut self, inline: Inline) {
-        if let Some(BlockFrame::ListItem(blocks)) = self.stack.last_mut() {
+        if let Some(BlockFrame::ListItem { blocks, .. }) = self.stack.last_mut() {
             if let Some(Block::Paragraph(inlines)) = blocks.last_mut() {
                 inlines.push(inline);
             } else {
                 blocks.push(Block::Paragraph(vec![inline]));
             }
+        }
+    }
+
+    fn task_list_marker(&mut self, checked: bool) {
+        let id = ChecklistId(self.next_checklist_id);
+        self.next_checklist_id += 1;
+        if let Some(BlockFrame::ListItem {
+            checked: item_checked,
+            checklist_id,
+            ..
+        }) = self.stack.last_mut()
+        {
+            *item_checked = checked;
+            *checklist_id = Some(id);
         }
     }
 
@@ -555,7 +584,7 @@ impl<'a> ParserState<'a> {
         if let Some(parent) = self.stack.last_mut() {
             match parent {
                 BlockFrame::BlockQuote(blocks) => blocks.push(block),
-                BlockFrame::ListItem(blocks) => blocks.push(block),
+                BlockFrame::ListItem { blocks, .. } => blocks.push(block),
                 BlockFrame::List { current_item, .. } => current_item.push(block),
                 _ => self.blocks.push(block),
             }

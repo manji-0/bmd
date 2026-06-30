@@ -29,12 +29,12 @@ impl App {
 
             let ctx = RenderContext::new(
                 &self.theme,
-                &self.syntax_assets.syntax_set,
-                self.syntax_assets.theme(),
+                &self.syntax_assets,
                 &self.rendered,
                 &self.document.links,
                 &self.view_state,
                 self.show_terminal_images,
+                &self.checklist_state,
             );
             let width = self.view_state.terminal_size().width();
             self.document_cache

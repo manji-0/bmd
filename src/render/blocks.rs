@@ -1,5 +1,6 @@
 //! Block-level rendering.
 
+use super::list_marker::{list_marker_label, list_marker_width_at};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -271,12 +272,8 @@ fn render_list(
     let max_y = area.y + area.height;
 
     for (idx, item) in list.items.iter().enumerate() {
-        let marker = if list.ordered {
-            format!("{}. ", idx + 1)
-        } else {
-            "• ".to_string()
-        };
-        let marker_width = marker.width();
+        let marker = list_marker_label(list, idx, item, ctx.checklist_state);
+        let marker_width = list_marker_width_at(list, idx, item, ctx.checklist_state);
         let inner_width = (area.width as usize).saturating_sub(marker_width).max(1) as u16;
 
         if item.content.is_empty() {

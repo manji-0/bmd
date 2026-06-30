@@ -77,12 +77,12 @@ fn renders_document_to_test_backend() {
         .draw(|f| {
             let ctx = RenderContext::new(
                 &app.theme,
-                &app.syntax_assets.syntax_set,
-                app.syntax_assets.theme(),
+                &app.syntax_assets,
                 &app.rendered,
                 &app.document.links,
                 &app.view_state,
                 app.show_terminal_images,
+                &app.checklist_state,
             );
             let width = app.view_state.terminal_size().width();
             let mut cache = DocumentRenderCache::default();

@@ -1,5 +1,6 @@
 //! Application loop and state.
 
+mod checklist;
 mod draw;
 mod input;
 mod layout;
@@ -17,7 +18,7 @@ use crossterm::event;
 use ratatui::{Terminal, backend::Backend};
 use ratatui_image::picker::Picker;
 
-use crate::domain::{Document, TerminalSize, ViewState};
+use crate::domain::{ChecklistState, ChecklistStyle, Document, TerminalSize, ViewState};
 use crate::error::AppError;
 use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
 
@@ -46,6 +47,7 @@ pub struct App {
     pub(crate) show_terminal_images: bool,
     syntax_assets: SyntaxAssets,
     theme: Theme,
+    checklist_state: ChecklistState,
     should_quit: bool,
     error_message: Option<String>,
 }
@@ -85,6 +87,7 @@ impl App {
             show_terminal_images: true,
             syntax_assets: SyntaxAssets::new(),
             theme: Theme::default(),
+            checklist_state: ChecklistState::new(ChecklistStyle::from_env()),
             should_quit: false,
             error_message: None,
         })
