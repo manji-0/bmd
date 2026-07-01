@@ -34,12 +34,12 @@ Press `/` for forward search or `?` for backward search. A prompt appears at the
 
 - Case-insensitive substring matching
 - Searches plain text across paragraphs, code blocks, lists, block quotes, and tables
-- After confirming, `n` / `N` (or `Tab` / `Shift-Tab`) move between matches and scroll to the matching line
+- After confirming, `n` / `N` / `p` (or `Tab` / `Shift-Tab`) move between matches and scroll to the matching line
 - `Esc` while search is active clears the search (does not quit)
 
 ### Links and preview
 
-Cycle through links in the document with `n` / `N`. Only links currently visible on screen are included; pressing `n` wraps within that set without scrolling.
+Cycle through links in the document with `n` / `N` / `p`. Only links currently visible on screen are included; pressing `n` wraps within that set without scrolling.
 
 | Type | Example | `o` / `Enter` |
 |------|---------|---------------|
@@ -49,7 +49,7 @@ Cycle through links in the document with `n` / `N`. Only links currently visible
 | Image | `![alt](path.png)` | Floating in-terminal preview |
 | Mermaid | Link from a mermaid code block | Floating preview of the rendered diagram |
 
-Close the preview overlay with `Esc` or `o`. After anchor jumps, `O` (Shift+o) returns to the previous scroll position one step at a time when an anchor stack is active; otherwise it returns to the previous file. `Esc` resets the anchor stack to your pre-jump scroll position, or returns to the first opened file when only the document stack is active. Anchor navigation takes priority over document navigation when both apply. Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
+Close the preview overlay with `Esc` or `o`. The `o`/`O` pairing is consistent: `o` opens links and previews; `O` closes an open preview or steps back one navigation level (anchor jump or previous file). `Esc` resets the anchor stack to your pre-jump scroll position, or returns to the first opened file when only the document stack is active. Anchor navigation takes priority over document navigation when both apply. Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
 
 ### Task lists
 
@@ -123,13 +123,13 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `d` / `PageDown` | Half page down |
 | `u` / `PageUp` | Half page up |
 | `g` / `G` | Jump to top / bottom |
-| `{` / `}` | Previous / next heading |
+| `[` / `]` | Previous / next heading |
 | `Tab` / `n` | Next visible link (or next search match when search is active) |
-| `Shift-Tab` / `N` | Previous visible link (or previous search match) |
+| `Shift-Tab` / `N` / `p` | Previous visible link (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
-| `O` | Back one step (anchor stack, else previous file) |
+| `O` | Close an open preview, or step back one navigation level |
 | `/` / `?` | Start forward / backward search |
-| `h` | Show help overlay |
+| `h` / `H` | Show help overlay / close help overlay |
 | `x` | Toggle task-list item on top visible line |
 | Mouse wheel | Scroll up / down |
 | `q` / `Ctrl-c` | Quit (`Esc` clears search when active; else resets anchor or document stack) |
@@ -149,7 +149,78 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | Key | Action |
 |-----|--------|
 | `Esc` / `o` | Close preview |
+| `+` / `=` / `-` | Zoom in / out |
+| `0` | Reset zoom to fit |
+| Ctrl+trackpad pinch | Zoom in / out |
 | `q` / `Ctrl-c` | Quit |
+
+## Configuration
+
+Optional settings live in `~/.config/bmd/config.toml` (or `$XDG_CONFIG_HOME/bmd/config.toml`). Missing files use built-in defaults.
+
+### Theme
+
+Pick a built-in preset, then override individual roles on top of that preset:
+
+```toml
+[theme]
+preset = "nord"   # see table below
+```
+
+| Preset | Description |
+|--------|-------------|
+| `dark` | High-contrast classic terminal palette |
+| `cursor-midnight` | Application default (`DEFAULT_PRESET`; used when `preset` is omitted) |
+| `light` | Dark text for light terminal backgrounds |
+| `solarized-dark` | Ethan Schoonover Solarized (dark) |
+| `solarized-light` | Ethan Schoonover Solarized (light) |
+| `nord` | Nord frost / aurora palette |
+| `gruvbox-dark` | Warm Gruvbox dark |
+| `dracula` | Dracula purple-pink accents |
+| `tokyo-night` | Tokyo Night editor colors |
+| `hackerman-omarchy` | Omarchy Hackerman neon cyan/green on `#0B0C16` |
+
+Each `[theme.<role>]` section overrides only the fields you set on the chosen preset; omitted fields keep the preset value. Set a boolean modifier to `false` to turn it off.
+
+```toml
+[theme]
+preset = "nord"
+
+[theme.link]
+fg = "cyan"        # overrides preset link foreground only
+
+[theme.h1]
+underlined = false # removes h1 underline from the preset
+```
+
+Supported fields per role: `fg`, `bg`, `bold`, `italic`, `underlined`, `dim`, `reversed`, `crossed_out`. Colors may be named (`white`, `blue`, `darkgray`, …) or hex (`#ff8800`). Roles match theme keys (`text`, `h1`, `link`, `code_block`, …).
+
+### Keymap
+
+Bindings are grouped by mode. Each command accepts one key string or an array of aliases. Modifier prefixes: `C-` (Ctrl), `S-` (Shift), `A-` (Alt). Named keys such as `down`, `enter`, and `pagedown` are supported.
+
+```toml
+[keymap.normal]
+scroll_down = ["j", "down"]
+prev_link = ["N", "backtab", "p"]
+prev_heading = "["
+next_heading = "]"
+toggle_help = "h"
+close_help = "H"
+
+[keymap.preview]
+preview_zoom_in = ["+", "="]
+preview_zoom_out = "-"
+preview_zoom_reset = "0"
+```
+
+Available commands:
+
+| Mode | Commands |
+|------|----------|
+| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_checklist`, `quit` |
+| `preview` | `close_preview`, `preview_zoom_in`, `preview_zoom_out`, `preview_zoom_reset`, `quit` |
+| `search` | `search_confirm`, `search_cancel`, `search_backspace` |
 
 ## Build
 
@@ -193,7 +264,8 @@ src/
 ├── domain/           # domain model and typed state transitions
 ├── parse/            # pulldown-cmark → domain model
 ├── render/           # domain model → ratatui widgets
-├── keymap.rs         # per-mode Vim keybindings
+├── config.rs         # ~/.config/bmd/config.toml loader
+├── keymap.rs         # per-mode keybindings (configurable)
 ├── browser.rs        # macOS open adapter
 └── error.rs
 ```

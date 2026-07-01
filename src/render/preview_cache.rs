@@ -62,7 +62,7 @@ impl PreviewRenderCache {
             let block = Block::bordered().title(title.to_string());
             let inner = block.inner(area);
             block.render(area, &mut buffer);
-            render_floating_image(protocol, inner, &mut buffer);
+            render_floating_image(protocol, inner, &mut buffer, 1.0);
             buffer
         })
     }

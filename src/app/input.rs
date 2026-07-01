@@ -2,21 +2,36 @@
 
 use std::time::Instant;
 
-use crossterm::event::{Event, KeyEvent, KeyEventKind, MouseEventKind};
+use crossterm::event::{Event, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 
 use crate::domain::SearchDirection;
 use crate::error::AppError;
-use crate::keymap::{Command, map_event};
+use crate::keymap::Command;
 
 use super::App;
-use super::scroll::{
-    LINE_SCROLL_LINES, SCROLL_REPEAT_DELAY, SCROLL_REPEAT_INTERVAL, is_line_scroll_key,
-    is_single_press_key, line_scroll_command,
-};
+use super::preview::PREVIEW_ZOOM_STEP;
+use super::scroll::{LINE_SCROLL_LINES, SCROLL_REPEAT_DELAY, SCROLL_REPEAT_INTERVAL};
 
 impl App {
     pub(crate) fn handle_crossterm_event(&mut self, event: Event) -> Result<bool, AppError> {
         if let Event::Mouse(mouse) = &event {
+            if self.view_state.mode().preview_link().is_some()
+                && !self.help_visible
+                && mouse.modifiers.contains(KeyModifiers::CONTROL)
+            {
+                match mouse.kind {
+                    MouseEventKind::ScrollDown => {
+                        self.adjust_preview_zoom(1.0 / PREVIEW_ZOOM_STEP);
+                        return Ok(true);
+                    }
+                    MouseEventKind::ScrollUp => {
+                        self.adjust_preview_zoom(PREVIEW_ZOOM_STEP);
+                        return Ok(true);
+                    }
+                    _ => {}
+                }
+            }
+
             if self.view_state.mode().is_normal() && !self.help_visible {
                 match mouse.kind {
                     MouseEventKind::ScrollDown => {
@@ -35,7 +50,7 @@ impl App {
 
         if let Event::Key(key) = &event {
             if self.view_state.mode().is_normal() {
-                if is_line_scroll_key(&key.code) {
+                if self.keymap.is_line_scroll_key(key) {
                     return self.handle_line_scroll_key(key);
                 }
                 if key.kind == KeyEventKind::Press {
@@ -47,14 +62,14 @@ impl App {
             }
             if key.kind == KeyEventKind::Repeat
                 && self.view_state.mode().is_normal()
-                && is_single_press_key(&key.code)
-                && !is_line_scroll_key(&key.code)
+                && self.keymap.is_single_press_key(key)
+                && !self.keymap.is_line_scroll_key(key)
             {
                 return Ok(false);
             }
         }
 
-        let command = map_event(
+        let command = self.keymap.map_event(
             event,
             self.view_state.mode(),
             self.view_state.normal_search(),
@@ -76,13 +91,13 @@ impl App {
         match key.kind {
             KeyEventKind::Press => {
                 self.scroll_key_down_at = Some(now);
-                self.handle_command(line_scroll_command(&key.code))?;
+                self.handle_command(self.keymap.line_scroll_command(key))?;
                 Ok(true)
             }
             KeyEventKind::Repeat => {
                 let Some(pressed_at) = self.scroll_key_down_at else {
                     self.scroll_key_down_at = Some(now);
-                    self.handle_command(line_scroll_command(&key.code))?;
+                    self.handle_command(self.keymap.line_scroll_command(key))?;
                     return Ok(true);
                 };
                 if now < pressed_at + SCROLL_REPEAT_DELAY {
@@ -91,7 +106,7 @@ impl App {
                 if now < self.last_scroll_repeat + SCROLL_REPEAT_INTERVAL {
                     return Ok(false);
                 }
-                self.handle_command(line_scroll_command(&key.code))?;
+                self.handle_command(self.keymap.line_scroll_command(key))?;
                 self.last_scroll_repeat = now;
                 Ok(true)
             }
@@ -109,7 +124,7 @@ impl App {
 
         if self.help_visible && self.view_state.mode().is_normal() {
             match command {
-                Command::ToggleHelp | Command::SearchCancel | Command::NavReset => {
+                Command::CloseHelp | Command::SearchCancel | Command::NavReset => {
                     self.help_visible = false;
                 }
                 Command::Quit => self.should_quit = true,
@@ -144,6 +159,9 @@ impl App {
             Command::PrevHeading => self.prev_heading(),
             Command::OpenLink => self.open_current_link(),
             Command::ClosePreview => self.close_preview(),
+            Command::PreviewZoomIn => self.adjust_preview_zoom(PREVIEW_ZOOM_STEP),
+            Command::PreviewZoomOut => self.adjust_preview_zoom(1.0 / PREVIEW_ZOOM_STEP),
+            Command::PreviewZoomReset => self.reset_preview_zoom(),
             Command::NavBack => self.nav_back(),
             Command::NavReset => self.nav_reset(),
             Command::StartSearchForward => self.start_search(SearchDirection::Forward),
@@ -153,6 +171,7 @@ impl App {
             Command::SearchInput(c) => self.append_search_input(c),
             Command::SearchBackspace => self.backspace_search_input(),
             Command::ToggleHelp => self.help_visible = true,
+            Command::CloseHelp => self.help_visible = false,
             Command::ToggleChecklist => self.toggle_checklist_at_viewport(),
             Command::Quit => self.should_quit = true,
         }

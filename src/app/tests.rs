@@ -1,14 +1,14 @@
 use super::App;
-use super::scroll::{is_line_scroll_key, line_scroll_command};
+use crate::config::Config;
 use crate::domain::{
     ANCHOR_STACK_MAX_FRAMES, AnchorIdle, Block, DOCUMENT_STACK_MAX_LAYERS, Document, Heading,
     HeadingLevel, Inline, Link, LinkKind, LinkUrl, SearchDirection, TerminalSize,
     anchor_stack_limit_message, document_stack_limit_message, normalize_document_path,
 };
-use crate::keymap::Command;
+use crate::keymap::{Command, Keymap};
 use crate::parse::parse;
 use crate::render::{CachedMarkdownView, DocumentRenderCache, RenderContext};
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui_image::picker::Picker;
 
 fn test_terminal_size() -> TerminalSize {
@@ -27,6 +27,7 @@ fn new_test_app(document: Document) -> App {
         None,
         None,
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap()
 }
@@ -48,14 +49,18 @@ fn dummy_document() -> Document {
 
 #[test]
 fn line_scroll_key_helpers() {
-    assert!(is_line_scroll_key(&KeyCode::Char('j')));
-    assert!(is_line_scroll_key(&KeyCode::Up));
-    assert!(!is_line_scroll_key(&KeyCode::Char('d')));
+    let keymap = Keymap::default();
+    let j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::empty());
+    let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+    let d = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::empty());
+    assert!(keymap.is_line_scroll_key(&j));
+    assert!(keymap.is_line_scroll_key(&up));
+    assert!(!keymap.is_line_scroll_key(&d));
+    assert_eq!(keymap.line_scroll_command(&j), Command::ScrollDown);
     assert_eq!(
-        line_scroll_command(&KeyCode::Char('j')),
-        Command::ScrollDown
+        keymap.line_scroll_command(&KeyEvent::new(KeyCode::Char('k'), KeyModifiers::empty())),
+        Command::ScrollUp
     );
-    assert_eq!(line_scroll_command(&KeyCode::Char('k')), Command::ScrollUp);
 }
 
 #[test]
@@ -357,6 +362,7 @@ fn file_backed_app(dir: &std::path::Path, file_name: &str, markdown: &str) -> Ap
         Some(path),
         Some(file_name.into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap()
 }
@@ -412,6 +418,7 @@ fn document_stack_back_and_reset() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -477,6 +484,7 @@ fn anchor_stack_takes_priority_over_document_stack() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -527,6 +535,7 @@ fn open_document_link_missing_file_preserves_stack() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -556,6 +565,7 @@ fn open_document_link_rolls_back_stack_on_apply_failure() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -586,6 +596,7 @@ fn doc_back_preserves_stack_when_restore_fails() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -620,6 +631,7 @@ fn doc_reset_preserves_stack_when_restore_fails() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -660,6 +672,7 @@ fn nav_reset_drains_anchor_before_returning_to_root_document() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -736,6 +749,7 @@ fn document_stack_supports_max_depth_and_rejects_overflow() {
         Some(root.clone()),
         Some("0.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
     assert_eq!(app.source_label.as_deref(), Some("0.md"));
@@ -789,6 +803,7 @@ fn document_prior_restore_preserves_render_caches() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -831,6 +846,7 @@ fn open_document_link_follows_fragment_in_linked_file() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 
@@ -860,6 +876,7 @@ fn doc_back_restores_document_after_child_navigation() {
         Some(a.clone()),
         Some("a.md".into()),
         test_terminal_size(),
+        Config::default(),
     )
     .unwrap();
 

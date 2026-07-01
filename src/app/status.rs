@@ -13,14 +13,16 @@ use crate::domain::{NormalSearch, ViewState};
 use super::layout::content_height;
 
 const HELP_TEXT: &str = "\
-bmd — Markdown viewer (press h or Esc to close)
+bmd — Markdown viewer (press H or Esc to close)
 
 Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   wheel scroll
-Headings      {{}} prev/next section   #anchor links jump in-document
-Links         n/N next/prev in viewport   o/Enter open   O back (anchor/doc)   Esc reset
-Search        / forward   ? backward   n/N next/prev match   Esc clear
+Headings      [/] prev/next section   #anchor links jump in-document
+Links         n/p/N next/prev in viewport   o/Enter open   O step back or close preview   Esc reset stack
+Open/close    o opens links and previews   O closes what o opened (preview overlay) or steps back one navigation level
+Search        / forward   ? backward   n/p/N next/prev match   Esc clear
+Preview       Ctrl+pinch or +/- zoom   0 reset zoom   o/Esc close
 Tasks         click checkbox   x toggle at top line
-Other         h help   q/Ctrl-c quit";
+Other         h help   H close help   q/Ctrl-c quit";
 
 pub(crate) fn format_status_bar(
     source_label: Option<&str>,

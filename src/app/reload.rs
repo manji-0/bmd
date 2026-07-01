@@ -173,6 +173,7 @@ mod tests {
             Some(path.clone()),
             Some("sample.md".into()),
             size,
+            crate::config::Config::default(),
         )
         .unwrap();
 

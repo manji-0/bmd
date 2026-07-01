@@ -138,6 +138,7 @@ impl App {
 
     pub(crate) fn close_preview(&mut self) {
         self.pending_preview = None;
+        self.reset_preview_zoom();
         self.view_state = self.view_state.clone().close_preview();
     }
 
