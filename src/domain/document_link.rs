@@ -1,6 +1,7 @@
 //! Local document link path resolution.
 
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// Split a link destination into path and optional `#fragment`.
 pub fn document_link_path_part(dest: &str) -> (&str, Option<&str>) {
@@ -16,6 +17,13 @@ pub fn is_remote_link_dest(dest: &str) -> bool {
     let path_part = dest.split('#').next().unwrap_or(dest);
     let lower = path_part.to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+}
+
+/// Last modification time for a local file, when available.
+pub fn file_modified_time(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
 }
 
 /// Canonicalize a resolved path for cache keys and prefetch lookup.

@@ -2,14 +2,15 @@
 
 use std::mem;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
+use std::sync::{Arc, mpsc};
 
 use crate::domain::{
-    Document, DocumentPrefetchCompletion, DocumentPrefetchError, DocumentPrefetchSession,
-    DocumentPrefetchSessionSnapshot, DocumentPrefetchSpawnRequest,
+    DocumentPrefetchCompletion, DocumentPrefetchError, DocumentPrefetchSession,
+    DocumentPrefetchSessionSnapshot, DocumentPrefetchSpawnRequest, PrefetchedDocument,
 };
 use crate::parse::parse;
+
+use super::worker_pool::WorkerPool;
 
 struct WorkerResult {
     completion: DocumentPrefetchCompletion,
@@ -18,22 +19,22 @@ struct WorkerResult {
 /// Runs background document reads and applies domain state transitions.
 pub(crate) struct DocumentPrefetchPool {
     session: DocumentPrefetchSession,
-    receiver: Receiver<WorkerResult>,
-    sender: Sender<WorkerResult>,
+    receiver: mpsc::Receiver<WorkerResult>,
+    sender: mpsc::Sender<WorkerResult>,
+    worker_pool: Arc<WorkerPool>,
 }
 
-impl Default for DocumentPrefetchPool {
-    fn default() -> Self {
+impl DocumentPrefetchPool {
+    pub(crate) fn new(worker_pool: Arc<WorkerPool>) -> Self {
         let (sender, receiver) = mpsc::channel();
         Self {
             session: DocumentPrefetchSession::new(),
             receiver,
             sender,
+            worker_pool,
         }
     }
-}
 
-impl DocumentPrefetchPool {
     pub fn begin_document(&mut self) {
         let session = mem::take(&mut self.session);
         self.session = session.begin_document();
@@ -56,8 +57,8 @@ impl DocumentPrefetchPool {
         base_path: Option<&PathBuf>,
     ) {
         let session = mem::take(&mut self.session);
-        let ready = session.ready_path_set();
-        let is_ready = |path: &Path| ready.contains(path);
+        let fresh_ready = session.fresh_ready_paths();
+        let is_ready = move |path: &Path| fresh_ready.contains(path);
         let (session, spawns) = session.schedule_visible_prefetch(
             visible,
             document,
@@ -80,7 +81,7 @@ impl DocumentPrefetchPool {
         dirty
     }
 
-    pub fn ready_document(&self, path: &Path) -> Option<Document> {
+    pub fn ready_document(&self, path: &Path) -> Option<crate::domain::Document> {
         self.session.ready_document(path).cloned()
     }
 
@@ -98,11 +99,17 @@ impl DocumentPrefetchPool {
         let path = request.path;
         let sender = self.sender.clone();
         let generation = request.generation;
-        thread::spawn(move || {
-            let outcome = (|| {
+        let worker_pool = Arc::clone(&self.worker_pool);
+        worker_pool.spawn(move || {
+            let outcome = (|| -> Result<PrefetchedDocument, DocumentPrefetchError> {
+                let mtime = std::fs::metadata(&path)
+                    .and_then(|metadata| metadata.modified())
+                    .map_err(|error| DocumentPrefetchError::Read(error.to_string()))?;
                 let content = std::fs::read_to_string(&path)
                     .map_err(|error| DocumentPrefetchError::Read(error.to_string()))?;
-                parse(&content).map_err(|error| DocumentPrefetchError::Parse(error.to_string()))
+                let document = parse(&content)
+                    .map_err(|error| DocumentPrefetchError::Parse(error.to_string()))?;
+                Ok(PrefetchedDocument { document, mtime })
             })();
             let _ = sender.send(WorkerResult {
                 completion: DocumentPrefetchCompletion {
@@ -112,5 +119,59 @@ impl DocumentPrefetchPool {
                 },
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::Duration;
+
+    use crate::domain::{Document, Link, LinkId, LinkKind, LinkUrl, normalize_document_path};
+    use crate::parse::parse;
+
+    use super::*;
+
+    fn write_temp_markdown(name: &str, content: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "bmd-prefetch-pool-{name}-{}.md",
+            std::process::id()
+        ));
+        fs::write(&path, content).unwrap();
+        path
+    }
+
+    #[test]
+    fn ready_document_reflects_updated_mtime() {
+        let path = normalize_document_path(write_temp_markdown("pool-mtime", "# v1\n"));
+        let link_document = Document {
+            blocks: vec![],
+            links: vec![Link {
+                url: LinkUrl::new(path.display().to_string()).unwrap(),
+                title: None,
+                kind: LinkKind::Document,
+            }],
+            mermaid_diagrams: vec![],
+        };
+        let mut pool = DocumentPrefetchPool::new(WorkerPool::new(1));
+        pool.prefetch_visible(&[LinkId(0)], &link_document, None);
+        while pool.poll() || pool.has_pending() {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let first = pool.ready_document(&path).expect("prefetched document");
+        assert_eq!(parse("# v1\n").unwrap().blocks.len(), first.blocks.len());
+
+        std::thread::sleep(Duration::from_millis(1100));
+        fs::write(&path, "# v2\nextra\n").unwrap();
+        pool.prefetch_visible(&[LinkId(0)], &link_document, None);
+        while pool.poll() || pool.has_pending() {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let second = pool.ready_document(&path).expect("refreshed document");
+        assert_eq!(
+            second.blocks.len(),
+            parse("# v2\nextra\n").unwrap().blocks.len()
+        );
+        let _ = fs::remove_file(path);
     }
 }

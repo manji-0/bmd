@@ -35,6 +35,21 @@ impl App {
             .is_some()
     }
 
+    pub(crate) fn maybe_warm_selected_preview(&mut self) {
+        let Some(link_id) = self.view_state.selected_link() else {
+            return;
+        };
+        let Some(link) = self.document.links.get(link_id.0) else {
+            return;
+        };
+        if !link.kind.is_preview() {
+            return;
+        }
+        if self.preview_protocol_cached(link_id) {
+            self.warm_preview_cache(link_id);
+        }
+    }
+
     pub(crate) fn warm_preview_cache(&mut self, link_id: LinkId) {
         let Some(link) = self.document.links.get(link_id.0).cloned() else {
             return;

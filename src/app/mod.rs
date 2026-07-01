@@ -15,10 +15,12 @@ mod reload;
 mod scroll;
 mod search;
 pub mod status;
+mod worker_pool;
 
 #[cfg(test)]
 mod tests;
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::event;
@@ -29,7 +31,8 @@ use ratatui_image::picker::Picker;
 use crate::domain::{ChecklistState, ChecklistStyle, Document, NavStack, TerminalSize, ViewState};
 use crate::error::AppError;
 use crate::render::{
-    DocumentRenderCache, PreviewRenderCache, RenderedDocument, SyntaxAssets, Theme,
+    DocumentRenderCache, HeadingOffsetCache, PreviewRenderCache, RenderContext, RenderedDocument,
+    SyntaxAssets, Theme,
 };
 
 use doc_stack::DocStack;
@@ -41,6 +44,7 @@ use reload::FileWatch;
 use scroll::{
     ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED, STATUS_MESSAGE_DURATION,
 };
+use worker_pool::WorkerPool;
 
 #[derive(Clone, PartialEq, Eq)]
 struct PrefetchViewportKey {
@@ -90,6 +94,8 @@ pub struct App {
     pending_preview: Option<crate::domain::LinkId>,
     preview_render_cache: PreviewRenderCache,
     last_prefetch_viewport: Option<PrefetchViewportKey>,
+    document_revision: u64,
+    heading_cache: HeadingOffsetCache,
     should_quit: bool,
     #[cfg(test)]
     pub(crate) fail_apply_document: bool,
@@ -101,6 +107,10 @@ pub struct App {
 impl App {
     pub(crate) fn document_cache_total_height(&self) -> usize {
         self.document_cache.total_height()
+    }
+
+    pub(crate) fn prefetched_document_ready(&self, path: &std::path::Path) -> bool {
+        self.document_prefetch.ready_document(path).is_some()
     }
 }
 
@@ -129,6 +139,7 @@ impl App {
         let file_watch = base_path
             .as_ref()
             .and_then(|path| FileWatch::new(path.clone()).ok());
+        let worker_pool = WorkerPool::shared();
         let mut app = Self {
             document,
             rendered,
@@ -155,12 +166,14 @@ impl App {
             next_reload_poll: now,
             nav_stack: NavStack::default(),
             doc_stack: DocStack::default(),
-            mermaid_render: MermaidRenderPool::default(),
-            image_render: ImageRenderPool::default(),
-            document_prefetch: DocumentPrefetchPool::default(),
+            mermaid_render: MermaidRenderPool::new(Arc::clone(&worker_pool)),
+            image_render: ImageRenderPool::new(Arc::clone(&worker_pool)),
+            document_prefetch: DocumentPrefetchPool::new(worker_pool),
             pending_preview: None,
             preview_render_cache: PreviewRenderCache::default(),
             last_prefetch_viewport: None,
+            document_revision: 0,
+            heading_cache: HeadingOffsetCache::default(),
             should_quit: false,
             #[cfg(test)]
             fail_apply_document: false,
@@ -237,7 +250,38 @@ impl App {
         );
         let document_prefetch_dirty = self.document_prefetch.poll();
         let pending_opened = self.try_complete_pending_preview();
+        if mermaid_dirty || image_dirty {
+            self.maybe_warm_selected_preview();
+        }
         mermaid_dirty || image_dirty || document_prefetch_dirty || pending_opened
+    }
+
+    pub(crate) fn bump_document_revision(&mut self) {
+        self.document_revision = self.document_revision.wrapping_add(1);
+    }
+
+    pub(crate) fn heading_offsets(&mut self) -> Vec<(usize, crate::domain::HeadingLevel)> {
+        let document_revision = self.document_revision;
+        let width = self.view_state.terminal_size().width();
+        let checklist_revision = self.checklist_state.revision();
+        let ctx = RenderContext::new(
+            &self.theme,
+            &self.syntax_assets,
+            &self.rendered,
+            &self.document.links,
+            &self.view_state,
+            self.show_terminal_images,
+            &self.checklist_state,
+        );
+        self.heading_cache
+            .get_or_collect(
+                document_revision,
+                width,
+                checklist_revision,
+                &self.document,
+                &ctx,
+            )
+            .to_vec()
     }
 
     pub(crate) fn preview_work_pending(&self) -> bool {

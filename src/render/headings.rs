@@ -5,6 +5,42 @@ use crate::domain::{Block, Document, Heading, HeadingLevel, Inline};
 use super::context::RenderContext;
 use super::measure::measure_block_height;
 
+/// Cached heading offsets for repeated j/k navigation.
+#[derive(Clone, Default)]
+pub struct HeadingOffsetCache {
+    key: Option<HeadingOffsetCacheKey>,
+    headings: Vec<(usize, HeadingLevel)>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct HeadingOffsetCacheKey {
+    document_revision: u64,
+    width: u16,
+    checklist_revision: u64,
+}
+
+impl HeadingOffsetCache {
+    pub fn get_or_collect(
+        &mut self,
+        document_revision: u64,
+        width: u16,
+        checklist_revision: u64,
+        document: &Document,
+        ctx: &RenderContext,
+    ) -> &[(usize, HeadingLevel)] {
+        let key = HeadingOffsetCacheKey {
+            document_revision,
+            width,
+            checklist_revision,
+        };
+        if self.key.as_ref() != Some(&key) {
+            self.headings = collect_heading_offsets(document, width, ctx);
+            self.key = Some(key);
+        }
+        &self.headings
+    }
+}
+
 /// Collect logical line offsets of each heading in document order.
 pub fn collect_heading_offsets(
     document: &Document,
@@ -95,6 +131,59 @@ pub fn slugify_heading(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn heading_offset_cache_reuses_collected_offsets() {
+        use crate::domain::TerminalSize;
+        use crate::render::{
+            HeadingOffsetCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
+        };
+
+        let document = Document {
+            blocks: vec![
+                crate::domain::Block::Heading(crate::domain::Heading {
+                    level: crate::domain::HeadingLevel::H1,
+                    content: vec![crate::domain::Inline::Text("One".into())],
+                }),
+                crate::domain::Block::Heading(crate::domain::Heading {
+                    level: crate::domain::HeadingLevel::H2,
+                    content: vec![crate::domain::Inline::Text("Two".into())],
+                }),
+            ],
+            links: vec![],
+            mermaid_diagrams: vec![],
+        };
+        let rendered = RenderedDocument::new(
+            &document,
+            &ratatui_image::picker::Picker::halfblocks(),
+            TerminalSize::new(80, 24).unwrap(),
+            None,
+        )
+        .unwrap();
+        let view_state = crate::domain::ViewState::new(TerminalSize::new(80, 24).unwrap());
+        let checklist_state =
+            crate::domain::ChecklistState::new(crate::domain::ChecklistStyle::Unicode);
+        let theme = Theme::default();
+        let syntax_assets = SyntaxAssets::new();
+        let ctx = RenderContext::new(
+            &theme,
+            &syntax_assets,
+            &rendered,
+            &document.links,
+            &view_state,
+            true,
+            &checklist_state,
+        );
+        let mut cache = HeadingOffsetCache::default();
+        let first = cache
+            .get_or_collect(0, 80, checklist_state.revision(), &document, &ctx)
+            .to_vec();
+        let second = cache
+            .get_or_collect(0, 80, checklist_state.revision(), &document, &ctx)
+            .to_vec();
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 2);
+    }
 
     #[test]
     fn slugify_heading_matches_github_style() {
