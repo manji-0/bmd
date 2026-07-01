@@ -58,6 +58,7 @@ impl App {
                 self.source_label.as_deref(),
                 &self.view_state,
                 self.max_scroll(),
+                self.doc_stack.len_frames(),
                 self.status_message.as_deref(),
             );
             draw_status_bar(f, areas.status, status);

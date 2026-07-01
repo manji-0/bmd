@@ -101,6 +101,10 @@ impl App {
             self.follow_anchor(anchor);
             return;
         }
+        if link.kind == crate::domain::LinkKind::Document {
+            self.open_document_link(&url);
+            return;
+        }
         if link.kind.is_preview() {
             if self
                 .rendered
@@ -120,8 +124,25 @@ impl App {
         self.view_state = self.view_state.clone().close_preview();
     }
 
-    /// Pop one scroll position from the navigation stack and scroll there.
+    /// Pop one scroll position from the anchor stack, or the previous document.
     pub(crate) fn nav_back(&mut self) {
+        if !self.nav_stack.is_empty() {
+            self.anchor_back();
+            return;
+        }
+        self.doc_back();
+    }
+
+    /// Jump to anchor-stack origin, or the root document on the document stack.
+    pub(crate) fn nav_reset(&mut self) {
+        if !self.nav_stack.is_empty() {
+            self.anchor_reset();
+            return;
+        }
+        self.doc_reset();
+    }
+
+    fn anchor_back(&mut self) {
         let Some(offset) = self.nav_stack.pop() else {
             self.set_status_message("navigation stack empty".into());
             return;
@@ -131,7 +152,7 @@ impl App {
     }
 
     /// Jump to the bottom of the navigation stack and clear it.
-    pub(crate) fn nav_reset(&mut self) {
+    fn anchor_reset(&mut self) {
         let Some(offset) = self.nav_stack.bottom() else {
             return;
         };
@@ -140,7 +161,7 @@ impl App {
         self.snap_scroll_visual();
     }
 
-    fn follow_anchor(&mut self, anchor: &str) {
+    pub(crate) fn follow_anchor(&mut self, anchor: &str) {
         let ctx = self.render_context();
         let width = self.view_state.terminal_size().width();
         let Some(line) = find_heading_line_by_anchor(&self.document, width, &ctx, anchor) else {

@@ -45,10 +45,11 @@ Cycle through links in the document with `n` / `N`. Only links currently visible
 |------|---------|---------------|
 | Web | `[text](https://…)` | Opens in the browser via macOS `open` / Linux `xdg-open` |
 | Anchor | `[text](#section)` | Jumps to the matching heading; prior scroll positions are stacked |
+| Document | `[text](./other.md)` | Opens the linked file in the same view; file stack supports nested navigation |
 | Image | `![alt](path.png)` | Floating in-terminal preview |
 | Mermaid | Link from a mermaid code block | Floating preview of the rendered diagram |
 
-Close the preview overlay with `Esc` or `o`. After anchor jumps, `O` (Shift+o) returns to the previous position one step at a time; `Esc` jumps back to where you were before the first anchor jump and clears the stack. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
+Close the preview overlay with `Esc` or `o`. After anchor jumps, `O` (Shift+o) returns to the previous scroll position one step at a time when an anchor stack is active; otherwise it returns to the previous file. `Esc` resets the anchor stack to your pre-jump scroll position, or returns to the first opened file when only the document stack is active. Anchor navigation takes priority over document navigation when both apply. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
 
 ### Task lists
 
@@ -122,12 +123,12 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `Tab` / `n` | Next visible link (or next search match when search is active) |
 | `Shift-Tab` / `N` | Previous visible link (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
-| `O` | Back one step along the anchor navigation stack |
+| `O` | Back one step (anchor stack, else previous file) |
 | `/` / `?` | Start forward / backward search |
 | `h` | Show help overlay |
 | `x` | Toggle task-list item on top visible line |
 | Mouse wheel | Scroll up / down |
-| `q` / `Ctrl-c` | Quit (`Esc` clears search when search is active; `Esc` resets anchor stack otherwise) |
+| `q` / `Ctrl-c` | Quit (`Esc` clears search when active; else resets anchor or document stack) |
 | Left click on checkbox | Toggle task-list item (normal mode) |
 
 ### Search input mode

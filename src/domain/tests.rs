@@ -357,10 +357,12 @@ fn normal_search_active_flag() {
 fn link_kind_preview_flag() {
     assert!(!LinkKind::Web.is_preview());
     assert!(!LinkKind::Anchor.is_preview());
+    assert!(!LinkKind::Document.is_preview());
     assert!(LinkKind::Image.is_preview());
     assert!(LinkKind::Mermaid.is_preview());
     assert_eq!(LinkKind::for_link_dest("#section"), LinkKind::Anchor);
     assert_eq!(LinkKind::for_link_dest("https://x.com"), LinkKind::Web);
+    assert_eq!(LinkKind::for_link_dest("./page.md"), LinkKind::Document);
 }
 
 #[test]

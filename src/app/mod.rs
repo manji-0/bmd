@@ -1,6 +1,8 @@
 //! Application loop and state.
 
 mod checklist;
+mod doc_stack;
+mod document;
 mod draw;
 mod input;
 mod layout;
@@ -24,6 +26,7 @@ use crate::domain::{ChecklistState, ChecklistStyle, Document, NavStack, Terminal
 use crate::error::AppError;
 use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
 
+use doc_stack::DocStack;
 use layout::terminal_size;
 use reload::FileWatch;
 use scroll::{
@@ -53,6 +56,7 @@ pub struct App {
     syntax_assets: SyntaxAssets,
     theme: Theme,
     checklist_state: ChecklistState,
+    base_path: Option<std::path::PathBuf>,
     source_label: Option<String>,
     help_visible: bool,
     status_message: Option<String>,
@@ -61,6 +65,7 @@ pub struct App {
     pub(crate) file_watch: Option<FileWatch>,
     next_reload_poll: Instant,
     nav_stack: NavStack,
+    doc_stack: DocStack,
     should_quit: bool,
 }
 
@@ -105,6 +110,7 @@ impl App {
             syntax_assets: SyntaxAssets::new(),
             theme: Theme::default(),
             checklist_state: ChecklistState::new(ChecklistStyle::from_env()),
+            base_path: base_path.clone(),
             source_label,
             help_visible: false,
             status_message: None,
@@ -113,6 +119,7 @@ impl App {
             file_watch,
             next_reload_poll: now,
             nav_stack: NavStack::default(),
+            doc_stack: DocStack::default(),
             should_quit: false,
         })
     }
