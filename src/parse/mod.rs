@@ -1,24 +1,50 @@
-//! Markdown parser adapter: pulldown-cmark events -> domain model.
+//! Markup parsing: format-specific parsers -> DTO -> domain.
 
-mod block;
-mod html;
-mod inline;
+mod asciidoc;
+mod dto;
+mod error;
+mod format;
+mod into_domain;
+mod markdown;
+mod rst;
+mod slug;
 
 #[cfg(test)]
 mod tests;
 
-use pulldown_cmark::{Options, Parser};
+pub use dto::ParsedDocument;
+pub use error::ParseError;
+pub use format::MarkupFormat;
+pub use into_domain::IntoDomainError;
+pub use slug::{anchor_href, normalize_anchor_slug, slugify_heading};
+
+use std::path::Path;
 
 use crate::domain::Document;
 use crate::error::AppError;
 
-use block::ParserState;
+/// Parse markup content with an explicit format into a domain [`Document`].
+pub fn parse_document(format: MarkupFormat, content: &str) -> Result<Document, AppError> {
+    let dto = parse_dto(format, content)?;
+    dto.into_domain().map_err(AppError::from)
+}
 
-/// Parse CommonMark (with tables) into a `Document`.
-pub fn parse(markdown: &str) -> Result<Document, AppError> {
-    let parser = Parser::new_ext(markdown, Options::all());
-    let mut state = ParserState::new(parser);
-    state.run()?;
-    let (blocks, links, mermaid_diagrams) = state.into_parts();
-    Document::new(blocks, links, mermaid_diagrams).map_err(AppError::Document)
+/// Parse markup using path-based (and content) format detection.
+pub fn parse_with_path(path: Option<&Path>, content: &str) -> Result<Document, AppError> {
+    let format = MarkupFormat::detect(path, content);
+    parse_document(format, content)
+}
+
+/// Parse markup content into the shared DTO.
+pub fn parse_dto(format: MarkupFormat, content: &str) -> Result<ParsedDocument, ParseError> {
+    match format {
+        MarkupFormat::Markdown => markdown::parse(content),
+        MarkupFormat::Rest => rst::parse(content),
+        MarkupFormat::AsciiDoc => asciidoc::parse(content),
+    }
+}
+
+/// Parse CommonMark content (backward-compatible entry point).
+pub fn parse(content: &str) -> Result<Document, AppError> {
+    parse_document(MarkupFormat::Markdown, content)
 }

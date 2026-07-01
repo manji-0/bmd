@@ -20,6 +20,9 @@ pub enum AppError {
     #[error("invalid link URL: {0}")]
     LinkUrl(#[from] LinkUrlError),
 
+    #[error("markup parse error: {0}")]
+    MarkupParse(String),
+
     #[error("markdown parse error: {0}")]
     MarkdownParse(String),
 
@@ -48,5 +51,23 @@ pub enum AppError {
 impl From<std::convert::Infallible> for AppError {
     fn from(value: std::convert::Infallible) -> Self {
         match value {}
+    }
+}
+
+impl From<crate::parse::IntoDomainError> for AppError {
+    fn from(value: crate::parse::IntoDomainError) -> Self {
+        match value {
+            crate::parse::IntoDomainError::Document(e) => Self::Document(e),
+            crate::parse::IntoDomainError::LinkUrl(e) => Self::LinkUrl(e),
+            crate::parse::IntoDomainError::InvalidHeadingLevel { level } => {
+                Self::MarkupParse(format!("invalid heading level {level}"))
+            }
+        }
+    }
+}
+
+impl From<crate::parse::ParseError> for AppError {
+    fn from(value: crate::parse::ParseError) -> Self {
+        Self::MarkupParse(value.to_string())
     }
 }

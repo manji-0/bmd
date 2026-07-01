@@ -76,6 +76,7 @@ fn heading_prefix_delegates_to_level() {
     let h = Heading {
         level: HeadingLevel::H2,
         content: vec![],
+        anchor: None,
     };
     assert_eq!(h.prefix(), "## ");
 }

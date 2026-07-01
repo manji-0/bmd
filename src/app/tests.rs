@@ -37,6 +37,7 @@ fn dummy_document() -> Document {
         blocks: vec![crate::domain::Block::Heading(Heading {
             level: HeadingLevel::H1,
             content: vec![Inline::Text("Hello".to_string())],
+            anchor: None,
         })],
         links: vec![Link {
             url: LinkUrl::new("https://example.com".to_string()).unwrap(),

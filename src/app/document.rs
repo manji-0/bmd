@@ -8,7 +8,7 @@ use crate::domain::{
     resolve_document_path,
 };
 use crate::error::AppError;
-use crate::parse::parse;
+use crate::parse::parse_with_path;
 use crate::render::{DocumentRenderCache, RenderedDocument};
 
 use super::App;
@@ -40,7 +40,7 @@ impl App {
                     return;
                 }
             };
-            match parse(&content) {
+            match parse_with_path(Some(&resolved), &content) {
                 Ok(document) => document,
                 Err(e) => {
                     self.set_status_message(format!("parse error: {e}"));

@@ -81,6 +81,64 @@ fn parse_blockquote() {
 }
 
 #[test]
+fn parse_markdown_callout_note() {
+    let doc = parse("> [!NOTE]\n> Remember this.\n").unwrap();
+    let Block::BlockQuote(children) = &doc.blocks[0] else {
+        panic!("expected blockquote");
+    };
+    assert_eq!(children.len(), 2);
+    let Block::Paragraph(label) = &children[0] else {
+        panic!("expected callout label");
+    };
+    assert!(matches!(label[0], Inline::Strong(_)));
+    let Block::Paragraph(body) = &children[1] else {
+        panic!("expected callout body");
+    };
+    assert!(matches!(&body[0], Inline::Text(t) if t == "Remember this."));
+}
+
+#[test]
+fn parse_markdown_obsidian_callout_with_inline_title() {
+    let doc = parse("> [!INFO] Extra context\n").unwrap();
+    let Block::BlockQuote(children) = &doc.blocks[0] else {
+        panic!("expected blockquote");
+    };
+    let Block::Paragraph(label) = &children[0] else {
+        panic!("expected callout label");
+    };
+    let Inline::Strong(inlines) = &label[0] else {
+        panic!("expected strong label");
+    };
+    assert!(matches!(
+        &inlines[0],
+        Inline::Text(t) if t == "note: Extra context"
+    ));
+}
+
+#[test]
+fn parse_markdown_callout_multiline_body() {
+    let doc = parse("> [!WARNING]\n> Be careful.\n> Always verify.\n").unwrap();
+    let Block::BlockQuote(children) = &doc.blocks[0] else {
+        panic!("expected blockquote");
+    };
+    assert_eq!(children.len(), 2);
+    let Block::Paragraph(label) = &children[0] else {
+        panic!("expected callout label");
+    };
+    let Inline::Strong(inlines) = &label[0] else {
+        panic!("expected strong label");
+    };
+    assert!(matches!(&inlines[0], Inline::Text(t) if t == "warning:"));
+    let Block::Paragraph(body) = &children[1] else {
+        panic!("expected callout body");
+    };
+    assert!(
+        body.iter()
+            .any(|i| matches!(i, Inline::Text(t) if t.contains("Be careful")))
+    );
+}
+
+#[test]
 fn parse_unordered_list() {
     let doc = parse("- alpha\n- beta").unwrap();
     assert_eq!(doc.blocks.len(), 1);

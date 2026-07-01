@@ -22,7 +22,7 @@ use ratatui_image::picker::{Picker, cap_parser::QueryStdioOptions};
 
 use bmd::app::App;
 use bmd::error::AppError;
-use bmd::parse::parse;
+use bmd::parse::parse_with_path;
 
 fn main() {
     if let Err(e) = run() {
@@ -33,7 +33,7 @@ fn main() {
 
 fn run() -> Result<(), AppError> {
     let (input, base_path) = read_input()?;
-    let document = parse(&input)?;
+    let document = parse_with_path(base_path.as_deref(), &input)?;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();

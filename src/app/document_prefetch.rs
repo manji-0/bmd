@@ -8,7 +8,7 @@ use crate::domain::{
     DocumentPrefetchCompletion, DocumentPrefetchError, DocumentPrefetchSession,
     DocumentPrefetchSessionSnapshot, DocumentPrefetchSpawnRequest, PrefetchedDocument,
 };
-use crate::parse::parse;
+use crate::parse::parse_with_path;
 
 use super::worker_pool::WorkerPool;
 
@@ -107,7 +107,7 @@ impl DocumentPrefetchPool {
                     .map_err(|error| DocumentPrefetchError::Read(error.to_string()))?;
                 let content = std::fs::read_to_string(&path)
                     .map_err(|error| DocumentPrefetchError::Read(error.to_string()))?;
-                let document = parse(&content)
+                let document = parse_with_path(Some(&path), &content)
                     .map_err(|error| DocumentPrefetchError::Parse(error.to_string()))?;
                 Ok(PrefetchedDocument { document, mtime })
             })();

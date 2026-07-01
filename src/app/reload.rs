@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
 
 use crate::error::AppError;
-use crate::parse::parse;
+use crate::parse::parse_with_path;
 use crate::render::RenderedDocument;
 
 use super::App;
@@ -82,7 +82,7 @@ impl App {
                 return Ok(false);
             }
         };
-        let document = match parse(&content) {
+        let document = match parse_with_path(Some(&path), &content) {
             Ok(document) => document,
             Err(e) => {
                 self.set_status_message(format!("reload parse error: {e}"));
@@ -134,6 +134,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::domain::TerminalSize;
+    use crate::parse::parse;
 
     use ratatui_image::picker::Picker;
 

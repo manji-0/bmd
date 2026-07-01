@@ -91,7 +91,7 @@ pub fn find_heading_line_by_anchor(
     if width == 0 || anchor.is_empty() {
         return None;
     }
-    let target = anchor.to_ascii_lowercase();
+    let target = crate::parse::normalize_anchor_slug(anchor);
     let mut line_offset = 0usize;
     for (block_idx, block) in document.blocks.iter().enumerate() {
         let gap = if block_idx == 0 { 0 } else { 1 };
@@ -106,26 +106,16 @@ pub fn find_heading_line_by_anchor(
 }
 
 fn heading_anchor_slug(heading: &Heading) -> String {
-    slugify_heading(&Inline::plain_text(&heading.content))
+    heading
+        .anchor
+        .as_ref()
+        .map(|anchor| crate::parse::normalize_anchor_slug(anchor))
+        .unwrap_or_else(|| slugify_heading(&Inline::plain_text(&heading.content)))
 }
 
 /// GitHub-compatible heading slug: lowercase words separated by hyphens.
 pub fn slugify_heading(text: &str) -> String {
-    let mut slug = String::new();
-    let mut prev_hyphen = false;
-    for c in text.trim().to_lowercase().chars() {
-        if c.is_alphanumeric() {
-            slug.push(c);
-            prev_hyphen = false;
-        } else if !prev_hyphen && !slug.is_empty() {
-            slug.push('-');
-            prev_hyphen = true;
-        }
-    }
-    while slug.ends_with('-') {
-        slug.pop();
-    }
-    slug
+    crate::parse::slugify_heading(text)
 }
 
 #[cfg(test)]
@@ -144,10 +134,12 @@ mod tests {
                 crate::domain::Block::Heading(crate::domain::Heading {
                     level: crate::domain::HeadingLevel::H1,
                     content: vec![crate::domain::Inline::Text("One".into())],
+                    anchor: None,
                 }),
                 crate::domain::Block::Heading(crate::domain::Heading {
                     level: crate::domain::HeadingLevel::H2,
                     content: vec![crate::domain::Inline::Text("Two".into())],
+                    anchor: None,
                 }),
             ],
             links: vec![],

@@ -2,14 +2,16 @@
 
 use pulldown_cmark::{Alignment as CmarkAlignment, Event, Parser, Tag, TagEnd};
 
-use crate::domain::{
-    Alignment, Block, ChecklistId, CodeBlock, Heading, HeadingLevel, Inline, Link, LinkId,
-    LinkKind, List, ListItem, MermaidDiagram, Table,
+use crate::parse::dto::{
+    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedHeading, ParsedInline,
+    ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem, ParsedMermaidDiagram, ParsedTable,
 };
-use crate::error::AppError;
+use crate::parse::error::ParseError;
 
+use super::callout;
 use super::html::{InlineHtmlKind, InlineHtmlToken};
 use super::inline::{InlineFrame, InlineParser};
+use super::syntax_error;
 
 #[derive(Debug)]
 struct PendingStandaloneImage {
@@ -21,9 +23,9 @@ struct PendingStandaloneImage {
 #[derive(Debug)]
 pub(crate) struct ParserState<'a> {
     iter: std::iter::Peekable<Parser<'a>>,
-    blocks: Vec<Block>,
-    links: Vec<Link>,
-    mermaid_diagrams: Vec<MermaidDiagram>,
+    blocks: Vec<ParsedBlock>,
+    links: Vec<ParsedLink>,
+    mermaid_diagrams: Vec<ParsedMermaidDiagram>,
     stack: Vec<BlockFrame>,
     paragraph_standalone_image: Option<PendingStandaloneImage>,
     next_checklist_id: u32,
@@ -31,26 +33,29 @@ pub(crate) struct ParserState<'a> {
 
 #[derive(Debug)]
 enum BlockFrame {
-    BlockQuote(Vec<Block>),
+    BlockQuote {
+        kind: Option<pulldown_cmark::BlockQuoteKind>,
+        blocks: Vec<ParsedBlock>,
+    },
     List {
         ordered: bool,
-        items: Vec<ListItem>,
-        current_item: Vec<Block>,
+        items: Vec<ParsedListItem>,
+        current_item: Vec<ParsedBlock>,
     },
     ListItem {
-        blocks: Vec<Block>,
+        blocks: Vec<ParsedBlock>,
         checked: bool,
-        checklist_id: Option<ChecklistId>,
+        checklist_id: Option<u32>,
     },
     Heading(InlineParser),
     Paragraph(InlineParser),
     Table {
-        alignments: Vec<Alignment>,
-        headers: Vec<Vec<Inline>>,
-        rows: Vec<Vec<Vec<Inline>>>,
+        alignments: Vec<ParsedAlignment>,
+        headers: Vec<Vec<ParsedInline>>,
+        rows: Vec<Vec<Vec<ParsedInline>>>,
     },
-    TableHead(Vec<Vec<Inline>>),
-    TableRow(Vec<Vec<Inline>>),
+    TableHead(Vec<Vec<ParsedInline>>),
+    TableRow(Vec<Vec<ParsedInline>>),
     TableCell(InlineParser),
     CodeBlock {
         language: Option<String>,
@@ -72,7 +77,7 @@ impl<'a> ParserState<'a> {
         }
     }
 
-    pub(crate) fn run(&mut self) -> Result<(), AppError> {
+    pub(crate) fn run(&mut self) -> Result<(), ParseError> {
         while let Some(event) = self.iter.next() {
             match event {
                 Event::Start(tag) => self.start_tag(tag)?,
@@ -83,7 +88,7 @@ impl<'a> ParserState<'a> {
                 Event::InlineHtml(html) => self.inline_html(html.into_string()),
                 Event::SoftBreak => self.soft_break(),
                 Event::HardBreak => self.hard_break(),
-                Event::Rule => self.blocks.push(Block::Rule),
+                Event::Rule => self.blocks.push(ParsedBlock::Rule),
                 Event::FootnoteReference(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {}
                 Event::TaskListMarker(checked) => self.task_list_marker(checked),
             }
@@ -91,13 +96,16 @@ impl<'a> ParserState<'a> {
         Ok(())
     }
 
-    fn start_tag(&mut self, tag: Tag<'a>) -> Result<(), AppError> {
+    fn start_tag(&mut self, tag: Tag<'a>) -> Result<(), ParseError> {
         match tag {
             Tag::Paragraph => self.stack.push(BlockFrame::Paragraph(InlineParser::new())),
             Tag::Heading { .. } => {
                 self.stack.push(BlockFrame::Heading(InlineParser::new()));
             }
-            Tag::BlockQuote(_) => self.stack.push(BlockFrame::BlockQuote(Vec::new())),
+            Tag::BlockQuote(kind) => self.stack.push(BlockFrame::BlockQuote {
+                kind,
+                blocks: Vec::new(),
+            }),
             Tag::CodeBlock(kind) => {
                 let language = match kind {
                     pulldown_cmark::CodeBlockKind::Fenced(lang) => {
@@ -150,7 +158,7 @@ impl<'a> ParserState<'a> {
                     BlockFrame::Paragraph(p) | BlockFrame::Heading(p) | BlockFrame::TableCell(p),
                 ) = self.stack.last_mut()
                 {
-                    let kind = LinkKind::for_link_dest(&dest);
+                    let kind = ParsedLinkKind::classify_url(&dest);
                     p.start_link(&mut self.links, dest, title, kind);
                 }
             }
@@ -175,7 +183,7 @@ impl<'a> ParserState<'a> {
                             &mut self.links,
                             dest,
                             title.unwrap_or_default(),
-                            LinkKind::Image,
+                            ParsedLinkKind::Image,
                         );
                     }
                 } else if let Some(BlockFrame::Heading(p) | BlockFrame::TableCell(p)) =
@@ -185,7 +193,7 @@ impl<'a> ParserState<'a> {
                         &mut self.links,
                         dest,
                         title.unwrap_or_default(),
-                        LinkKind::Image,
+                        ParsedLinkKind::Image,
                     );
                 }
             }
@@ -201,7 +209,7 @@ impl<'a> ParserState<'a> {
         Ok(())
     }
 
-    fn end_tag(&mut self, tag_end: TagEnd) -> Result<(), AppError> {
+    fn end_tag(&mut self, tag_end: TagEnd) -> Result<(), ParseError> {
         match tag_end {
             TagEnd::Paragraph => {
                 let frame = self.pop_frame("paragraph")?;
@@ -212,42 +220,41 @@ impl<'a> ParserState<'a> {
                         } else {
                             pending.alt
                         };
-                        let id = LinkId(self.links.len());
-                        if let Ok(url) = crate::domain::LinkUrl::new(pending.src) {
-                            self.links.push(Link {
-                                url,
-                                title: pending.title,
-                                kind: LinkKind::Image,
-                            });
-                            self.finish_block(Block::Paragraph(vec![Inline::Link(
-                                id,
-                                vec![Inline::Text(label)],
+                        if pending.src.trim().is_empty() {
+                            self.finish_block(ParsedBlock::Paragraph(vec![ParsedInline::Text(
+                                label,
                             )]));
                         } else {
-                            self.finish_block(Block::Paragraph(vec![Inline::Text(label)]));
+                            let link_id = self.links.len();
+                            self.links.push(ParsedLink {
+                                url: pending.src,
+                                title: pending.title,
+                                kind: ParsedLinkKind::Image,
+                            });
+                            self.finish_block(ParsedBlock::Paragraph(vec![ParsedInline::Link {
+                                link_id,
+                                children: vec![ParsedInline::Text(label)],
+                            }]));
                         }
                     } else {
-                        self.finish_block(Block::Paragraph(parser.into_inlines()));
+                        self.finish_block(ParsedBlock::Paragraph(parser.into_inlines()));
                     }
                 }
             }
             TagEnd::Heading(level) => {
                 let frame = self.pop_frame("heading")?;
                 if let BlockFrame::Heading(parser) = frame {
-                    let level =
-                        HeadingLevel::from_u8(heading_level_to_u8(level)).ok_or_else(|| {
-                            AppError::MarkdownParse(format!("invalid heading level {level:?}"))
-                        })?;
-                    self.finish_block(Block::Heading(Heading {
-                        level,
+                    self.finish_block(ParsedBlock::Heading(ParsedHeading {
+                        level: heading_level_to_u8(level),
                         content: parser.into_inlines(),
+                        anchor: None,
                     }));
                 }
             }
             TagEnd::BlockQuote(_) => {
                 let frame = self.pop_frame("blockquote")?;
-                if let BlockFrame::BlockQuote(blocks) = frame {
-                    self.finish_block(Block::BlockQuote(blocks));
+                if let BlockFrame::BlockQuote { kind, blocks } = frame {
+                    self.finish_block(callout::normalize_blockquote(kind, blocks));
                 }
             }
             TagEnd::CodeBlock => {
@@ -261,26 +268,23 @@ impl<'a> ParserState<'a> {
                     if is_mermaid {
                         let diagram_idx = self.mermaid_diagrams.len();
                         self.mermaid_diagrams
-                            .push(MermaidDiagram { source: content });
+                            .push(ParsedMermaidDiagram { source: content });
                         let label = mermaid_link_label(&self.mermaid_diagrams[diagram_idx].source);
-                        let id = LinkId(self.links.len());
-                        if let Ok(url) =
-                            crate::domain::LinkUrl::new(format!("bmd:mermaid:{diagram_idx}"))
-                        {
-                            self.links.push(Link {
-                                url,
-                                title: None,
-                                kind: LinkKind::Mermaid,
-                            });
-                            self.finish_block(Block::Paragraph(vec![Inline::Link(
-                                id,
-                                vec![Inline::Text(label)],
-                            )]));
-                        } else {
-                            self.finish_block(Block::Paragraph(vec![Inline::Text(label)]));
-                        }
+                        let link_id = self.links.len();
+                        self.links.push(ParsedLink {
+                            url: format!("bmd:mermaid:{diagram_idx}"),
+                            title: None,
+                            kind: ParsedLinkKind::Mermaid,
+                        });
+                        self.finish_block(ParsedBlock::Paragraph(vec![ParsedInline::Link {
+                            link_id,
+                            children: vec![ParsedInline::Text(label)],
+                        }]));
                     } else {
-                        self.finish_block(Block::CodeBlock(CodeBlock { language, content }));
+                        self.finish_block(ParsedBlock::CodeBlock(ParsedCodeBlock {
+                            language,
+                            content,
+                        }));
                     }
                 }
             }
@@ -293,11 +297,9 @@ impl<'a> ParserState<'a> {
                 } = frame
                 {
                     if !current_item.is_empty() {
-                        return Err(AppError::MarkdownParse(
-                            "list ended with unclosed item".into(),
-                        ));
+                        return Err(syntax_error("list ended with unclosed item"));
                     }
-                    self.finish_block(Block::List(List { ordered, items }));
+                    self.finish_block(ParsedBlock::List(ParsedList { ordered, items }));
                 }
             }
             TagEnd::Item => {
@@ -309,15 +311,13 @@ impl<'a> ParserState<'a> {
                 } = frame
                 {
                     if let Some(BlockFrame::List { items, .. }) = self.stack.last_mut() {
-                        items.push(ListItem {
+                        items.push(ParsedListItem {
                             checklist_id,
                             checked,
                             content: blocks,
                         });
                     } else {
-                        return Err(AppError::MarkdownParse(
-                            "list item without parent list".into(),
-                        ));
+                        return Err(syntax_error("list item without parent list"));
                     }
                 }
             }
@@ -329,7 +329,7 @@ impl<'a> ParserState<'a> {
                     rows,
                 } = frame
                 {
-                    self.finish_block(Block::Table(Table {
+                    self.finish_block(ParsedBlock::Table(ParsedTable {
                         headers,
                         rows,
                         alignments,
@@ -342,9 +342,7 @@ impl<'a> ParserState<'a> {
                     if let Some(BlockFrame::Table { headers, .. }) = self.stack.last_mut() {
                         *headers = cells;
                     } else {
-                        return Err(AppError::MarkdownParse(
-                            "table head without parent table".into(),
-                        ));
+                        return Err(syntax_error("table head without parent table"));
                     }
                 }
             }
@@ -354,9 +352,7 @@ impl<'a> ParserState<'a> {
                     if let Some(BlockFrame::Table { rows, .. }) = self.stack.last_mut() {
                         rows.push(cells);
                     } else {
-                        return Err(AppError::MarkdownParse(
-                            "table row without parent table".into(),
-                        ));
+                        return Err(syntax_error("table row without parent table"));
                     }
                 }
             }
@@ -367,9 +363,7 @@ impl<'a> ParserState<'a> {
                         Some(BlockFrame::TableRow(row)) => row,
                         Some(BlockFrame::TableHead(head_cells)) => head_cells,
                         _ => {
-                            return Err(AppError::MarkdownParse(
-                                "table cell without parent row or head".into(),
-                            ));
+                            return Err(syntax_error("table cell without parent row or head"));
                         }
                     };
                     cells.push(parser.into_inlines());
@@ -421,8 +415,6 @@ impl<'a> ParserState<'a> {
                 if let Some(dest) = href {
                     self.start_html_link(dest);
                 } else {
-                    // Push a transparent group so that a matching </a> does not
-                    // accidentally close an outer HTML formatting frame.
                     self.with_inline_parser(|p| p.stack.push(InlineFrame::Group(Vec::new())));
                 }
             }
@@ -468,18 +460,15 @@ impl<'a> ParserState<'a> {
             if let Some(parser) = self.inline_parser() {
                 parser.push_break(true);
             } else {
-                self.push_inline_to_list_item(Inline::HardBreak);
+                self.push_inline_to_list_item(ParsedInline::HardBreak);
             }
         }
     }
 
     fn start_html_link(&mut self, dest: String) {
-        // We need to call start_link which takes `&mut self.links`. inline_parser()
-        // borrows from `self.stack`, so we can't hold both borrows at once.
-        // Temporarily take the stack, start the link, then restore it.
         let mut stack = std::mem::take(&mut self.stack);
         if let Some(parser) = Self::inline_parser_from_stack(&mut stack) {
-            let kind = LinkKind::for_link_dest(&dest);
+            let kind = ParsedLinkKind::classify_url(&dest);
             parser.start_link(&mut self.links, dest, String::new(), kind);
         }
         self.stack = stack;
@@ -497,7 +486,7 @@ impl<'a> ParserState<'a> {
         if let Some(parser) = self.inline_parser() {
             parser.push_text(text);
         } else {
-            self.push_inline_to_list_item(Inline::Text(text));
+            self.push_inline_to_list_item(ParsedInline::Text(text));
         }
     }
 
@@ -509,7 +498,7 @@ impl<'a> ParserState<'a> {
         if let Some(parser) = self.inline_parser() {
             parser.push_code(code);
         } else {
-            self.push_inline_to_list_item(Inline::Code(code));
+            self.push_inline_to_list_item(ParsedInline::Code(code));
         }
     }
 
@@ -521,7 +510,7 @@ impl<'a> ParserState<'a> {
         if let Some(parser) = self.inline_parser() {
             parser.push_break(false);
         } else {
-            self.push_inline_to_list_item(Inline::SoftBreak);
+            self.push_inline_to_list_item(ParsedInline::SoftBreak);
         }
     }
 
@@ -533,23 +522,22 @@ impl<'a> ParserState<'a> {
         if let Some(parser) = self.inline_parser() {
             parser.push_break(true);
         } else {
-            self.push_inline_to_list_item(Inline::HardBreak);
+            self.push_inline_to_list_item(ParsedInline::HardBreak);
         }
     }
 
-    /// Append inline content directly inside a list item when no paragraph frame is active.
-    fn push_inline_to_list_item(&mut self, inline: Inline) {
+    fn push_inline_to_list_item(&mut self, inline: ParsedInline) {
         if let Some(BlockFrame::ListItem { blocks, .. }) = self.stack.last_mut() {
-            if let Some(Block::Paragraph(inlines)) = blocks.last_mut() {
+            if let Some(ParsedBlock::Paragraph(inlines)) = blocks.last_mut() {
                 inlines.push(inline);
             } else {
-                blocks.push(Block::Paragraph(vec![inline]));
+                blocks.push(ParsedBlock::Paragraph(vec![inline]));
             }
         }
     }
 
     fn task_list_marker(&mut self, checked: bool) {
-        let id = ChecklistId(self.next_checklist_id);
+        let id = self.next_checklist_id;
         self.next_checklist_id += 1;
         if let Some(BlockFrame::ListItem {
             checked: item_checked,
@@ -582,10 +570,10 @@ impl<'a> ParserState<'a> {
         }
     }
 
-    fn finish_block(&mut self, block: Block) {
+    fn finish_block(&mut self, block: ParsedBlock) {
         if let Some(parent) = self.stack.last_mut() {
             match parent {
-                BlockFrame::BlockQuote(blocks) => blocks.push(block),
+                BlockFrame::BlockQuote { blocks, .. } => blocks.push(block),
                 BlockFrame::ListItem { blocks, .. } => blocks.push(block),
                 BlockFrame::List { current_item, .. } => current_item.push(block),
                 _ => self.blocks.push(block),
@@ -595,14 +583,14 @@ impl<'a> ParserState<'a> {
         }
     }
 
-    fn pop_frame(&mut self, expected: &str) -> Result<BlockFrame, AppError> {
+    fn pop_frame(&mut self, expected: &str) -> Result<BlockFrame, ParseError> {
         self.stack
             .pop()
-            .ok_or_else(|| AppError::MarkdownParse(format!("unexpected end tag for {expected}")))
+            .ok_or_else(|| syntax_error(format!("unexpected end tag for {expected}")))
     }
 
-    pub(crate) fn into_parts(self) -> (Vec<Block>, Vec<Link>, Vec<MermaidDiagram>) {
-        (self.blocks, self.links, self.mermaid_diagrams)
+    pub(crate) fn into_document(self) -> ParsedDocument {
+        ParsedDocument::new(self.blocks, self.links, self.mermaid_diagrams)
     }
 }
 
@@ -626,11 +614,11 @@ fn heading_level_to_u8(level: pulldown_cmark::HeadingLevel) -> u8 {
     }
 }
 
-fn map_alignment(a: CmarkAlignment) -> Alignment {
+fn map_alignment(a: CmarkAlignment) -> ParsedAlignment {
     match a {
-        CmarkAlignment::None => Alignment::None,
-        CmarkAlignment::Left => Alignment::Left,
-        CmarkAlignment::Center => Alignment::Center,
-        CmarkAlignment::Right => Alignment::Right,
+        CmarkAlignment::None => ParsedAlignment::None,
+        CmarkAlignment::Left => ParsedAlignment::Left,
+        CmarkAlignment::Center => ParsedAlignment::Center,
+        CmarkAlignment::Right => ParsedAlignment::Right,
     }
 }

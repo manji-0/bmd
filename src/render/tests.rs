@@ -673,11 +673,13 @@ fn heading_navigation_picks_adjacent_sections() {
             Block::Heading(Heading {
                 level: HeadingLevel::H1,
                 content: vec![Inline::Text("A".into())],
+                anchor: None,
             }),
             Block::Paragraph(vec![Inline::Text("gap".into())]),
             Block::Heading(Heading {
                 level: HeadingLevel::H2,
                 content: vec![Inline::Text("B".into())],
+                anchor: None,
             }),
         ],
         vec![],
@@ -701,6 +703,23 @@ fn find_heading_line_by_anchor_matches_slug() {
     assert_eq!(
         find_heading_line_by_anchor(&doc, 80, &ctx, "foo-bar"),
         Some(collect_heading_offsets(&doc, 80, &ctx)[1].0)
+    );
+}
+
+#[test]
+fn find_heading_line_by_anchor_normalizes_fragment() {
+    use crate::parse::MarkupFormat;
+    use crate::parse::parse_document;
+
+    let doc = parse_document(MarkupFormat::Rest, "Hello World\n===========\n\nBody.\n").unwrap();
+    let ctx = test_render_context();
+    assert_eq!(
+        find_heading_line_by_anchor(&doc, 80, &ctx, "#hello-world"),
+        Some(0)
+    );
+    assert_eq!(
+        find_heading_line_by_anchor(&doc, 80, &ctx, "_Hello_World"),
+        Some(0)
     );
 }
 

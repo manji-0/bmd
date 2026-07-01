@@ -167,6 +167,8 @@ impl HeadingLevel {
 pub struct Heading {
     pub level: HeadingLevel,
     pub content: Vec<Inline>,
+    /// Explicit anchor slug; when absent, derived from heading text at jump time.
+    pub anchor: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
