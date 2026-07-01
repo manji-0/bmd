@@ -158,7 +158,8 @@ Building through devbox sets linker flags, `CARGO_HOME`, and sccache configurati
 ```bash
 devbox run build          # debug
 devbox run build-release  # release
-devbox run package        # crates.io tarball (verify)
+devbox run build-linux-x86_64  # static Linux x86_64 (musl, from macOS)
+devbox run package        # release binaries (dist/*.tar.gz) + crates.io crate
 ```
 
 Without devbox, macOS may require `RUSTFLAGS="-C linker=clang"` when the default `cc` is not Apple clang. Mixing devbox and plain `cargo` invalidates incremental artifacts due to differing `RUSTFLAGS`.
@@ -179,7 +180,7 @@ devbox run prek         # pre-commit hooks
 devbox run cache-stats  # sccache hit rate
 ```
 
-`devbox.json` configures project-local `RUSTUP_HOME`, `CARGO_HOME`, `SCCACHE_DIR`, `RUSTFLAGS="-C linker=clang"`, and `RUSTC_WRAPPER=sccache`. Artifacts go to `target/`; compile cache to `.sccache/`.
+`devbox.json` configures project-local `RUSTUP_HOME`, `CARGO_HOME`, `SCCACHE_DIR`, `RUSTFLAGS="-C linker=clang"`, and `RUSTC_WRAPPER=sccache`. Artifacts go to `target/` and `dist/`; compile cache to `.sccache/`.
 
 Sandboxed IDE shells may point `CARGO_TARGET_DIR` at a temporary directory, which looks like a clean build every time — prefer building from a normal terminal.
 
