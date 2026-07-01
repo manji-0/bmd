@@ -21,7 +21,7 @@ struct PreviewCacheKey {
 }
 
 /// Cached bordered preview popups keyed by link and terminal size.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct PreviewRenderCache {
     entries: HashMap<PreviewCacheKey, Buffer>,
 }
@@ -29,6 +29,11 @@ pub struct PreviewRenderCache {
 impl PreviewRenderCache {
     pub fn clear(&mut self) {
         self.entries.clear();
+    }
+
+    #[cfg(test)]
+    pub fn len_entries(&self) -> usize {
+        self.entries.len()
     }
 
     pub fn popup_rect(terminal: TerminalSize) -> Rect {

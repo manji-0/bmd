@@ -33,6 +33,7 @@ impl RenderCacheKey {
 
 /// Full-document render cache. Rebuilds when width or highlight state changes;
 /// scrolling only blits a viewport slice from the cached buffer.
+#[derive(Clone)]
 pub struct DocumentRenderCache {
     key: Option<RenderCacheKey>,
     buffer: Buffer,

@@ -1,7 +1,9 @@
 use super::App;
 use super::scroll::{is_line_scroll_key, line_scroll_command};
 use crate::domain::{
-    Document, Heading, HeadingLevel, Inline, Link, LinkKind, LinkUrl, SearchDirection, TerminalSize,
+    ANCHOR_STACK_MAX_FRAMES, AnchorIdle, DOCUMENT_STACK_MAX_LAYERS, Document, Heading,
+    HeadingLevel, Inline, Link, LinkKind, LinkUrl, SearchDirection, TerminalSize,
+    anchor_stack_limit_message, document_stack_limit_message,
 };
 use crate::keymap::Command;
 use crate::parse::parse;
@@ -11,6 +13,11 @@ use ratatui_image::picker::Picker;
 
 fn test_terminal_size() -> TerminalSize {
     TerminalSize::new(80, 30).unwrap()
+}
+
+fn anchor_idle(app: &App) -> AnchorIdle {
+    AnchorIdle::from_stack(&app.nav_stack)
+        .expect("anchor stack must be idle for document navigation")
 }
 
 fn new_test_app(document: Document) -> App {
@@ -315,6 +322,27 @@ fn anchor_navigation_stack_push_pop_and_reset() {
     assert!(app.nav_stack.is_empty());
 }
 
+#[test]
+fn scrolling_and_search_do_not_push_anchor_stack() {
+    let mut input = String::from("# Top\n\n");
+    for i in 0..80 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    input.push_str("## Target\n\nfindme\n");
+    let doc = parse(&input).unwrap();
+    let mut app = new_test_app(doc);
+
+    app.scroll_down(20);
+    app.half_page_down();
+    app.jump_to_bottom();
+    app.start_search(crate::domain::SearchDirection::Forward);
+    app.append_search_input('f');
+    app.confirm_search();
+    assert!(app.view_state.scroll().offset() > 0);
+    assert!(app.nav_stack.is_empty());
+    assert_eq!(app.nav_stack.current_layer(), 1);
+}
+
 fn temp_markdown_dir(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("bmd-{name}-{}", std::process::id()))
 }
@@ -520,7 +548,7 @@ fn doc_back_preserves_stack_when_restore_fails() {
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
 
     app.fail_document_restore = true;
-    app.doc_back();
+    app.doc_back(anchor_idle(&app));
 
     assert!(app.status_message.is_some());
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
@@ -553,11 +581,184 @@ fn doc_reset_preserves_stack_when_restore_fails() {
     assert_eq!(app.doc_stack.len_frames(), 1);
 
     app.fail_document_restore = true;
-    app.doc_reset();
+    app.doc_reset(anchor_idle(&app));
 
     assert!(app.status_message.is_some());
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
     assert_eq!(app.doc_stack.len_frames(), 1);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn nav_reset_drains_anchor_before_returning_to_root_document() {
+    let dir = temp_markdown_dir("doc-anchor-drain");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    let c = dir.join("c.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\n[open c](c.md#target)\n").unwrap();
+    let mut body = String::from("# Top\n\n");
+    for i in 0..60 {
+        body.push_str(&format!("paragraph {}\n\n", i));
+    }
+    body.push_str("## Target\n\nend\n");
+    std::fs::write(&c, &body).unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    assert_eq!(app.doc_stack.len_frames(), 2);
+    assert!(!app.nav_stack.is_empty());
+
+    app.nav_reset();
+    assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    assert!(app.nav_stack.is_empty());
+
+    app.nav_reset();
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert!(app.doc_stack.is_empty());
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn anchor_stack_rejects_jump_beyond_max_depth() {
+    let mut input = String::from("# Top\n\n");
+    for i in 0..60 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    input.push_str("## Target\n\nbody\n");
+    let doc = parse(&input).unwrap();
+    let mut app = new_test_app(doc);
+
+    for _ in 0..ANCHOR_STACK_MAX_FRAMES {
+        app.follow_anchor("target");
+    }
+    assert_eq!(app.nav_stack.depth(), ANCHOR_STACK_MAX_FRAMES);
+
+    app.follow_anchor("target");
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some(anchor_stack_limit_message().as_str())
+    );
+    assert_eq!(app.nav_stack.depth(), ANCHOR_STACK_MAX_FRAMES);
+}
+
+#[test]
+fn document_stack_supports_max_depth_and_rejects_overflow() {
+    let dir = temp_markdown_dir("doc-max-depth");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let overflow_file = DOCUMENT_STACK_MAX_LAYERS;
+    for i in 0..=overflow_file {
+        let path = dir.join(format!("{i}.md"));
+        let body = if i < overflow_file {
+            format!("# {i}\n\n[next]({}.md)\n", i + 1)
+        } else {
+            format!("# {i}\n\nterminal\n")
+        };
+        std::fs::write(path, body).unwrap();
+    }
+
+    let root = dir.join("0.md");
+    let doc = parse(&std::fs::read_to_string(&root).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(root.clone()),
+        Some("0.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+    assert_eq!(app.source_label.as_deref(), Some("0.md"));
+    assert_eq!(app.doc_stack.len_frames(), 0);
+
+    for layer in 2..=DOCUMENT_STACK_MAX_LAYERS {
+        app.view_state = app
+            .view_state
+            .clone()
+            .select_next_link_in(&[crate::domain::LinkId(0)]);
+        app.open_current_link();
+        assert_eq!(app.doc_stack.len_frames(), layer - 1);
+        assert_eq!(
+            app.source_label.as_deref(),
+            Some(format!("{}.md", layer - 1).as_str())
+        );
+    }
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some(document_stack_limit_message().as_str())
+    );
+    assert_eq!(app.doc_stack.len_frames(), DOCUMENT_STACK_MAX_LAYERS - 1);
+    assert_eq!(
+        app.source_label.as_deref(),
+        Some(format!("{}.md", DOCUMENT_STACK_MAX_LAYERS - 1).as_str())
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn document_prior_restore_preserves_render_caches() {
+    let dir = temp_markdown_dir("doc-prior-cache");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    let backend = ratatui::backend::TestBackend::new(80, 30);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    app.draw_frame(&mut terminal).unwrap();
+    let cache_height_before = app.document_cache_total_height();
+    assert!(cache_height_before > 0);
+
+    app.open_document_link("b.md");
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert_eq!(app.document_cache_total_height(), 0);
+
+    app.doc_back(anchor_idle(&app));
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert_eq!(app.document_cache_total_height(), cache_height_before);
 
     let _ = std::fs::remove_dir_all(dir);
 }

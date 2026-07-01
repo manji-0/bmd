@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 
 use crate::domain::{
-    ChecklistState, ChecklistStyle, document_link_path_part, resolve_document_path,
+    AnchorIdle, ChecklistState, ChecklistStyle, DocumentStackFull, document_link_path_part,
+    document_stack_limit_message, plan_document_back, plan_document_reset, resolve_document_path,
 };
 use crate::error::AppError;
 use crate::parse::parse;
@@ -44,8 +45,11 @@ impl App {
         };
 
         let anchor = document_link_path_part(dest).1;
-        let frame = self.capture_document_frame();
-        self.doc_stack.push(frame);
+        let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
+        if let Err(DocumentStackFull) = self.doc_stack.fix_prior_on_link_jump(prior) {
+            self.set_status_message(document_stack_limit_message());
+            return;
+        }
 
         if let Err(e) = self.apply_document(resolved, document) {
             self.set_status_message(e.to_string());
@@ -59,7 +63,14 @@ impl App {
         }
     }
 
-    pub(crate) fn doc_back(&mut self) {
+    pub(crate) fn doc_back(&mut self, idle: AnchorIdle) {
+        if AnchorIdle::from_stack(&self.nav_stack) != Some(idle) {
+            return;
+        }
+        let Some(()) = plan_document_back(idle, self.doc_stack.len_frames()) else {
+            self.set_status_message("document stack empty".into());
+            return;
+        };
         let Some(frame) = self.doc_stack.pop() else {
             self.set_status_message("document stack empty".into());
             return;
@@ -69,17 +80,25 @@ impl App {
             Err(err) => {
                 let (e, frame) = *err;
                 self.set_status_message(e.to_string());
-                self.doc_stack.push(frame);
+                self.doc_stack
+                    .fix_prior_on_link_jump(super::doc_stack::FixedDocumentPrior::fix(frame))
+                    .expect("restore rollback");
             }
         }
     }
 
-    pub(crate) fn doc_reset(&mut self) {
-        let Some(root) = self.doc_stack.root().cloned() else {
+    pub(crate) fn doc_reset(&mut self, idle: AnchorIdle) {
+        if AnchorIdle::from_stack(&self.nav_stack) != Some(idle) {
+            return;
+        }
+        let Some(()) = plan_document_reset(idle, self.doc_stack.len_frames()) else {
+            return;
+        };
+        let Some(root) = self.doc_stack.take_root_prior() else {
             return;
         };
         match self.try_restore_document_frame(root) {
-            Ok(()) => self.doc_stack.clear(),
+            Ok(()) => {}
             Err(err) => self.set_status_message(err.0.to_string()),
         }
     }
@@ -90,6 +109,9 @@ impl App {
             rendered: self.rendered.clone(),
             mermaid_session: self.mermaid_render.suspend(),
             image_session: self.image_render.suspend(),
+            document_cache: self.document_cache.clone(),
+            preview_render_cache: self.preview_render_cache.clone(),
+            pending_preview: self.pending_preview,
             view_state: self.view_state.clone(),
             scroll_visual: self.scroll_visual,
             scroll_anim_speed: self.scroll_anim_speed,
@@ -154,9 +176,9 @@ impl App {
         self.document = frame.document;
         self.rendered = frame.rendered;
         self.view_state = frame.view_state;
-        self.document_cache = DocumentRenderCache::default();
-        self.preview_render_cache.clear();
-        self.pending_preview = None;
+        self.document_cache = frame.document_cache;
+        self.preview_render_cache = frame.preview_render_cache;
+        self.pending_preview = frame.pending_preview;
         self.scroll_visual = frame.scroll_visual;
         self.scroll_anim_speed = frame.scroll_anim_speed;
         self.tracked_scroll_position = frame.tracked_scroll_position;

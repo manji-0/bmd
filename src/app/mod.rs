@@ -85,6 +85,13 @@ pub struct App {
     pub(crate) fail_document_restore: bool,
 }
 
+#[cfg(test)]
+impl App {
+    pub(crate) fn document_cache_total_height(&self) -> usize {
+        self.document_cache.total_height()
+    }
+}
+
 impl App {
     pub fn new(
         document: Document,
