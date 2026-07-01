@@ -2,6 +2,34 @@
 name = "bmd"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Terminal TUI markdown viewer with vim bindings, mermaid diagrams, and in-app document navigation"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/manji-0/bmd"
+homepage = "https://github.com/manji-0/bmd"
+authors = ["manji-0"]
+keywords = ["markdown", "tui", "terminal", "viewer", "vim"]
+categories = ["command-line-utilities", "text-processing"]
+exclude = [
+    ".github/",
+    ".devbox/",
+    ".cargo/",
+    ".rustup/",
+    ".sccache/",
+    ".pi/",
+    "PLAN.md",
+    "devbox.json",
+    "prek.toml",
+]
+
+[[bin]]
+name = "bmd"
+path = "src/main.rs"
+
+[lib]
+name = "bmd"
+path = "src/lib.rs"
 
 [dependencies]
 crossterm = "0.29"
