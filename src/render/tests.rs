@@ -608,7 +608,7 @@ fn table_logical_height_accounts_for_borders_and_header() {
 }
 
 #[test]
-fn allocate_column_widths_fits_within_total_width() {
+fn allocate_column_widths_uses_ideal_when_content_fits() {
     let table = Table {
         headers: vec![
             vec![Inline::Text("A".into())],
@@ -620,13 +620,14 @@ fn allocate_column_widths_fits_within_total_width() {
         ]],
         alignments: vec![Alignment::Left, Alignment::Left],
     };
-    let widths = allocate_column_widths(&table, 20);
-    assert_eq!(Table::table_frame_width(&widths), 20);
+    let widths = allocate_column_widths(&table, 40);
+    assert_eq!(widths, vec![12, 1]);
+    assert!(Table::table_frame_width(&widths) < 40);
     assert!(widths.iter().all(|w| *w >= 1));
 }
 
 #[test]
-fn render_table_row_spans_full_terminal_width() {
+fn render_table_row_width_matches_frame_when_content_overflows() {
     let ctx = test_render_context();
     let table = Table {
         headers: vec![
@@ -639,8 +640,9 @@ fn render_table_row_spans_full_terminal_width() {
         ]],
         alignments: vec![Alignment::Left, Alignment::Left],
     };
-    let total = 40usize;
+    let total = 24usize;
     let widths = allocate_column_widths(&table, total);
+    assert_eq!(Table::table_frame_width(&widths), total);
     let lines = render_table_row(&table.headers, &widths, ctx.theme.table_header, &ctx, 0);
     let rendered_width: usize = lines[0].spans.iter().map(|s| s.content.width()).sum();
     assert_eq!(rendered_width, total);

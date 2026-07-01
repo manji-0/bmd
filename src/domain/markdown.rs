@@ -292,7 +292,9 @@ impl Table {
             widths
         };
 
-        expand_column_widths(&mut widths, available);
+        if total_ideal > available {
+            expand_column_widths(&mut widths, available);
+        }
         widths
     }
 
