@@ -76,4 +76,24 @@ mod tests {
         let resolved = resolve_document_path(Some(&base), "guide/other.md").unwrap();
         assert_eq!(resolved, PathBuf::from("/docs/guide/other.md"));
     }
+
+    #[test]
+    fn rejects_relative_path_without_base_file() {
+        let err = resolve_document_path(None, "other.md").unwrap_err();
+        assert_eq!(err, DocumentPathError::NoBasePath);
+    }
+
+    #[test]
+    fn rejects_empty_path_part() {
+        let base = PathBuf::from("/docs/readme.md");
+        let err = resolve_document_path(Some(&base), "#only-anchor").unwrap_err();
+        assert_eq!(err, DocumentPathError::EmptyPath);
+    }
+
+    #[test]
+    fn strips_fragment_before_resolving_path() {
+        let base = PathBuf::from("/docs/readme.md");
+        let resolved = resolve_document_path(Some(&base), "guide/other.md#section").unwrap();
+        assert_eq!(resolved, PathBuf::from("/docs/guide/other.md"));
+    }
 }

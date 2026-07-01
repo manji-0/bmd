@@ -353,7 +353,7 @@ fn document_stack_back_and_reset() {
 
     app.nav_back();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
-    assert!(app.doc_stack.is_empty());
+    assert!(app.doc_stack.len_frames() == 0);
 
     app.view_state = app
         .view_state
@@ -367,7 +367,7 @@ fn document_stack_back_and_reset() {
     app.open_current_link();
     app.nav_reset();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
-    assert!(app.doc_stack.is_empty());
+    assert!(app.doc_stack.len_frames() == 0);
 
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -412,7 +412,176 @@ fn anchor_stack_takes_priority_over_document_stack() {
 
     app.nav_back();
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
-    assert!(!app.doc_stack.is_empty());
+    assert!(app.doc_stack.len_frames() != 0);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn open_document_link_requires_file_backed_base() {
+    let doc = parse("[guide](./guide.md)").unwrap();
+    let mut app = new_test_app(doc);
+
+    app.open_document_link("./guide.md");
+
+    assert!(app.status_message.is_some());
+    assert!(app.doc_stack.len_frames() == 0);
+}
+
+#[test]
+fn open_document_link_missing_file_preserves_stack() {
+    let dir = temp_markdown_dir("doc-missing");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    std::fs::write(&a, "# A\n\n[missing](missing.md)\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.open_document_link("missing.md");
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert!(app.doc_stack.len_frames() == 0);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn open_document_link_rolls_back_stack_on_apply_failure() {
+    let dir = temp_markdown_dir("doc-apply-fail");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\ncontent\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.fail_apply_document = true;
+    app.open_document_link("b.md");
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert!(app.doc_stack.len_frames() == 0);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn doc_back_preserves_stack_when_restore_fails() {
+    let dir = temp_markdown_dir("doc-back-fail");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\ncontent\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.open_document_link("b.md");
+    assert_eq!(app.doc_stack.len_frames(), 1);
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+
+    app.fail_document_restore = true;
+    app.doc_back();
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert_eq!(app.doc_stack.len_frames(), 1);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn doc_reset_preserves_stack_when_restore_fails() {
+    let dir = temp_markdown_dir("doc-reset-fail");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\ncontent\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.open_document_link("b.md");
+    assert_eq!(app.doc_stack.len_frames(), 1);
+
+    app.fail_document_restore = true;
+    app.doc_reset();
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert_eq!(app.doc_stack.len_frames(), 1);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn open_document_link_follows_fragment_in_linked_file() {
+    let dir = temp_markdown_dir("doc-fragment");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    std::fs::write(&a, "# A\n\n[open section](b.md#target)\n").unwrap();
+    let mut body = String::from("# Top\n\n");
+    for i in 0..60 {
+        body.push_str(&format!("paragraph {}\n\n", i));
+    }
+    body.push_str("## Target\n\nsection body\n");
+    std::fs::write(&b, &body).unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.open_document_link("b.md#target");
+
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert!(app.view_state.scroll().offset() > 0);
+    assert!(!app.nav_stack.is_empty());
 
     let _ = std::fs::remove_dir_all(dir);
 }

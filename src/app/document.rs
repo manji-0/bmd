@@ -49,9 +49,8 @@ impl App {
 
         if let Err(e) = self.apply_document(resolved, document) {
             self.set_status_message(e.to_string());
-            if let Some(frame) = self.doc_stack.pop() {
-                let _ = self.restore_document_frame(frame);
-            }
+            // apply failed before mutating self; drop the pushed snapshot only.
+            self.doc_stack.pop();
             return;
         }
 
@@ -65,21 +64,23 @@ impl App {
             self.set_status_message("document stack empty".into());
             return;
         };
-        if let Err(e) = self.restore_document_frame(frame) {
-            self.set_status_message(e.to_string());
+        match self.try_restore_document_frame(frame) {
+            Ok(()) => {}
+            Err(err) => {
+                let (e, frame) = *err;
+                self.set_status_message(e.to_string());
+                self.doc_stack.push(frame);
+            }
         }
     }
 
     pub(crate) fn doc_reset(&mut self) {
-        if self.doc_stack.is_empty() {
-            return;
-        }
         let Some(root) = self.doc_stack.root().cloned() else {
             return;
         };
-        self.doc_stack.clear();
-        if let Err(e) = self.restore_document_frame(root) {
-            self.set_status_message(e.to_string());
+        match self.try_restore_document_frame(root) {
+            Ok(()) => self.doc_stack.clear(),
+            Err(err) => self.set_status_message(err.0.to_string()),
         }
     }
 
@@ -104,6 +105,10 @@ impl App {
         path: PathBuf,
         document: crate::domain::Document,
     ) -> Result<(), AppError> {
+        #[cfg(test)]
+        if std::mem::take(&mut self.fail_apply_document) {
+            return Err(AppError::TerminalImage("injected apply failure".into()));
+        }
         let terminal_size = self.view_state.terminal_size();
         let rendered = RenderedDocument::new(&document, &self.picker, terminal_size, Some(&path))?;
         self.document = document;
@@ -127,14 +132,27 @@ impl App {
         Ok(())
     }
 
-    fn restore_document_frame(&mut self, frame: DocumentFrame) -> Result<(), AppError> {
+    fn try_restore_document_frame(
+        &mut self,
+        frame: DocumentFrame,
+    ) -> Result<(), Box<(AppError, DocumentFrame)>> {
+        #[cfg(test)]
+        if std::mem::take(&mut self.fail_document_restore) {
+            return Err(Box::new((
+                AppError::TerminalImage("injected restore failure".into()),
+                frame,
+            )));
+        }
         let terminal_size = frame.view_state.terminal_size();
-        let rendered = RenderedDocument::new(
+        let rendered = match RenderedDocument::new(
             &frame.document,
             &self.picker,
             terminal_size,
             frame.base_path.as_deref(),
-        )?;
+        ) {
+            Ok(rendered) => rendered,
+            Err(e) => return Err(Box::new((e, frame))),
+        };
         self.document = frame.document;
         self.rendered = rendered;
         self.view_state = frame.view_state;

@@ -45,10 +45,6 @@ impl DocStack {
         self.frames.clear();
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.frames.is_empty()
-    }
-
     pub fn len_frames(&self) -> usize {
         self.frames.len()
     }

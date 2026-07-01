@@ -67,6 +67,10 @@ pub struct App {
     nav_stack: NavStack,
     doc_stack: DocStack,
     should_quit: bool,
+    #[cfg(test)]
+    pub(crate) fail_apply_document: bool,
+    #[cfg(test)]
+    pub(crate) fail_document_restore: bool,
 }
 
 impl App {
@@ -121,6 +125,10 @@ impl App {
             nav_stack: NavStack::default(),
             doc_stack: DocStack::default(),
             should_quit: false,
+            #[cfg(test)]
+            fail_apply_document: false,
+            #[cfg(test)]
+            fail_document_restore: false,
         })
     }
 
