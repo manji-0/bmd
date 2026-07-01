@@ -66,12 +66,9 @@ impl MarkupFormat {
         if is_rest_field_line(first) {
             return Self::Rest;
         }
-        if is_rest_adornment_line(first) {
-            return Self::Rest;
-        }
         if lines
             .get(1)
-            .is_some_and(|line| is_rest_adornment_line(line))
+            .is_some_and(|line| is_rest_adornment_line(line) && !is_asciidoc_heading(first))
         {
             return Self::Rest;
         }
@@ -98,7 +95,24 @@ fn is_rest_adornment_line(line: &str) -> bool {
 
 fn is_rest_field_line(line: &str) -> bool {
     let line = line.trim();
-    line.starts_with(':') && line[1..].contains(':')
+    if !line.starts_with(':') {
+        return false;
+    }
+    let rest = &line[1..];
+    let Some(colon_pos) = rest.find(':') else {
+        return false;
+    };
+    let field = &rest[..colon_pos];
+    if field.is_empty() {
+        return false;
+    }
+    if !field
+        .chars()
+        .all(|c| c.is_ascii_alphabetic() || c.is_ascii_digit() || c == '_' || c == '-')
+    {
+        return false;
+    }
+    !rest[colon_pos + 1..].trim().is_empty()
 }
 
 #[cfg(test)]
@@ -143,6 +157,18 @@ mod tests {
         );
         assert_eq!(
             MarkupFormat::sniff_content(":Author: Jane Doe\n\nBody"),
+            MarkupFormat::Rest
+        );
+        assert_eq!(
+            MarkupFormat::sniff_content("---\n\nBody"),
+            MarkupFormat::Markdown
+        );
+        assert_eq!(
+            MarkupFormat::sniff_content(":smile:\n\nBody"),
+            MarkupFormat::Markdown
+        );
+        assert_eq!(
+            MarkupFormat::sniff_content(":tags: rust\n\nBody"),
             MarkupFormat::Rest
         );
     }

@@ -48,11 +48,14 @@ fn map_block(
     parts: &mut ParsedDocumentParts,
 ) -> Result<Vec<ParsedBlock>, ParseError> {
     Ok(match block {
-        RstBlock::Heading { level, inlines } => vec![ParsedBlock::Heading(ParsedHeading {
-            level: *level,
-            content: map_inlines(inlines, parts),
-            anchor: Some(slugify_heading(&rst_inline_plain(inlines))),
-        })],
+        RstBlock::Heading { level, inlines } => {
+            ParseError::ensure_heading_level(MarkupFormat::Rest, *level)?;
+            vec![ParsedBlock::Heading(ParsedHeading {
+                level: *level,
+                content: map_inlines(inlines, parts),
+                anchor: Some(slugify_heading(&rst_inline_plain(inlines))),
+            })]
+        }
         RstBlock::Paragraph(inlines) => vec![ParsedBlock::Paragraph(map_inlines(inlines, parts))],
         RstBlock::CodeBlock(content) | RstBlock::LiteralBlock(content) => {
             vec![ParsedBlock::CodeBlock(ParsedCodeBlock {

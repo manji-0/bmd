@@ -51,8 +51,9 @@ fn map_block(
     Ok(match block {
         AdocBlock::Section(section) => {
             let title = acdc_parser::inlines_to_string(&section.title);
+            let level = section_heading_level(section.level)?;
             let mut mapped = vec![ParsedBlock::Heading(ParsedHeading {
-                level: section.level.saturating_add(1),
+                level,
                 content: map_inlines(&section.title, parts),
                 anchor: section_anchor(&section.metadata).or_else(|| Some(slugify_heading(&title))),
             })];
@@ -259,6 +260,12 @@ fn map_horizontal_alignment(alignment: Option<HorizontalAlignment>) -> ParsedAli
     }
 }
 
+fn section_heading_level(section_level: u8) -> Result<u8, ParseError> {
+    let level = section_level.saturating_add(1);
+    ParseError::ensure_heading_level(MarkupFormat::AsciiDoc, level)?;
+    Ok(level)
+}
+
 fn section_anchor(metadata: &BlockMetadata<'_>) -> Option<String> {
     metadata
         .id
@@ -434,6 +441,8 @@ fn mermaid_link_label(source: &str) -> String {
 mod tests {
     use super::*;
     use crate::domain::{Block, LinkKind};
+    use crate::parse::error::ParseError;
+    use crate::parse::format::MarkupFormat;
 
     #[test]
     fn parse_asciidoc_heading_and_emphasis() {
@@ -462,6 +471,17 @@ mod tests {
         let doc = dto.into_domain().unwrap();
         assert_eq!(doc.links[0].url.as_str(), "#hello-world");
         assert_eq!(doc.links[0].kind, LinkKind::Anchor);
+    }
+
+    #[test]
+    fn parse_asciidoc_rejects_heading_level_beyond_h6() {
+        assert!(matches!(
+            section_heading_level(6),
+            Err(ParseError::InvalidHeadingLevel {
+                format: MarkupFormat::AsciiDoc,
+                level: 7,
+            })
+        ));
     }
 
     #[test]

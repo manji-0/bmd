@@ -2,7 +2,8 @@
 
 use unicode_width::UnicodeWidthStr;
 
-use super::link::{DocumentError, Link, LinkId};
+use super::link::{DocumentError, Link, LinkId, LinkKind};
+use super::mermaid_render::mermaid_diagram_index;
 
 /// A parsed markdown document.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,6 +19,7 @@ impl Document {
     /// # Errors
     ///
     /// Returns `DocumentError::DanglingLink` if an inline references a link id that does not exist.
+    /// Returns `DocumentError::InvalidMermaidLink` if a mermaid link URL does not map to a diagram.
     pub fn new(
         blocks: Vec<Block>,
         links: Vec<Link>,
@@ -29,6 +31,7 @@ impl Document {
             mermaid_diagrams,
         };
         doc.validate_links()?;
+        doc.validate_mermaid_links()?;
         Ok(doc)
     }
 
@@ -99,6 +102,25 @@ impl Document {
                     Self::validate_inlines_links(children, block_idx, link_count)?;
                 }
                 Inline::Text(_) | Inline::Code(_) | Inline::HardBreak | Inline::SoftBreak => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_mermaid_links(&self) -> Result<(), DocumentError> {
+        for (link_idx, link) in self.links.iter().enumerate() {
+            if link.kind != LinkKind::Mermaid {
+                continue;
+            }
+            let Some(diagram_idx) = mermaid_diagram_index(link.url.as_str()) else {
+                return Err(DocumentError::InvalidMermaidLink {
+                    link_id: LinkId(link_idx),
+                });
+            };
+            if diagram_idx >= self.mermaid_diagrams.len() {
+                return Err(DocumentError::InvalidMermaidLink {
+                    link_id: LinkId(link_idx),
+                });
             }
         }
         Ok(())

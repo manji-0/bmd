@@ -9,6 +9,7 @@ use super::dto::{
     ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedHeading, ParsedInline,
     ParsedLink, ParsedList, ParsedListItem, ParsedTable,
 };
+use crate::parse::normalize_anchor_slug;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IntoDomainError {
@@ -78,7 +79,14 @@ fn convert_heading(heading: ParsedHeading) -> Result<Heading, IntoDomainError> {
             },
         )?,
         content: convert_inlines(heading.content)?,
-        anchor: heading.anchor,
+        anchor: heading.anchor.and_then(|anchor| {
+            let normalized = normalize_anchor_slug(&anchor);
+            if normalized.is_empty() {
+                None
+            } else {
+                Some(normalized)
+            }
+        }),
     })
 }
 
@@ -165,7 +173,7 @@ fn convert_inline(inline: ParsedInline) -> Result<Inline, IntoDomainError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::LinkKind;
+    use crate::domain::{Block, LinkKind};
 
     #[test]
     fn into_domain_validates_links_and_headings() {
@@ -197,5 +205,23 @@ mod tests {
             dto.into_domain(),
             Err(IntoDomainError::InvalidHeadingLevel { level: 9 })
         ));
+    }
+
+    #[test]
+    fn into_domain_normalizes_heading_anchor() {
+        let dto = ParsedDocument::new(
+            vec![ParsedBlock::Heading(ParsedHeading {
+                level: 1,
+                content: vec![ParsedInline::Text("Title".into())],
+                anchor: Some("_Hello_World".into()),
+            })],
+            vec![],
+            vec![],
+        );
+        let doc = dto.into_domain().unwrap();
+        let Block::Heading(heading) = &doc.blocks[0] else {
+            panic!("expected heading");
+        };
+        assert_eq!(heading.anchor.as_deref(), Some("hello-world"));
     }
 }

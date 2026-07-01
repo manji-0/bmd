@@ -75,4 +75,7 @@ pub enum LinkUrlError {
 pub enum DocumentError {
     #[error("dangling link {link_id} in block {block_index}")]
     DanglingLink { block_index: usize, link_id: LinkId },
+
+    #[error("mermaid link {link_id} references missing diagram")]
+    InvalidMermaidLink { link_id: LinkId },
 }

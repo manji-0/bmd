@@ -1,7 +1,7 @@
 use super::{
-    Alignment, CodeBlock, Document, Heading, HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl,
-    LinkUrlError, NormalSearch, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, Table,
-    TerminalSize, TerminalSizeError, UiMode, ViewState,
+    Alignment, Block, CodeBlock, Document, DocumentError, Heading, HeadingLevel, Inline, Link,
+    LinkId, LinkKind, LinkUrl, LinkUrlError, NormalSearch, SearchDirection, SearchMatch,
+    SearchQuery, SearchQueryError, Table, TerminalSize, TerminalSizeError, UiMode, ViewState,
 };
 
 #[test]
@@ -161,6 +161,25 @@ fn search_query_rejects_empty() {
     assert!(matches!(
         SearchQuery::new("".to_string()),
         Err(SearchQueryError::Empty)
+    ));
+}
+
+#[test]
+fn document_rejects_invalid_mermaid_link() {
+    assert!(matches!(
+        Document::new(
+            vec![Block::Paragraph(vec![Inline::Link(
+                LinkId(0),
+                vec![Inline::Text("[mermaid]".into())],
+            )])],
+            vec![Link {
+                url: LinkUrl::new("bmd:mermaid:0".into()).unwrap(),
+                title: None,
+                kind: LinkKind::Mermaid,
+            }],
+            vec![],
+        ),
+        Err(DocumentError::InvalidMermaidLink { link_id: LinkId(0) })
     ));
 }
 
