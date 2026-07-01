@@ -150,6 +150,7 @@ impl App {
         let rendered = RenderedDocument::new(&document, &self.picker, terminal_size, Some(&path))?;
         self.document = document;
         self.rendered = rendered;
+        self.bump_document_revision();
         self.document_cache = DocumentRenderCache::default();
         self.preview_render_cache.clear();
         self.pending_preview = None;
@@ -189,6 +190,7 @@ impl App {
         }
         self.document = frame.document;
         self.rendered = frame.rendered;
+        self.bump_document_revision();
         self.view_state = frame.view_state;
         self.document_cache = frame.document_cache;
         self.preview_render_cache = frame.preview_render_cache;

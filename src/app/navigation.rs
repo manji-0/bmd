@@ -5,9 +5,7 @@ use crate::domain::{
     AnchorIdle, AnchorStackEmpty, AnchorStackFull, FixedScrollPrior, NavBackPlan, NavResetPlan,
     anchor_stack_limit_message, plan_back, plan_document_back, plan_document_reset, plan_reset,
 };
-use crate::render::{
-    collect_heading_offsets, find_heading_line_by_anchor, next_heading_line, prev_heading_line,
-};
+use crate::render::{find_heading_line_by_anchor, next_heading_line, prev_heading_line};
 
 use super::App;
 use super::scroll::HALF_PAGE_SCROLL_ANIM_SPEED;
@@ -52,11 +50,13 @@ impl App {
     pub(crate) fn next_link(&mut self) {
         let visible = self.visible_links();
         self.view_state = self.view_state.clone().select_next_link_in(&visible);
+        self.maybe_warm_selected_preview();
     }
 
     pub(crate) fn prev_link(&mut self) {
         let visible = self.visible_links();
         self.view_state = self.view_state.clone().select_prev_link_in(&visible);
+        self.maybe_warm_selected_preview();
     }
 
     fn visible_links(&self) -> Vec<crate::domain::LinkId> {
@@ -64,9 +64,7 @@ impl App {
     }
 
     pub(crate) fn next_heading(&mut self) {
-        let ctx = self.render_context();
-        let width = self.view_state.terminal_size().width();
-        let headings = collect_heading_offsets(&self.document, width, &ctx);
+        let headings = self.heading_offsets();
         let scroll = self.view_state.scroll().offset();
         if let Some(line) = next_heading_line(&headings, scroll) {
             self.scroll_to_line(line);
@@ -76,9 +74,7 @@ impl App {
     }
 
     pub(crate) fn prev_heading(&mut self) {
-        let ctx = self.render_context();
-        let width = self.view_state.terminal_size().width();
-        let headings = collect_heading_offsets(&self.document, width, &ctx);
+        let headings = self.heading_offsets();
         let scroll = self.view_state.scroll().offset();
         if let Some(line) = prev_heading_line(&headings, scroll) {
             self.scroll_to_line(line);

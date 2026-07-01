@@ -98,6 +98,7 @@ impl App {
         self.document = document;
         self.rendered =
             RenderedDocument::new(&self.document, &self.picker, terminal_size, Some(&path))?;
+        self.bump_document_revision();
         self.document_cache.invalidate();
         self.preview_render_cache.clear();
         self.pending_preview = None;

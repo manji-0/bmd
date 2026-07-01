@@ -26,8 +26,8 @@ mod tests;
 pub use cache::{CachedMarkdownView, DocumentRenderCache};
 pub use context::RenderContext;
 pub use headings::{
-    collect_heading_offsets, find_heading_line_by_anchor, next_heading_line, prev_heading_line,
-    slugify_heading,
+    HeadingOffsetCache, collect_heading_offsets, find_heading_line_by_anchor, next_heading_line,
+    prev_heading_line, slugify_heading,
 };
 pub(crate) use image::render_markdown_image_from_src;
 pub(crate) use image::{PREVIEW_POPUP_PERCENT, centered_rect};

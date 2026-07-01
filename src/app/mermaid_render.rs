@@ -1,8 +1,7 @@
 //! Background mermaid worker adapter over [`MermaidRenderSession`].
 
 use std::mem;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
+use std::sync::{Arc, mpsc};
 
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::Protocol;
@@ -14,6 +13,8 @@ use crate::domain::{
 };
 use crate::render::{RenderedDocument, render_mermaid_from_source};
 
+use super::worker_pool::WorkerPool;
+
 struct WorkerResult {
     completion: MermaidCompletion,
     protocol: Option<Protocol>,
@@ -22,22 +23,22 @@ struct WorkerResult {
 /// Runs background mermaid renders and applies domain state transitions.
 pub(crate) struct MermaidRenderPool {
     session: MermaidRenderSession,
-    receiver: Receiver<WorkerResult>,
-    sender: Sender<WorkerResult>,
+    receiver: mpsc::Receiver<WorkerResult>,
+    sender: mpsc::Sender<WorkerResult>,
+    worker_pool: Arc<WorkerPool>,
 }
 
-impl Default for MermaidRenderPool {
-    fn default() -> Self {
+impl MermaidRenderPool {
+    pub(crate) fn new(worker_pool: Arc<WorkerPool>) -> Self {
         let (sender, receiver) = mpsc::channel();
         Self {
             session: MermaidRenderSession::new(),
             receiver,
             sender,
+            worker_pool,
         }
     }
-}
 
-impl MermaidRenderPool {
     pub fn begin_document(&mut self) {
         let session = mem::take(&mut self.session);
         self.session = session.begin_document();
@@ -151,7 +152,8 @@ impl MermaidRenderPool {
         let sender = self.sender.clone();
         let link_id = request.link_id;
         let generation = request.generation;
-        thread::spawn(move || {
+        let worker_pool = Arc::clone(&self.worker_pool);
+        worker_pool.spawn(move || {
             let (completion, protocol) =
                 match render_mermaid_from_source(&source, &picker, terminal) {
                     Ok(protocol) => (

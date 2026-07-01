@@ -1,9 +1,9 @@
 use super::App;
 use super::scroll::{is_line_scroll_key, line_scroll_command};
 use crate::domain::{
-    ANCHOR_STACK_MAX_FRAMES, AnchorIdle, DOCUMENT_STACK_MAX_LAYERS, Document, Heading,
+    ANCHOR_STACK_MAX_FRAMES, AnchorIdle, Block, DOCUMENT_STACK_MAX_LAYERS, Document, Heading,
     HeadingLevel, Inline, Link, LinkKind, LinkUrl, SearchDirection, TerminalSize,
-    anchor_stack_limit_message, document_stack_limit_message,
+    anchor_stack_limit_message, document_stack_limit_message, normalize_document_path,
 };
 use crate::keymap::Command;
 use crate::parse::parse;
@@ -345,6 +345,52 @@ fn scrolling_and_search_do_not_push_anchor_stack() {
 
 fn temp_markdown_dir(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("bmd-{name}-{}", std::process::id()))
+}
+
+fn file_backed_app(dir: &std::path::Path, file_name: &str, markdown: &str) -> App {
+    let path = dir.join(file_name);
+    std::fs::write(&path, markdown).unwrap();
+    let doc = parse(markdown).unwrap();
+    App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(path),
+        Some(file_name.into()),
+        test_terminal_size(),
+    )
+    .unwrap()
+}
+
+fn first_heading_text(document: &Document) -> Option<String> {
+    document.blocks.iter().find_map(|block| match block {
+        Block::Heading(heading) => heading.content.iter().find_map(|inline| {
+            if let Inline::Text(text) = inline {
+                Some(text.clone())
+            } else {
+                None
+            }
+        }),
+        _ => None,
+    })
+}
+
+fn wait_for_background_work(app: &mut App) {
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while app.preview_work_pending() && Instant::now() < deadline {
+        app.poll_preview_renders();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn long_body_with_tail_link(tail_link: &str) -> String {
+    let mut body = String::from("# Index\n\n");
+    for index in 0..60 {
+        body.push_str(&format!("filler paragraph {index}\n\n"));
+    }
+    body.push_str(tail_link);
+    body
 }
 
 #[test]
@@ -832,4 +878,182 @@ fn maybe_prefetch_skips_when_viewport_unchanged() {
     let mut app = new_test_app(dummy_document());
     app.maybe_prefetch_visible_links();
     app.maybe_prefetch_visible_links();
+}
+
+// --- Document prefetch use cases ---
+
+/// User reads a page, waits briefly, then follows a visible child link.
+#[test]
+fn prefetched_visible_child_link_opens_target_document() {
+    let dir = temp_markdown_dir("uc-prefetch-open");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child target\n\nbody\n").unwrap();
+
+    let mut app = file_backed_app(&dir, "parent.md", "# Parent\n\n[open child](child.md)\n");
+    let child_path = normalize_document_path(dir.join("child.md"));
+
+    wait_for_background_work(&mut app);
+    assert!(app.prefetched_document_ready(&child_path));
+
+    app.open_document_link("child.md");
+
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+    assert_eq!(
+        first_heading_text(&app.document).as_deref(),
+        Some("Child target")
+    );
+    assert_eq!(app.doc_stack.len_frames(), 1);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// User scrolls until a below-the-fold child link becomes visible; prefetch then open.
+#[test]
+fn scrolling_into_view_prefetches_and_opens_child_link() {
+    let dir = temp_markdown_dir("uc-prefetch-scroll");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("below.md"), "# Below fold\n\nend\n").unwrap();
+
+    let parent_body = long_body_with_tail_link("[open below](below.md)\n");
+    let mut app = file_backed_app(&dir, "parent.md", &parent_body);
+    let below_path = normalize_document_path(dir.join("below.md"));
+
+    assert!(!app.prefetched_document_ready(&below_path));
+
+    app.jump_to_bottom();
+    app.maybe_prefetch_visible_links();
+    wait_for_background_work(&mut app);
+
+    assert!(app.prefetched_document_ready(&below_path));
+    app.open_document_link("below.md");
+
+    assert_eq!(app.source_label.as_deref(), Some("below.md"));
+    assert_eq!(
+        first_heading_text(&app.document).as_deref(),
+        Some("Below fold")
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Child file changes on disk after prefetch; opening still shows latest content.
+#[test]
+fn opening_child_after_disk_edit_ignores_stale_prefetch() {
+    use std::thread;
+    use std::time::Duration;
+
+    let dir = temp_markdown_dir("uc-prefetch-stale");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let child = dir.join("child.md");
+    std::fs::write(&child, "# Version one\n\n").unwrap();
+
+    let mut app = file_backed_app(&dir, "parent.md", "# Parent\n\n[open child](child.md)\n");
+    let child_path = normalize_document_path(child.clone());
+
+    wait_for_background_work(&mut app);
+    assert!(app.prefetched_document_ready(&child_path));
+
+    thread::sleep(Duration::from_millis(1100));
+    std::fs::write(&child, "# Version two\n\n").unwrap();
+
+    app.open_document_link("child.md");
+
+    assert_eq!(
+        first_heading_text(&app.document).as_deref(),
+        Some("Version two")
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// User reloads the current file; stale child prefetch is cleared, then visible links prefetch again.
+#[test]
+fn reload_current_file_clears_prefetched_children() {
+    use std::thread;
+    use std::time::Duration;
+
+    let dir = temp_markdown_dir("uc-prefetch-reload");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child\n\n").unwrap();
+
+    let parent = dir.join("parent.md");
+    std::fs::write(&parent, "# Parent v1\n\n[open child](child.md)\n").unwrap();
+    let mut app = file_backed_app(&dir, "parent.md", "# Parent v1\n\n[open child](child.md)\n");
+    let child_path = normalize_document_path(dir.join("child.md"));
+
+    wait_for_background_work(&mut app);
+    assert!(app.prefetched_document_ready(&child_path));
+
+    thread::sleep(Duration::from_millis(1100));
+    std::fs::write(&parent, "# Parent v2\n\n[open child](child.md)\n").unwrap();
+    assert!(app.reload_from_disk().unwrap());
+    assert!(!app.prefetched_document_ready(&child_path));
+
+    wait_for_background_work(&mut app);
+    assert_eq!(
+        first_heading_text(&app.document).as_deref(),
+        Some("Parent v2")
+    );
+    assert!(app.prefetched_document_ready(&child_path));
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// User jumps to a child without waiting for prefetch; sync load still succeeds.
+#[test]
+fn child_link_opens_immediately_when_prefetch_not_ready() {
+    let dir = temp_markdown_dir("uc-prefetch-sync");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Immediate\n\n").unwrap();
+
+    let mut app = file_backed_app(&dir, "parent.md", "# Parent\n\n[open child](child.md)\n");
+    let child_path = normalize_document_path(dir.join("child.md"));
+    assert!(!app.prefetched_document_ready(&child_path));
+
+    app.open_document_link("child.md");
+
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+    assert_eq!(
+        first_heading_text(&app.document).as_deref(),
+        Some("Immediate")
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// User navigates into a prefetched child and back; parent context is restored.
+#[test]
+fn prefetched_child_navigation_round_trip_restores_parent() {
+    let dir = temp_markdown_dir("uc-prefetch-roundtrip");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child\n\n").unwrap();
+
+    let mut app = file_backed_app(
+        &dir,
+        "parent.md",
+        "# Parent home\n\n[open child](child.md)\n",
+    );
+    let child_path = normalize_document_path(dir.join("child.md"));
+
+    wait_for_background_work(&mut app);
+    assert!(app.prefetched_document_ready(&child_path));
+    app.open_document_link("child.md");
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+
+    app.doc_back(anchor_idle(&app));
+
+    assert_eq!(app.source_label.as_deref(), Some("parent.md"));
+    assert_eq!(
+        first_heading_text(&app.document).as_deref(),
+        Some("Parent home")
+    );
+    assert_eq!(app.doc_stack.len_frames(), 0);
+
+    let _ = std::fs::remove_dir_all(dir);
 }
