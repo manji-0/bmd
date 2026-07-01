@@ -244,15 +244,4 @@ impl ParsedDocumentParts {
         self.next_checklist_id += 1;
         id
     }
-
-    pub fn into_document(self, blocks: Vec<ParsedBlock>) -> ParsedDocument {
-        ParsedDocument::new(
-            blocks,
-            self.links,
-            self.mermaid_diagrams,
-            Vec::new(),
-            Vec::new(),
-            None,
-        )
-    }
 }
