@@ -22,19 +22,22 @@
     "scripts": {
       "setup": [
         "rustup toolchain install",
-        "rustup target add x86_64-unknown-linux-musl",
+        "rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl",
         "cargo fetch",
         "cargo install cargo-zigbuild --locked"
       ],
       "build": "cargo build",
       "build-release": "cargo build --release",
       "build-linux-x86_64": "RUSTFLAGS= RUSTC_WRAPPER= cargo zigbuild --release --locked --target x86_64-unknown-linux-musl",
+      "build-linux-aarch64": "RUSTFLAGS= RUSTC_WRAPPER= cargo zigbuild --release --locked --target aarch64-unknown-linux-musl",
       "package": [
         "mkdir -p dist",
         "cargo build --release --locked",
         "tar czf dist/bmd-$(rustc -vV | sed -n 's/^host: //p').tar.gz -C target/release bmd",
         "RUSTFLAGS= RUSTC_WRAPPER= cargo zigbuild --release --locked --target x86_64-unknown-linux-musl",
         "tar czf dist/bmd-x86_64-unknown-linux-musl.tar.gz -C target/x86_64-unknown-linux-musl/release bmd",
+        "RUSTFLAGS= RUSTC_WRAPPER= cargo zigbuild --release --locked --target aarch64-unknown-linux-musl",
+        "tar czf dist/bmd-aarch64-unknown-linux-musl.tar.gz -C target/aarch64-unknown-linux-musl/release bmd",
         "cargo package --locked --no-verify"
       ],
       "test":        "cargo test -- --show-output",
