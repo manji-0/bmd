@@ -1,6 +1,5 @@
 //! Markdown image loading for the floating preview overlay.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use image::DynamicImage;
@@ -11,7 +10,7 @@ use ratatui::{
 };
 use ratatui_image::{FilterType, Resize, protocol::Protocol};
 
-use crate::domain::{Document, LinkKind, TerminalSize};
+use crate::domain::TerminalSize;
 use crate::error::AppError;
 
 /// Popup size as a percentage of the terminal, matching [`centered_rect`] in preview draw.
@@ -73,34 +72,15 @@ pub(crate) fn terminal_image_protocol(
         .map_err(|e| AppError::TerminalImage(e.to_string()))
 }
 
-pub(crate) fn preload_markdown_images(
-    document: &Document,
+pub(crate) fn render_markdown_image_from_src(
+    src: &str,
+    base_path: Option<&std::path::Path>,
     picker: &ratatui_image::picker::Picker,
     terminal: TerminalSize,
-    base_path: Option<&Path>,
-) -> HashMap<String, Protocol> {
+) -> Result<Protocol, AppError> {
     let target = preview_content_size(terminal);
-    let mut images = HashMap::new();
-    for link in &document.links {
-        if link.kind != LinkKind::Image {
-            continue;
-        }
-        let src = link.url.as_str();
-        if images.contains_key(src) {
-            continue;
-        }
-        match load_markdown_image(src, base_path)
-            .and_then(|dyn_img| terminal_image_protocol(dyn_img, picker, target))
-        {
-            Ok(protocol) => {
-                images.insert(src.to_string(), protocol);
-            }
-            Err(e) => {
-                eprintln!("[bmd] failed to load image {src}: {e}");
-            }
-        }
-    }
-    images
+    let dyn_img = load_markdown_image(src, base_path)?;
+    terminal_image_protocol(dyn_img, picker, target)
 }
 
 pub(crate) fn render_floating_image(protocol: &Protocol, area: Rect, buf: &mut Buffer) {

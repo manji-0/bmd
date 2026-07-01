@@ -4,8 +4,10 @@ mod checklist;
 mod doc_stack;
 mod document;
 mod draw;
+mod image_render;
 mod input;
 mod layout;
+mod mermaid_render;
 mod navigation;
 mod reload;
 mod scroll;
@@ -27,7 +29,9 @@ use crate::error::AppError;
 use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
 
 use doc_stack::DocStack;
+use image_render::ImageRenderPool;
 use layout::terminal_size;
+use mermaid_render::MermaidRenderPool;
 use reload::FileWatch;
 use scroll::{
     ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED, STATUS_MESSAGE_DURATION,
@@ -66,6 +70,8 @@ pub struct App {
     next_reload_poll: Instant,
     nav_stack: NavStack,
     doc_stack: DocStack,
+    mermaid_render: MermaidRenderPool,
+    image_render: ImageRenderPool,
     should_quit: bool,
     #[cfg(test)]
     pub(crate) fail_apply_document: bool,
@@ -98,7 +104,7 @@ impl App {
         let file_watch = base_path
             .as_ref()
             .and_then(|path| FileWatch::new(path.clone()).ok());
-        Ok(Self {
+        let mut app = Self {
             document,
             rendered,
             view_state,
@@ -124,12 +130,48 @@ impl App {
             next_reload_poll: now,
             nav_stack: NavStack::default(),
             doc_stack: DocStack::default(),
+            mermaid_render: MermaidRenderPool::default(),
+            image_render: ImageRenderPool::default(),
             should_quit: false,
             #[cfg(test)]
             fail_apply_document: false,
             #[cfg(test)]
             fail_document_restore: false,
-        })
+        };
+        app.start_preview_prefetch();
+        Ok(app)
+    }
+
+    fn start_preview_prefetch(&mut self) {
+        let terminal = self.view_state.terminal_size();
+        self.mermaid_render
+            .prefetch(&self.document, &self.rendered, &self.picker, terminal);
+        self.image_render.prefetch(
+            &self.document,
+            &self.rendered,
+            self.base_path.as_ref(),
+            &self.picker,
+            terminal,
+        );
+    }
+
+    pub(crate) fn poll_preview_renders(&mut self) -> bool {
+        let terminal = self.view_state.terminal_size();
+        let mermaid_dirty =
+            self.mermaid_render
+                .poll(&mut self.rendered, &self.document, &self.picker, terminal);
+        let image_dirty = self.image_render.poll(
+            &mut self.rendered,
+            &self.document,
+            self.base_path.as_ref(),
+            &self.picker,
+            terminal,
+        );
+        mermaid_dirty || image_dirty
+    }
+
+    pub(crate) fn preview_work_pending(&self) -> bool {
+        self.mermaid_render.has_pending() || self.image_render.has_pending()
     }
 
     pub(crate) fn set_status_message(&mut self, msg: String) {
@@ -190,15 +232,17 @@ impl App {
 
             let animating = self.tick_scroll_animation(dt);
             let image_dirty = self.update_terminal_image_visibility(now);
+            let mermaid_dirty = self.poll_preview_renders();
             let awaiting_images = self.images_reenable_at.is_some();
+            let awaiting_preview = self.preview_work_pending();
             self.tick_status_message(now);
 
-            if dirty || animating || image_dirty {
+            if dirty || animating || image_dirty || mermaid_dirty {
                 self.draw_frame(terminal)?;
                 last_draw = now;
             }
 
-            let frame_budget = if animating || awaiting_images {
+            let frame_budget = if animating || awaiting_images || awaiting_preview {
                 ACTIVE_FRAME_INTERVAL
             } else {
                 IDLE_POLL_INTERVAL
@@ -207,7 +251,7 @@ impl App {
             if event::poll(wait)? {
                 continue;
             }
-            if animating || awaiting_images {
+            if animating || awaiting_images || awaiting_preview {
                 continue;
             }
         }
