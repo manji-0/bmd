@@ -4,6 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
 };
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::domain::{HeadingLevel, Inline};
@@ -118,17 +119,7 @@ fn wrap_styled_line(
         return vec![(line_offset, highlight_line(line, ctx, line_offset))];
     }
 
-    let words: Vec<(String, Style)> = line
-        .spans
-        .iter()
-        .flat_map(|span| {
-            span.content
-                .split_whitespace()
-                .map(|word| (word.to_string(), span.style))
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
+    let words = words_from_spans(&line.spans);
     if words.is_empty() {
         return vec![(line_offset, highlight_line(line, ctx, line_offset))];
     }
@@ -138,19 +129,27 @@ fn wrap_styled_line(
     let mut current_width = 0usize;
 
     for (word, style) in words {
-        let word_width = word.width();
-        let gap = usize::from(!current_spans.is_empty());
-        if !current_spans.is_empty() && current_width + gap + word_width > width {
-            wrapped.push(Line::from(std::mem::take(&mut current_spans)));
-            current_width = 0;
+        if word.width() <= width {
+            append_word_with_space(
+                &mut current_spans,
+                &mut current_width,
+                &mut wrapped,
+                &word,
+                style,
+                width,
+            );
+        } else {
+            for grapheme in word.graphemes(true) {
+                append_grapheme(
+                    &mut current_spans,
+                    &mut current_width,
+                    &mut wrapped,
+                    grapheme,
+                    style,
+                    width,
+                );
+            }
         }
-        if !current_spans.is_empty() {
-            let space_style = current_spans.last().map(|s| s.style).unwrap_or(style);
-            append_span_text(&mut current_spans, " ", space_style);
-            current_width += 1;
-        }
-        append_span_text(&mut current_spans, &word, style);
-        current_width += word_width;
     }
 
     if !current_spans.is_empty() {
@@ -165,6 +164,58 @@ fn wrap_styled_line(
             (offset, highlight_line(line, ctx, offset))
         })
         .collect()
+}
+
+fn words_from_spans(spans: &[Span<'_>]) -> Vec<(String, Style)> {
+    spans
+        .iter()
+        .flat_map(|span| {
+            span.content
+                .split_whitespace()
+                .map(|word| (word.to_string(), span.style))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn append_word_with_space(
+    current_spans: &mut Vec<Span<'static>>,
+    current_width: &mut usize,
+    wrapped: &mut Vec<Line<'static>>,
+    word: &str,
+    style: Style,
+    width: usize,
+) {
+    let word_width = word.width();
+    let gap = usize::from(!current_spans.is_empty());
+    if !current_spans.is_empty() && *current_width + gap + word_width > width {
+        wrapped.push(Line::from(std::mem::take(current_spans)));
+        *current_width = 0;
+    }
+    if !current_spans.is_empty() {
+        let space_style = current_spans.last().map(|s| s.style).unwrap_or(style);
+        append_span_text(current_spans, " ", space_style);
+        *current_width += 1;
+    }
+    append_span_text(current_spans, word, style);
+    *current_width += word_width;
+}
+
+fn append_grapheme(
+    current_spans: &mut Vec<Span<'static>>,
+    current_width: &mut usize,
+    wrapped: &mut Vec<Line<'static>>,
+    grapheme: &str,
+    style: Style,
+    width: usize,
+) {
+    let grapheme_width = grapheme.width();
+    if !current_spans.is_empty() && *current_width + grapheme_width > width {
+        wrapped.push(Line::from(std::mem::take(current_spans)));
+        *current_width = 0;
+    }
+    append_span_text(current_spans, grapheme, style);
+    *current_width += grapheme_width;
 }
 
 fn append_span_text(spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
