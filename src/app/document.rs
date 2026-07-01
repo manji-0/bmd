@@ -104,7 +104,13 @@ impl App {
         };
         match self.try_restore_document_frame(root) {
             Ok(()) => {}
-            Err(err) => self.set_status_message(err.0.to_string()),
+            Err(err) => {
+                let (e, frame) = *err;
+                self.set_status_message(e.to_string());
+                self.doc_stack
+                    .fix_prior_on_link_jump(super::doc_stack::FixedDocumentPrior::fix(frame))
+                    .expect("restore rollback");
+            }
         }
     }
 
