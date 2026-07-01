@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use crate::domain::{SearchDirection, UiMode};
+use crate::domain::{LinkKind, PreviewLoadStatus, SearchDirection, UiMode};
 use crate::error::AppError;
 use crate::render::{
     CachedMarkdownView, PREVIEW_POPUP_PERCENT, RenderContext, render_floating_image,
@@ -106,8 +106,35 @@ impl App {
         {
             render_floating_image(protocol, inner, frame.buffer_mut());
         } else {
-            let para = Paragraph::new(format!("[failed to load preview: {}]", link.url.as_str()));
+            let status = match link.kind {
+                LinkKind::Mermaid => self.mermaid_render.preview_status(link_id, &self.rendered),
+                LinkKind::Image => {
+                    self.image_render
+                        .preview_status(link_id, &self.document, &self.rendered)
+                }
+                _ => PreviewLoadStatus::Idle,
+            };
+            let message = preview_loading_message(link.kind, status, link.url.as_str());
+            let para = Paragraph::new(message);
             frame.render_widget(para, inner);
+        }
+    }
+}
+
+fn preview_loading_message(kind: LinkKind, status: PreviewLoadStatus, url: &str) -> String {
+    match status {
+        PreviewLoadStatus::Queued | PreviewLoadStatus::Loading => match kind {
+            LinkKind::Mermaid => "Rendering mermaid diagram…".to_string(),
+            LinkKind::Image => "Loading image…".to_string(),
+            _ => format!("[loading preview: {url}]"),
+        },
+        PreviewLoadStatus::Failed => match kind {
+            LinkKind::Mermaid => "[failed to render mermaid diagram]".to_string(),
+            LinkKind::Image => "[failed to load image]".to_string(),
+            _ => format!("[failed to load preview: {url}]"),
+        },
+        PreviewLoadStatus::Idle | PreviewLoadStatus::Ready => {
+            format!("[failed to load preview: {url}]")
         }
     }
 }

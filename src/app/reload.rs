@@ -115,6 +115,9 @@ impl App {
         self.scroll_key_down_at = None;
         self.images_reenable_at = None;
         self.show_terminal_images = true;
+        self.mermaid_render.begin_document();
+        self.image_render.begin_document();
+        self.start_preview_prefetch();
         Ok(true)
     }
 }

@@ -106,15 +106,30 @@ impl App {
             return;
         }
         if link.kind.is_preview() {
-            if self
-                .rendered
-                .preview_protocol(id.0, link.kind, &url)
-                .is_some()
-            {
-                self.view_state = self.view_state.clone().open_preview(id);
-            } else {
-                self.set_status_message(format!("failed to load preview: {url}"));
+            let terminal_size = self.view_state.terminal_size();
+            match link.kind {
+                crate::domain::LinkKind::Mermaid => {
+                    self.mermaid_render.request(
+                        id,
+                        &self.document,
+                        &self.rendered,
+                        &self.picker,
+                        terminal_size,
+                    );
+                }
+                crate::domain::LinkKind::Image => {
+                    self.image_render.request(
+                        id,
+                        &self.document,
+                        &self.rendered,
+                        self.base_path.as_ref(),
+                        &self.picker,
+                        terminal_size,
+                    );
+                }
+                _ => {}
             }
+            self.view_state = self.view_state.clone().open_preview(id);
         } else if let Err(e) = open_link(&link.url) {
             self.set_status_message(e.to_string());
         }

@@ -8,52 +8,65 @@ use ratatui_image::protocol::Protocol;
 use crate::domain::{Document, LinkKind, MermaidDiagram, TerminalSize};
 use crate::error::AppError;
 
-use super::image::{preload_markdown_images, preview_content_size, terminal_image_protocol};
+use super::image::{preview_content_size, terminal_image_protocol};
 
 /// Cache of pre-rendered terminal images for floating previews.
+#[derive(Clone)]
 pub struct RenderedDocument {
     pub mermaid_images: HashMap<usize, Protocol>,
     pub markdown_images: HashMap<String, Protocol>,
 }
 
 impl RenderedDocument {
-    /// Pre-render mermaid diagrams and markdown images for floating preview.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AppError` if the terminal image protocol cannot be created. Individual
-    /// render failures are logged and skipped.
+    /// Background workers load markdown images and mermaid diagrams on demand.
     pub fn new(
+        _document: &Document,
+        _picker: &ratatui_image::picker::Picker,
+        _terminal: TerminalSize,
+        _base_path: Option<&std::path::Path>,
+    ) -> Result<Self, AppError> {
+        Ok(Self {
+            mermaid_images: HashMap::new(),
+            markdown_images: HashMap::new(),
+        })
+    }
+
+    /// Render a mermaid diagram for preview if not already cached.
+    ///
+    /// Returns `true` when the diagram is available in the cache after this call.
+    #[cfg(test)]
+    pub fn ensure_mermaid_preview(
+        &mut self,
+        link_id: usize,
         document: &Document,
         picker: &ratatui_image::picker::Picker,
         terminal: TerminalSize,
-        base_path: Option<&std::path::Path>,
-    ) -> Result<Self, AppError> {
-        let mut mermaid_images = HashMap::new();
-        for (link_id, link) in document.links.iter().enumerate() {
-            if link.kind != LinkKind::Mermaid {
-                continue;
+    ) -> bool {
+        if self.mermaid_images.contains_key(&link_id) {
+            return true;
+        }
+        let Some(link) = document.links.get(link_id) else {
+            return false;
+        };
+        if link.kind != LinkKind::Mermaid {
+            return false;
+        };
+        let Some(diagram_idx) = crate::domain::mermaid_diagram_index(link.url.as_str()) else {
+            return false;
+        };
+        let Some(diag) = document.mermaid_diagrams.get(diagram_idx) else {
+            return false;
+        };
+        match render_mermaid_from_source(&diag.source, picker, terminal) {
+            Ok(protocol) => {
+                self.mermaid_images.insert(link_id, protocol);
+                true
             }
-            let Some(diagram_idx) = mermaid_diagram_index(link.url.as_str()) else {
-                continue;
-            };
-            let Some(diag) = document.mermaid_diagrams.get(diagram_idx) else {
-                continue;
-            };
-            match render_mermaid_image(diag, picker, terminal) {
-                Ok(protocol) => {
-                    mermaid_images.insert(link_id, protocol);
-                }
-                Err(e) => {
-                    eprintln!("[bmd] failed to render mermaid link {link_id}: {e}");
-                }
+            Err(e) => {
+                eprintln!("[bmd] failed to render mermaid link {link_id}: {e}");
+                false
             }
         }
-        let markdown_images = preload_markdown_images(document, picker, terminal, base_path);
-        Ok(Self {
-            mermaid_images,
-            markdown_images,
-        })
     }
 
     pub(crate) fn preview_protocol(
@@ -70,8 +83,19 @@ impl RenderedDocument {
     }
 }
 
-pub(crate) fn mermaid_diagram_index(url: &str) -> Option<usize> {
-    url.strip_prefix("bmd:mermaid:")?.parse().ok()
+/// Render mermaid source to a terminal image protocol.
+pub(crate) fn render_mermaid_from_source(
+    source: &str,
+    picker: &ratatui_image::picker::Picker,
+    terminal: TerminalSize,
+) -> Result<Protocol, AppError> {
+    render_mermaid_image(
+        &MermaidDiagram {
+            source: source.into(),
+        },
+        picker,
+        terminal,
+    )
 }
 
 /// Supersample factor for mermaid PNG rasterization before terminal downscale.
@@ -105,11 +129,37 @@ fn render_mermaid_image(
 
 #[cfg(test)]
 mod tests {
-    use super::mermaid_diagram_index;
+    use super::*;
+    use crate::domain::TerminalSize;
+    use crate::domain::{Document, Link, LinkKind, LinkUrl, MermaidDiagram, mermaid_diagram_index};
+    use ratatui_image::picker::Picker;
 
     #[test]
     fn mermaid_diagram_index_parses_bmd_url() {
         assert_eq!(mermaid_diagram_index("bmd:mermaid:0"), Some(0));
         assert_eq!(mermaid_diagram_index("https://x"), None);
+    }
+
+    #[test]
+    fn new_does_not_preload_mermaid() {
+        let document = Document {
+            blocks: vec![],
+            links: vec![Link {
+                url: LinkUrl::new("bmd:mermaid:0".into()).unwrap(),
+                title: None,
+                kind: LinkKind::Mermaid,
+            }],
+            mermaid_diagrams: vec![MermaidDiagram {
+                source: "graph TD; A-->B;".into(),
+            }],
+        };
+        let rendered = RenderedDocument::new(
+            &document,
+            &Picker::halfblocks(),
+            TerminalSize::new(80, 24).unwrap(),
+            None,
+        )
+        .unwrap();
+        assert!(rendered.mermaid_images.is_empty());
     }
 }

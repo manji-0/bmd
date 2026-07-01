@@ -2,7 +2,10 @@
 
 use std::path::PathBuf;
 
-use crate::domain::{ChecklistState, Document, NavStack, ViewState};
+use crate::domain::{
+    ChecklistState, Document, ImageSessionSnapshot, MermaidSessionSnapshot, NavStack, ViewState,
+};
+use crate::render::RenderedDocument;
 
 use super::reload::FileWatch;
 
@@ -10,6 +13,9 @@ use super::reload::FileWatch;
 #[derive(Clone)]
 pub(crate) struct DocumentFrame {
     pub document: Document,
+    pub rendered: RenderedDocument,
+    pub mermaid_session: MermaidSessionSnapshot,
+    pub image_session: ImageSessionSnapshot,
     pub view_state: ViewState,
     pub scroll_visual: f32,
     pub scroll_anim_speed: f32,

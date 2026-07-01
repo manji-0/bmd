@@ -87,6 +87,9 @@ impl App {
     fn capture_document_frame(&self) -> DocumentFrame {
         DocumentFrame {
             document: self.document.clone(),
+            rendered: self.rendered.clone(),
+            mermaid_session: self.mermaid_render.suspend(),
+            image_session: self.image_render.suspend(),
             view_state: self.view_state.clone(),
             scroll_visual: self.scroll_visual,
             scroll_anim_speed: self.scroll_anim_speed,
@@ -129,6 +132,9 @@ impl App {
         self.images_reenable_at = None;
         self.scroll_key_down_at = None;
         self.help_visible = false;
+        self.mermaid_render.begin_document();
+        self.image_render.begin_document();
+        self.start_preview_prefetch();
         Ok(())
     }
 
@@ -143,18 +149,8 @@ impl App {
                 frame,
             )));
         }
-        let terminal_size = frame.view_state.terminal_size();
-        let rendered = match RenderedDocument::new(
-            &frame.document,
-            &self.picker,
-            terminal_size,
-            frame.base_path.as_deref(),
-        ) {
-            Ok(rendered) => rendered,
-            Err(e) => return Err(Box::new((e, frame))),
-        };
         self.document = frame.document;
-        self.rendered = rendered;
+        self.rendered = frame.rendered;
         self.view_state = frame.view_state;
         self.document_cache = DocumentRenderCache::default();
         self.scroll_visual = frame.scroll_visual;
@@ -169,6 +165,22 @@ impl App {
         self.images_reenable_at = None;
         self.scroll_key_down_at = None;
         self.help_visible = false;
+        let terminal_size = self.view_state.terminal_size();
+        self.mermaid_render.resume(
+            frame.mermaid_session,
+            &self.document,
+            &self.rendered,
+            &self.picker,
+            terminal_size,
+        );
+        self.image_render.resume(
+            frame.image_session,
+            &self.document,
+            &self.rendered,
+            self.base_path.as_ref(),
+            &self.picker,
+            terminal_size,
+        );
         Ok(())
     }
 }
