@@ -55,30 +55,13 @@ fn test_render_context() -> RenderContext<'static> {
 }
 
 fn wrapped_line_count(line: &Line, width: usize) -> usize {
-    if width == 0 {
-        return 1;
-    }
-    let words: Vec<&str> = line
+    let inlines: Vec<Inline> = line
         .spans
         .iter()
-        .flat_map(|span| span.content.split_whitespace())
+        .map(|span| Inline::Text(span.content.to_string()))
         .collect();
-    if words.is_empty() {
-        return 1;
-    }
-    let mut lines = 1;
-    let mut current = 0usize;
-    for (i, word) in words.iter().enumerate() {
-        let word_width = word.width();
-        let extra = if i == 0 { 0 } else { 1 };
-        if current + word_width + extra > width {
-            lines += 1;
-            current = word_width;
-        } else {
-            current += word_width + extra;
-        }
-    }
-    lines
+    let ctx = test_render_context();
+    inlines_to_wrapped_lines(&inlines, &ctx, ctx.theme.text, 0, width).len()
 }
 
 fn find_matches(document: &Document, width: u16, query: &str) -> Vec<SearchMatch> {
@@ -461,6 +444,18 @@ fn wrapped_line_count_respects_multiple_spans() {
         Span::styled("world", Style::default()),
     ]);
     assert_eq!(wrapped_line_count(&line, 5), 2);
+}
+
+#[test]
+fn wrapped_lines_break_cjk_without_spaces() {
+    let ctx = test_render_context();
+    let inlines = vec![Inline::Text("こんにちは世界".into())];
+    let rows = inlines_to_wrapped_lines(&inlines, &ctx, ctx.theme.text, 0, 4);
+    assert_eq!(rows.len(), 2);
+    let first: String = rows[0].1.spans.iter().map(|s| s.content.as_ref()).collect();
+    let second: String = rows[1].1.spans.iter().map(|s| s.content.as_ref()).collect();
+    assert_eq!(first, "こんに");
+    assert_eq!(second, "ちは世界");
 }
 
 #[test]

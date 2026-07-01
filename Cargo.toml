@@ -42,10 +42,8 @@ serde = { version = "1", features = ["derive"] }
 syntect = "5"
 thiserror = "2"
 toml = "0.8"
-textwrap = "0.16"
 unicode-width = "0.2"
 unicode-segmentation = "1.13"
-url = "2"
 
 [profile.release]
 opt-level = 3
