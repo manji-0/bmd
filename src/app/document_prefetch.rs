@@ -152,6 +152,9 @@ mod tests {
                 kind: LinkKind::Document,
             }],
             mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         };
         let mut pool = DocumentPrefetchPool::new(WorkerPool::new(1));
         pool.prefetch_visible(&[LinkId(0)], &link_document, None);

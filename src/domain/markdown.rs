@@ -1,9 +1,29 @@
 //! Markdown document and block model.
 
+use std::collections::HashMap;
+
 use unicode_width::UnicodeWidthStr;
 
+use super::front_matter::FrontMatter;
 use super::link::{DocumentError, Link, LinkId, LinkKind};
 use super::mermaid_render::mermaid_diagram_index;
+
+/// Opaque identifier for a footnote stored in `Document.footnotes`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FootnoteId(pub usize);
+
+impl std::fmt::Display for FootnoteId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fn{}", self.0)
+    }
+}
+
+/// A footnote definition body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FootnoteDefinition {
+    pub label: String,
+    pub content: Vec<Block>,
+}
 
 /// A parsed markdown document.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -11,6 +31,10 @@ pub struct Document {
     pub blocks: Vec<Block>,
     pub links: Vec<Link>,
     pub mermaid_diagrams: Vec<MermaidDiagram>,
+    pub footnotes: Vec<FootnoteDefinition>,
+    /// Footnote ids in order of first inline reference.
+    pub footnote_order: Vec<FootnoteId>,
+    pub front_matter: Option<FrontMatter>,
 }
 
 impl Document {
@@ -24,14 +48,21 @@ impl Document {
         blocks: Vec<Block>,
         links: Vec<Link>,
         mermaid_diagrams: Vec<MermaidDiagram>,
+        footnotes: Vec<FootnoteDefinition>,
+        footnote_order: Vec<FootnoteId>,
+        front_matter: Option<FrontMatter>,
     ) -> Result<Self, DocumentError> {
         let doc = Self {
             blocks,
             links,
             mermaid_diagrams,
+            footnotes,
+            footnote_order,
+            front_matter,
         };
         doc.validate_links()?;
         doc.validate_mermaid_links()?;
+        doc.validate_footnotes()?;
         Ok(doc)
     }
 
@@ -98,8 +129,137 @@ impl Document {
                     }
                     Self::validate_inlines_links(children, block_idx, link_count)?;
                 }
-                Inline::Strong(children) | Inline::Emphasis(children) => {
+                Inline::Strong(children)
+                | Inline::Emphasis(children)
+                | Inline::Strikethrough(children) => {
                     Self::validate_inlines_links(children, block_idx, link_count)?;
+                }
+                Inline::Text(_)
+                | Inline::Code(_)
+                | Inline::HardBreak
+                | Inline::SoftBreak
+                | Inline::FootnoteReference(_, _) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_footnotes(&self) -> Result<(), DocumentError> {
+        let count = self.footnotes.len();
+        let referenced: HashMap<FootnoteId, ()> = self
+            .footnote_order
+            .iter()
+            .copied()
+            .map(|id| (id, ()))
+            .collect();
+        for (block_idx, block) in self.blocks.iter().enumerate() {
+            Self::validate_block_footnotes(block, block_idx, count, &referenced, &self.footnotes)?;
+        }
+        Ok(())
+    }
+
+    fn validate_block_footnotes(
+        block: &Block,
+        block_idx: usize,
+        footnote_count: usize,
+        referenced: &HashMap<FootnoteId, ()>,
+        footnotes: &[FootnoteDefinition],
+    ) -> Result<(), DocumentError> {
+        match block {
+            Block::Paragraph(inlines)
+            | Block::Heading(Heading {
+                content: inlines, ..
+            }) => {
+                Self::validate_inlines_footnotes(
+                    inlines,
+                    block_idx,
+                    footnote_count,
+                    referenced,
+                    footnotes,
+                )?;
+            }
+            Block::CodeBlock(_) | Block::Rule => {}
+            Block::BlockQuote(blocks) => {
+                for child in blocks {
+                    Self::validate_block_footnotes(
+                        child,
+                        block_idx,
+                        footnote_count,
+                        referenced,
+                        footnotes,
+                    )?;
+                }
+            }
+            Block::List(list) => {
+                for item in &list.items {
+                    for child in &item.content {
+                        Self::validate_block_footnotes(
+                            child,
+                            block_idx,
+                            footnote_count,
+                            referenced,
+                            footnotes,
+                        )?;
+                    }
+                }
+            }
+            Block::Table(table) => {
+                for cell in &table.headers {
+                    Self::validate_inlines_footnotes(
+                        cell,
+                        block_idx,
+                        footnote_count,
+                        referenced,
+                        footnotes,
+                    )?;
+                }
+                for row in &table.rows {
+                    for cell in row {
+                        Self::validate_inlines_footnotes(
+                            cell,
+                            block_idx,
+                            footnote_count,
+                            referenced,
+                            footnotes,
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_inlines_footnotes(
+        inlines: &[Inline],
+        block_idx: usize,
+        footnote_count: usize,
+        referenced: &HashMap<FootnoteId, ()>,
+        footnotes: &[FootnoteDefinition],
+    ) -> Result<(), DocumentError> {
+        for inline in inlines {
+            match inline {
+                Inline::FootnoteReference(id, _) => {
+                    if id.0 >= footnote_count {
+                        return Err(DocumentError::DanglingFootnote {
+                            block_index: block_idx,
+                            footnote_id: *id,
+                        });
+                    }
+                    if referenced.contains_key(id) && footnotes[id.0].content.is_empty() {
+                        return Err(DocumentError::UndefinedFootnote { footnote_id: *id });
+                    }
+                }
+                Inline::Link(_, children)
+                | Inline::Strong(children)
+                | Inline::Emphasis(children)
+                | Inline::Strikethrough(children) => {
+                    Self::validate_inlines_footnotes(
+                        children,
+                        block_idx,
+                        footnote_count,
+                        referenced,
+                        footnotes,
+                    )?;
                 }
                 Inline::Text(_) | Inline::Code(_) | Inline::HardBreak | Inline::SoftBreak => {}
             }
@@ -433,8 +593,10 @@ pub enum Inline {
     Text(String),
     Strong(Vec<Inline>),
     Emphasis(Vec<Inline>),
+    Strikethrough(Vec<Inline>),
     Code(String),
     Link(LinkId, Vec<Inline>),
+    FootnoteReference(FootnoteId, usize),
     HardBreak,
     SoftBreak,
 }
@@ -446,7 +608,11 @@ impl Inline {
             .iter()
             .map(|i| match i {
                 Inline::Text(t) | Inline::Code(t) => t.width(),
-                Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => Self::text_width(c),
+                Inline::Strong(c)
+                | Inline::Emphasis(c)
+                | Inline::Strikethrough(c)
+                | Inline::Link(_, c) => Self::text_width(c),
+                Inline::FootnoteReference(_, display) => footnote_marker_width(*display),
                 Inline::HardBreak | Inline::SoftBreak => 1,
             })
             .sum()
@@ -460,9 +626,11 @@ impl Inline {
                 Inline::Text(t) | Inline::Code(t) => {
                     t.split_whitespace().map(|w| w.width()).max().unwrap_or(0)
                 }
-                Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => {
-                    Self::min_word_width(c)
-                }
+                Inline::Strong(c)
+                | Inline::Emphasis(c)
+                | Inline::Strikethrough(c)
+                | Inline::Link(_, c) => Self::min_word_width(c),
+                Inline::FootnoteReference(_, display) => footnote_marker_width(*display),
                 Inline::HardBreak | Inline::SoftBreak => 0,
             })
             .max()
@@ -475,9 +643,13 @@ impl Inline {
         for (i, inline) in inlines.iter().enumerate() {
             match inline {
                 Inline::Text(t) | Inline::Code(t) => out.push_str(t),
-                Inline::Strong(c) | Inline::Emphasis(c) | Inline::Link(_, c) => {
+                Inline::Strong(c)
+                | Inline::Emphasis(c)
+                | Inline::Strikethrough(c)
+                | Inline::Link(_, c) => {
                     out.push_str(&Self::plain_text(c));
                 }
+                Inline::FootnoteReference(_, _) => {}
                 Inline::HardBreak | Inline::SoftBreak => {
                     if i > 0 {
                         out.push(' ');
@@ -487,4 +659,8 @@ impl Inline {
         }
         out
     }
+}
+
+fn footnote_marker_width(display: usize) -> usize {
+    format!("[{display}]").width()
 }

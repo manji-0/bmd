@@ -144,6 +144,9 @@ mod tests {
             ],
             links: vec![],
             mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         };
         let rendered = RenderedDocument::new(
             &document,

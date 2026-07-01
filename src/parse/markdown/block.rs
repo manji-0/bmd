@@ -1,10 +1,13 @@
 //! Block-level markdown event handling.
 
-use pulldown_cmark::{Alignment as CmarkAlignment, Event, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment as CmarkAlignment, Event, MetadataBlockKind, Parser, Tag, TagEnd};
+
+use std::collections::HashMap;
 
 use crate::parse::dto::{
-    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedHeading, ParsedInline,
-    ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem, ParsedMermaidDiagram, ParsedTable,
+    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedFootnoteDefinition,
+    ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink,
+    ParsedLinkKind, ParsedList, ParsedListItem, ParsedMermaidDiagram, ParsedTable,
 };
 use crate::parse::error::ParseError;
 
@@ -29,6 +32,10 @@ pub(crate) struct ParserState<'a> {
     stack: Vec<BlockFrame>,
     paragraph_standalone_image: Option<PendingStandaloneImage>,
     next_checklist_id: u32,
+    footnotes: Vec<ParsedFootnoteDefinition>,
+    footnote_label_to_id: HashMap<String, usize>,
+    footnote_order: Vec<usize>,
+    front_matter: Option<ParsedFrontMatter>,
 }
 
 #[derive(Debug)]
@@ -47,7 +54,10 @@ enum BlockFrame {
         checked: bool,
         checklist_id: Option<u32>,
     },
-    Heading(InlineParser),
+    Heading {
+        parser: InlineParser,
+        anchor: Option<String>,
+    },
     Paragraph(InlineParser),
     Table {
         alignments: Vec<ParsedAlignment>,
@@ -62,6 +72,14 @@ enum BlockFrame {
         content: String,
         is_mermaid: bool,
     },
+    FootnoteDefinition {
+        footnote_id: usize,
+        blocks: Vec<ParsedBlock>,
+    },
+    MetadataBlock {
+        kind: ParsedFrontMatterKind,
+        content: String,
+    },
 }
 
 impl<'a> ParserState<'a> {
@@ -74,6 +92,10 @@ impl<'a> ParserState<'a> {
             stack: Vec::new(),
             paragraph_standalone_image: None,
             next_checklist_id: 0,
+            footnotes: Vec::new(),
+            footnote_label_to_id: HashMap::new(),
+            footnote_order: Vec::new(),
+            front_matter: None,
         }
     }
 
@@ -89,7 +111,8 @@ impl<'a> ParserState<'a> {
                 Event::SoftBreak => self.soft_break(),
                 Event::HardBreak => self.hard_break(),
                 Event::Rule => self.blocks.push(ParsedBlock::Rule),
-                Event::FootnoteReference(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {}
+                Event::FootnoteReference(label) => self.footnote_reference(label.into_string()),
+                Event::InlineMath(_) | Event::DisplayMath(_) => {}
                 Event::TaskListMarker(checked) => self.task_list_marker(checked),
             }
         }
@@ -99,8 +122,11 @@ impl<'a> ParserState<'a> {
     fn start_tag(&mut self, tag: Tag<'a>) -> Result<(), ParseError> {
         match tag {
             Tag::Paragraph => self.stack.push(BlockFrame::Paragraph(InlineParser::new())),
-            Tag::Heading { .. } => {
-                self.stack.push(BlockFrame::Heading(InlineParser::new()));
+            Tag::Heading { id, .. } => {
+                self.stack.push(BlockFrame::Heading {
+                    parser: InlineParser::new(),
+                    anchor: id.map(|s| s.into_string()).filter(|s| !s.trim().is_empty()),
+                });
             }
             Tag::BlockQuote(kind) => self.stack.push(BlockFrame::BlockQuote {
                 kind,
@@ -148,14 +174,16 @@ impl<'a> ParserState<'a> {
             Tag::TableCell => self.stack.push(BlockFrame::TableCell(InlineParser::new())),
             Tag::Emphasis => self.with_inline_parser(|p| p.start_emphasis()),
             Tag::Strong => self.with_inline_parser(|p| p.start_strong()),
-            Tag::Strikethrough => self.with_inline_parser(|p| p.start_deleted()),
+            Tag::Strikethrough => self.with_inline_parser(|p| p.start_strikethrough()),
             Tag::Link {
                 dest_url, title, ..
             } => {
                 let dest = dest_url.into_string();
                 let title = title.into_string();
                 if let Some(
-                    BlockFrame::Paragraph(p) | BlockFrame::Heading(p) | BlockFrame::TableCell(p),
+                    BlockFrame::Paragraph(p)
+                    | BlockFrame::Heading { parser: p, .. }
+                    | BlockFrame::TableCell(p),
                 ) = self.stack.last_mut()
                 {
                     let kind = ParsedLinkKind::classify_url(&dest);
@@ -186,8 +214,9 @@ impl<'a> ParserState<'a> {
                             ParsedLinkKind::Image,
                         );
                     }
-                } else if let Some(BlockFrame::Heading(p) | BlockFrame::TableCell(p)) =
-                    self.stack.last_mut()
+                } else if let Some(
+                    BlockFrame::Heading { parser: p, .. } | BlockFrame::TableCell(p),
+                ) = self.stack.last_mut()
                 {
                     p.start_link(
                         &mut self.links,
@@ -197,14 +226,26 @@ impl<'a> ParserState<'a> {
                     );
                 }
             }
-            Tag::FootnoteDefinition(_)
-            | Tag::DefinitionList
+            Tag::FootnoteDefinition(label) => {
+                let label = label.into_string();
+                let footnote_id = self.footnote_id_for_label(&label);
+                self.stack.push(BlockFrame::FootnoteDefinition {
+                    footnote_id,
+                    blocks: Vec::new(),
+                });
+            }
+            Tag::MetadataBlock(kind) => {
+                self.stack.push(BlockFrame::MetadataBlock {
+                    kind: map_metadata_kind(kind),
+                    content: String::new(),
+                });
+            }
+            Tag::DefinitionList
             | Tag::DefinitionListTitle
             | Tag::DefinitionListDefinition
             | Tag::HtmlBlock
             | Tag::Superscript
-            | Tag::Subscript
-            | Tag::MetadataBlock(_) => {}
+            | Tag::Subscript => {}
         }
         Ok(())
     }
@@ -243,11 +284,11 @@ impl<'a> ParserState<'a> {
             }
             TagEnd::Heading(level) => {
                 let frame = self.pop_frame("heading")?;
-                if let BlockFrame::Heading(parser) = frame {
+                if let BlockFrame::Heading { parser, anchor } = frame {
                     self.finish_block(ParsedBlock::Heading(ParsedHeading {
                         level: heading_level_to_u8(level),
                         content: parser.into_inlines(),
-                        anchor: None,
+                        anchor,
                     }));
                 }
             }
@@ -376,7 +417,7 @@ impl<'a> ParserState<'a> {
                 p.end_strong().ok();
             }),
             TagEnd::Strikethrough => self.with_inline_parser(|p| {
-                p.end_deleted().ok();
+                p.end_strikethrough().ok();
             }),
             TagEnd::Link => self.with_inline_parser(|p| {
                 p.end_link().ok();
@@ -388,14 +429,33 @@ impl<'a> ParserState<'a> {
                     });
                 }
             }
-            TagEnd::FootnoteDefinition
-            | TagEnd::DefinitionList
+            TagEnd::FootnoteDefinition => {
+                let frame = self.pop_frame("footnote definition")?;
+                if let BlockFrame::FootnoteDefinition {
+                    footnote_id,
+                    blocks,
+                } = frame
+                {
+                    if let Some(def) = self.footnotes.get_mut(footnote_id) {
+                        def.blocks = blocks;
+                    }
+                }
+            }
+            TagEnd::MetadataBlock(_) => {
+                let frame = self.pop_frame("metadata block")?;
+                if let BlockFrame::MetadataBlock { kind, content } = frame {
+                    let raw = content.trim_end().to_string();
+                    if !raw.is_empty() && self.front_matter.is_none() {
+                        self.front_matter = Some(ParsedFrontMatter { kind, raw });
+                    }
+                }
+            }
+            TagEnd::DefinitionList
             | TagEnd::DefinitionListTitle
             | TagEnd::DefinitionListDefinition
             | TagEnd::HtmlBlock
             | TagEnd::Superscript
-            | TagEnd::Subscript
-            | TagEnd::MetadataBlock(_) => {}
+            | TagEnd::Subscript => {}
         }
         Ok(())
     }
@@ -428,7 +488,7 @@ impl<'a> ParserState<'a> {
                 self.with_inline_parser(|p| p.start_code());
             }
             InlineHtmlToken::Del | InlineHtmlToken::S => {
-                self.with_inline_parser(|p| p.start_deleted());
+                self.with_inline_parser(|p| p.start_strikethrough());
             }
             InlineHtmlToken::Br | InlineHtmlToken::Unknown => {}
         }
@@ -449,7 +509,7 @@ impl<'a> ParserState<'a> {
                 p.end_code().ok();
             }),
             InlineHtmlToken::Del | InlineHtmlToken::S => self.with_inline_parser(|p| {
-                p.end_deleted().ok();
+                p.end_strikethrough().ok();
             }),
             InlineHtmlToken::Br | InlineHtmlToken::Unknown => {}
         }
@@ -475,6 +535,10 @@ impl<'a> ParserState<'a> {
     }
 
     fn text(&mut self, text: String) {
+        if let Some(BlockFrame::MetadataBlock { content, .. }) = self.stack.last_mut() {
+            content.push_str(&text);
+            return;
+        }
         if let Some(img) = &mut self.paragraph_standalone_image {
             img.alt.push_str(&text);
             return;
@@ -565,7 +629,9 @@ impl<'a> ParserState<'a> {
 
     fn inline_parser_from_stack(stack: &mut [BlockFrame]) -> Option<&mut InlineParser> {
         match stack.last_mut()? {
-            BlockFrame::Paragraph(p) | BlockFrame::Heading(p) | BlockFrame::TableCell(p) => Some(p),
+            BlockFrame::Paragraph(p)
+            | BlockFrame::Heading { parser: p, .. }
+            | BlockFrame::TableCell(p) => Some(p),
             _ => None,
         }
     }
@@ -576,6 +642,7 @@ impl<'a> ParserState<'a> {
                 BlockFrame::BlockQuote { blocks, .. } => blocks.push(block),
                 BlockFrame::ListItem { blocks, .. } => blocks.push(block),
                 BlockFrame::List { current_item, .. } => current_item.push(block),
+                BlockFrame::FootnoteDefinition { blocks, .. } => blocks.push(block),
                 _ => self.blocks.push(block),
             }
         } else {
@@ -590,7 +657,57 @@ impl<'a> ParserState<'a> {
     }
 
     pub(crate) fn into_document(self) -> ParsedDocument {
-        ParsedDocument::new(self.blocks, self.links, self.mermaid_diagrams)
+        ParsedDocument::new(
+            self.blocks,
+            self.links,
+            self.mermaid_diagrams,
+            self.footnotes,
+            self.footnote_order,
+            self.front_matter,
+        )
+    }
+
+    fn footnote_id_for_label(&mut self, label: &str) -> usize {
+        if let Some(&id) = self.footnote_label_to_id.get(label) {
+            return id;
+        }
+        let id = self.footnotes.len();
+        self.footnote_label_to_id.insert(label.to_string(), id);
+        self.footnotes.push(ParsedFootnoteDefinition {
+            label: label.to_string(),
+            blocks: Vec::new(),
+        });
+        id
+    }
+
+    fn footnote_display_for(&mut self, footnote_id: usize) -> usize {
+        if let Some(pos) = self.footnote_order.iter().position(|&id| id == footnote_id) {
+            pos + 1
+        } else {
+            self.footnote_order.push(footnote_id);
+            self.footnote_order.len()
+        }
+    }
+
+    fn footnote_reference(&mut self, label: String) {
+        let footnote_id = self.footnote_id_for_label(&label);
+        let display = self.footnote_display_for(footnote_id);
+        let inline = ParsedInline::FootnoteReference {
+            footnote_id,
+            display,
+        };
+        if let Some(parser) = self.inline_parser() {
+            parser.current_target().push(inline);
+        } else {
+            self.push_inline_to_list_item(inline);
+        }
+    }
+}
+
+fn map_metadata_kind(kind: MetadataBlockKind) -> ParsedFrontMatterKind {
+    match kind {
+        MetadataBlockKind::YamlStyle => ParsedFrontMatterKind::Yaml,
+        MetadataBlockKind::PlusesStyle => ParsedFrontMatterKind::Toml,
     }
 }
 

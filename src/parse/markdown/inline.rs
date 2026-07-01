@@ -15,13 +15,12 @@ pub(crate) struct InlineParser {
 pub(crate) enum InlineFrame {
     Strong(Vec<ParsedInline>),
     Emphasis(Vec<ParsedInline>),
+    Strikethrough(Vec<ParsedInline>),
     Link(usize, Vec<ParsedInline>),
     /// Transparent fallback for links with invalid URLs: children are flattened.
     Group(Vec<ParsedInline>),
     /// Inline HTML code wrapper.
     Code(Vec<ParsedInline>),
-    /// Inline HTML del/s/strike wrapper rendered as plain text.
-    Deleted(Vec<ParsedInline>),
 }
 
 impl InlineParser {
@@ -36,10 +35,10 @@ impl InlineParser {
         match self.stack.last_mut() {
             Some(InlineFrame::Strong(v))
             | Some(InlineFrame::Emphasis(v))
+            | Some(InlineFrame::Strikethrough(v))
             | Some(InlineFrame::Link(_, v))
             | Some(InlineFrame::Group(v))
-            | Some(InlineFrame::Code(v))
-            | Some(InlineFrame::Deleted(v)) => v,
+            | Some(InlineFrame::Code(v)) => v,
             None => &mut self.output,
         }
     }
@@ -100,20 +99,20 @@ impl InlineParser {
         self.stack.push(InlineFrame::Code(Vec::new()));
     }
 
-    pub(crate) fn start_deleted(&mut self) {
-        self.stack.push(InlineFrame::Deleted(Vec::new()));
+    pub(crate) fn start_strikethrough(&mut self) {
+        self.stack.push(InlineFrame::Strikethrough(Vec::new()));
     }
 
-    pub(crate) fn end_deleted(&mut self) -> Result<(), ParseError> {
+    pub(crate) fn end_strikethrough(&mut self) -> Result<(), ParseError> {
         let frame = self
             .stack
             .pop()
-            .ok_or_else(|| syntax_error("unmatched deleted end"))?;
+            .ok_or_else(|| syntax_error("unmatched strikethrough end"))?;
         match frame {
-            InlineFrame::Deleted(children) => {
-                self.current_target().extend(children);
-            }
-            _ => return Err(syntax_error("unmatched deleted end")),
+            InlineFrame::Strikethrough(children) => self
+                .current_target()
+                .push(ParsedInline::Strikethrough(children)),
+            _ => return Err(syntax_error("unmatched strikethrough end")),
         }
         Ok(())
     }
@@ -179,6 +178,7 @@ impl InlineParser {
             let children = match frame {
                 InlineFrame::Strong(c) => vec![ParsedInline::Strong(c)],
                 InlineFrame::Emphasis(c) => vec![ParsedInline::Emphasis(c)],
+                InlineFrame::Strikethrough(c) => vec![ParsedInline::Strikethrough(c)],
                 InlineFrame::Link(link_id, c) => vec![ParsedInline::Link {
                     link_id,
                     children: c,
@@ -187,7 +187,6 @@ impl InlineParser {
                 InlineFrame::Code(c) => {
                     vec![ParsedInline::Code(ParsedInline::plain_text(&c))]
                 }
-                InlineFrame::Deleted(c) => c,
             };
             self.current_target().extend(children);
         }

@@ -152,6 +152,9 @@ mod tests {
             mermaid_diagrams: vec![MermaidDiagram {
                 source: "graph TD; A-->B;".into(),
             }],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         };
         let rendered = RenderedDocument::new(
             &document,

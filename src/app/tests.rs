@@ -45,6 +45,9 @@ fn dummy_document() -> Document {
             kind: LinkKind::Web,
         }],
         mermaid_diagrams: vec![],
+        footnotes: vec![],
+        footnote_order: vec![],
+        front_matter: None,
     }
 }
 

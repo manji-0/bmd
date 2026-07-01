@@ -39,6 +39,7 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["html
 ratatui = "0.30"
 ratatui-image = { version = "11", default-features = false, features = ["crossterm", "image-defaults"] }
 serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
 syntect = "5"
 thiserror = "2"
 toml = "0.8"

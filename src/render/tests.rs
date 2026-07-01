@@ -74,7 +74,8 @@ fn document_render_cache_blits_fractional_scroll() {
     let blocks: Vec<Block> = (0..20)
         .map(|i| Block::Paragraph(vec![Inline::Text(format!("line {i}"))]))
         .collect();
-    let document = Document::new(blocks, Vec::new(), Vec::new()).unwrap();
+    let document =
+        Document::new(blocks, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None).unwrap();
     let width = 40u16;
     let height = 5u16;
     let size = TerminalSize::new(width, height).unwrap();
@@ -102,7 +103,8 @@ fn document_render_cache_blits_scrolled_viewport() {
     let blocks: Vec<Block> = (0..20)
         .map(|i| Block::Paragraph(vec![Inline::Text(format!("line {i}"))]))
         .collect();
-    let document = Document::new(blocks, Vec::new(), Vec::new()).unwrap();
+    let document =
+        Document::new(blocks, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None).unwrap();
     let width = 40u16;
     let height = 5u16;
     let size = TerminalSize::new(width, height).unwrap();
@@ -138,6 +140,9 @@ fn document_render_cache_rebuilds_on_width_change() {
         )])],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     let size = TerminalSize::new(80, 10).unwrap();
@@ -161,6 +166,9 @@ fn find_search_matches_finds_text_in_paragraphs() {
         ],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     let matches = find_matches(&document, 80, "hello");
@@ -177,6 +185,9 @@ fn find_search_matches_is_case_insensitive() {
         )])],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     let matches = find_matches(&document, 80, "world");
@@ -192,6 +203,9 @@ fn find_search_matches_searches_code_blocks() {
         })],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     let matches = find_matches(&document, 80, "main");
@@ -204,6 +218,9 @@ fn find_search_matches_empty_query_returns_no_matches() {
         vec![Block::Paragraph(vec![Inline::Text("hello".to_string())])],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     assert!(find_matches(&document, 80, "").is_empty());
@@ -215,6 +232,9 @@ fn find_search_matches_zero_width_returns_no_matches() {
         vec![Block::Paragraph(vec![Inline::Text("hello".to_string())])],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     assert!(find_matches(&document, 0, "hello").is_empty());
@@ -230,6 +250,9 @@ fn find_search_matches_respects_hard_breaks() {
         ])],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     let matches = find_matches(&document, 80, "second");
@@ -255,6 +278,9 @@ fn find_search_matches_list_offsets_exclude_inner_gaps() {
         })],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     let matches = find_matches(&document, 80, "gamma");
@@ -274,6 +300,9 @@ fn find_search_matches_blockquote_includes_padding() {
         ],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     let matches = find_matches(&document, 80, "after");
@@ -295,6 +324,9 @@ fn find_search_matches_table_includes_borders() {
         ],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
     let matches = find_matches(&document, 80, "after");
@@ -314,6 +346,9 @@ fn selected_search_match_renders_selected_style_in_buffer() {
         ],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
     )
     .unwrap();
 
@@ -651,7 +686,14 @@ fn render_table_row_width_matches_frame_when_content_overflows() {
     let total = 24usize;
     let widths = allocate_column_widths(&table, total);
     assert_eq!(Table::table_frame_width(&widths), total);
-    let lines = render_table_row(&table.headers, &widths, ctx.theme.table_header, &ctx, 0);
+    let lines = render_table_row(
+        &table.headers,
+        &widths,
+        &table.alignments,
+        ctx.theme.table_header,
+        &ctx,
+        0,
+    );
     let rendered_width: usize = lines[0].spans.iter().map(|s| s.content.width()).sum();
     assert_eq!(rendered_width, total);
 }
@@ -684,6 +726,9 @@ fn heading_navigation_picks_adjacent_sections() {
         ],
         vec![],
         vec![],
+        vec![],
+        vec![],
+        None,
     )
     .unwrap();
     let ctx = test_render_context();
@@ -703,6 +748,20 @@ fn find_heading_line_by_anchor_matches_slug() {
     assert_eq!(
         find_heading_line_by_anchor(&doc, 80, &ctx, "foo-bar"),
         Some(collect_heading_offsets(&doc, 80, &ctx)[1].0)
+    );
+}
+
+#[test]
+fn find_heading_line_by_anchor_uses_explicit_id() {
+    let doc = parse("# Hello World {#custom-anchor}\n\n## Foo Bar\n\nbody\n").unwrap();
+    let ctx = test_render_context();
+    assert_eq!(
+        find_heading_line_by_anchor(&doc, 80, &ctx, "custom-anchor"),
+        Some(collect_heading_offsets(&doc, 80, &ctx)[0].0)
+    );
+    assert_eq!(
+        find_heading_line_by_anchor(&doc, 80, &ctx, "hello-world"),
+        None
     );
 }
 
@@ -750,6 +809,9 @@ fn collect_visible_links_filters_by_viewport() {
             },
         ],
         vec![],
+        vec![],
+        vec![],
+        None,
     )
     .unwrap();
     let ctx = test_render_context();
@@ -778,12 +840,70 @@ fn allocate_column_widths_returns_empty_for_zero_columns() {
 fn render_table_row_pads_short_cells() {
     let ctx = test_render_context();
     let cells = vec![vec![Inline::Text("hi".into())]];
-    let lines = render_table_row(&cells, &[8], ctx.theme.table_cell, &ctx, 0);
+    let lines = render_table_row(
+        &cells,
+        &[8],
+        &[Alignment::Left],
+        ctx.theme.table_cell,
+        &ctx,
+        0,
+    );
     assert_eq!(lines.len(), 1);
     let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
     assert!(text.contains("hi"));
     assert!(text.starts_with('│'));
     assert!(text.ends_with('│'));
+}
+
+#[test]
+fn render_table_row_respects_column_alignment() {
+    let ctx = test_render_context();
+    let cells = vec![vec![Inline::Text("hi".into())]];
+
+    let left = render_table_row(
+        &cells,
+        &[6],
+        &[Alignment::Left],
+        ctx.theme.table_cell,
+        &ctx,
+        0,
+    );
+    let right = render_table_row(
+        &cells,
+        &[6],
+        &[Alignment::Right],
+        ctx.theme.table_cell,
+        &ctx,
+        0,
+    );
+    let center = render_table_row(
+        &cells,
+        &[6],
+        &[Alignment::Center],
+        ctx.theme.table_cell,
+        &ctx,
+        0,
+    );
+
+    let left_text: String = left[0].spans.iter().map(|s| s.content.as_ref()).collect();
+    let right_text: String = right[0].spans.iter().map(|s| s.content.as_ref()).collect();
+    let center_text: String = center[0].spans.iter().map(|s| s.content.as_ref()).collect();
+
+    let hi_column = |text: &str| text.find('h').unwrap();
+    assert!(hi_column(&left_text) < hi_column(&center_text));
+    assert!(hi_column(&center_text) < hi_column(&right_text));
+}
+
+#[test]
+fn parse_table_column_alignments() {
+    let doc = parse("| L | C | R |\n|:---|:---:|---:|\n| a | b | c |").unwrap();
+    let Block::Table(table) = &doc.blocks[0] else {
+        panic!("expected table");
+    };
+    assert_eq!(
+        table.alignments,
+        vec![Alignment::Left, Alignment::Center, Alignment::Right]
+    );
 }
 
 #[test]
@@ -807,7 +927,8 @@ fn long_document_renders_last_block_at_bottom_scroll() {
     let blocks: Vec<Block> = (0..50)
         .map(|i| Block::Paragraph(vec![Inline::Text(format!("Paragraph {i}"))]))
         .collect();
-    let document = Document::new(blocks, Vec::new(), Vec::new()).unwrap();
+    let document =
+        Document::new(blocks, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None).unwrap();
     let size = TerminalSize::new(80, 10).unwrap();
     let total_height = measure_document_height(&document, 80, &ctx);
     let max_scroll = total_height.saturating_sub(size.height() as usize);

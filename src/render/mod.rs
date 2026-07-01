@@ -4,6 +4,7 @@ mod blocks;
 mod cache;
 pub(crate) mod checklist;
 mod context;
+mod footnotes;
 mod headings;
 mod image;
 mod inline;

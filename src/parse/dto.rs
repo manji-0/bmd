@@ -8,6 +8,22 @@ pub struct ParsedDocument {
     pub blocks: Vec<ParsedBlock>,
     pub links: Vec<ParsedLink>,
     pub mermaid_diagrams: Vec<ParsedMermaidDiagram>,
+    pub footnotes: Vec<ParsedFootnoteDefinition>,
+    /// Footnote ids in order of first inline reference (for bottom section ordering).
+    pub footnote_order: Vec<usize>,
+    pub front_matter: Option<ParsedFrontMatter>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParsedFrontMatterKind {
+    Yaml,
+    Toml,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedFrontMatter {
+    pub kind: ParsedFrontMatterKind,
+    pub raw: String,
 }
 
 impl ParsedDocument {
@@ -15,13 +31,25 @@ impl ParsedDocument {
         blocks: Vec<ParsedBlock>,
         links: Vec<ParsedLink>,
         mermaid_diagrams: Vec<ParsedMermaidDiagram>,
+        footnotes: Vec<ParsedFootnoteDefinition>,
+        footnote_order: Vec<usize>,
+        front_matter: Option<ParsedFrontMatter>,
     ) -> Self {
         Self {
             blocks,
             links,
             mermaid_diagrams,
+            footnotes,
+            footnote_order,
+            front_matter,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedFootnoteDefinition {
+    pub label: String,
+    pub blocks: Vec<ParsedBlock>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -146,10 +174,15 @@ pub enum ParsedInline {
     Text(String),
     Strong(Vec<ParsedInline>),
     Emphasis(Vec<ParsedInline>),
+    Strikethrough(Vec<ParsedInline>),
     Code(String),
     Link {
         link_id: usize,
         children: Vec<ParsedInline>,
+    },
+    FootnoteReference {
+        footnote_id: usize,
+        display: usize,
     },
     HardBreak,
     SoftBreak,
@@ -163,7 +196,9 @@ impl ParsedInline {
                 ParsedInline::Text(t) | ParsedInline::Code(t) => out.push_str(t),
                 ParsedInline::Strong(c)
                 | ParsedInline::Emphasis(c)
+                | ParsedInline::Strikethrough(c)
                 | ParsedInline::Link { children: c, .. } => out.push_str(&Self::plain_text(c)),
+                ParsedInline::FootnoteReference { .. } => {}
                 ParsedInline::HardBreak | ParsedInline::SoftBreak => {
                     if i > 0 {
                         out.push(' ');
@@ -207,6 +242,13 @@ impl ParsedDocumentParts {
     }
 
     pub fn into_document(self, blocks: Vec<ParsedBlock>) -> ParsedDocument {
-        ParsedDocument::new(blocks, self.links, self.mermaid_diagrams)
+        ParsedDocument::new(
+            blocks,
+            self.links,
+            self.mermaid_diagrams,
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
     }
 }

@@ -58,6 +58,50 @@ fn parse_local_document_link_classified() {
 }
 
 #[test]
+fn parse_heading_explicit_id() {
+    let doc = parse("# Hello World {#custom-anchor}\n").unwrap();
+    let Block::Heading(heading) = &doc.blocks[0] else {
+        panic!("expected heading");
+    };
+    assert_eq!(heading.anchor.as_deref(), Some("custom-anchor"));
+    assert!(matches!(&heading.content[0], Inline::Text(t) if t == "Hello World"));
+}
+
+#[test]
+fn parse_heading_explicit_id_normalizes_at_domain_boundary() {
+    let doc = parse("# Title {#_Hello_World}\n").unwrap();
+    let Block::Heading(heading) = &doc.blocks[0] else {
+        panic!("expected heading");
+    };
+    assert_eq!(heading.anchor.as_deref(), Some("hello-world"));
+}
+
+#[test]
+fn parse_yaml_front_matter() {
+    let doc = parse("---\ntitle: My Doc\n---\n\n# Body\n").unwrap();
+    let fm = doc.front_matter.as_ref().expect("front matter");
+    assert_eq!(fm.kind, crate::domain::FrontMatterKind::Yaml);
+    assert_eq!(fm.title().as_deref(), Some("My Doc"));
+    assert_eq!(doc.blocks.len(), 1);
+    let Block::Heading(heading) = &doc.blocks[0] else {
+        panic!("expected heading");
+    };
+    assert!(matches!(&heading.content[0], Inline::Text(t) if t == "Body"));
+}
+
+#[test]
+fn parse_toml_front_matter() {
+    let doc = parse("+++\ntitle = \"Guide\"\n+++\n\nParagraph.\n").unwrap();
+    let fm = doc.front_matter.as_ref().expect("front matter");
+    assert_eq!(fm.kind, crate::domain::FrontMatterKind::Toml);
+    assert_eq!(fm.title().as_deref(), Some("Guide"));
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(matches!(&inlines[0], Inline::Text(t) if t == "Paragraph."));
+}
+
+#[test]
 fn parse_headings_all_levels() {
     let doc = parse("# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6").unwrap();
     assert_eq!(doc.blocks.len(), 6);
@@ -284,13 +328,14 @@ fn parse_horizontal_rule() {
 }
 
 #[test]
-fn parse_strikethrough_is_treated_as_plain_text() {
+fn parse_strikethrough() {
     let doc = parse("~~deleted~~").unwrap();
     let Block::Paragraph(inlines) = &doc.blocks[0] else {
         panic!("expected paragraph");
     };
-    // Strikethrough wrapper is ignored; only the text remains.
-    assert!(matches!(&inlines[0], Inline::Text(t) if t == "deleted"));
+    assert!(
+        matches!(&inlines[0], Inline::Strikethrough(c) if c == &[Inline::Text("deleted".into())])
+    );
 }
 
 #[test]
@@ -436,12 +481,14 @@ fn parse_inline_html_unknown_tag_is_ignored() {
 }
 
 #[test]
-fn parse_inline_html_del_is_flattened() {
+fn parse_inline_html_del_is_strikethrough() {
     let doc = parse("<del>removed</del>").unwrap();
     let Block::Paragraph(inlines) = &doc.blocks[0] else {
         panic!("expected paragraph");
     };
-    assert!(matches!(&inlines[0], Inline::Text(t) if t == "removed"));
+    assert!(
+        matches!(&inlines[0], Inline::Strikethrough(c) if c == &[Inline::Text("removed".into())])
+    );
 }
 
 #[test]
@@ -462,5 +509,43 @@ fn parse_inline_html_in_heading() {
             .content
             .iter()
             .any(|i| matches!(i, Inline::HardBreak))
+    );
+}
+
+#[test]
+fn parse_footnote_reference_and_definition() {
+    let doc = parse("Text with footnote[^note].\n\n[^note]: Footnote body.\n").unwrap();
+    assert_eq!(doc.footnotes.len(), 1);
+    assert_eq!(doc.footnote_order, vec![crate::domain::FootnoteId(0)]);
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(inlines.iter().any(|inline| matches!(
+        inline,
+        Inline::FootnoteReference(crate::domain::FootnoteId(0), 1)
+    )));
+    assert_eq!(doc.footnotes[0].label, "note");
+    assert_eq!(doc.footnotes[0].content.len(), 1);
+}
+
+#[test]
+fn parse_footnote_display_number_follows_first_reference_order() {
+    let doc = parse("First[^b] and second[^a].\n\n[^a]: A def.\n\n[^b]: B def.\n").unwrap();
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    let refs: Vec<_> = inlines
+        .iter()
+        .filter_map(|inline| match inline {
+            Inline::FootnoteReference(id, display) => Some((*id, *display)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        refs,
+        vec![
+            (crate::domain::FootnoteId(0), 1),
+            (crate::domain::FootnoteId(1), 2)
+        ]
     );
 }

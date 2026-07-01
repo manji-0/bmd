@@ -274,11 +274,19 @@ fn flatten_inline_pieces_inner(
                     first = false;
                 }
             }
-            Inline::Strong(children) | Inline::Emphasis(children) => {
+            Inline::Strong(children)
+            | Inline::Emphasis(children)
+            | Inline::Strikethrough(children) => {
                 flatten_inline_pieces_inner(children, active_link, out);
             }
             Inline::Link(id, children) => {
                 flatten_inline_pieces_inner(children, Some(*id), out);
+            }
+            Inline::FootnoteReference(_, display) => {
+                out.push(FlatPiece::Word {
+                    text: format!("[{display}]"),
+                    link_id: None,
+                });
             }
             Inline::SoftBreak => out.push(FlatPiece::Space {
                 link_id: active_link,
@@ -449,7 +457,13 @@ fn first_link_line_in_wrapped(
 fn inlines_contain_link(inlines: &[Inline], link_id: LinkId) -> bool {
     inlines.iter().any(|inline| match inline {
         Inline::Link(id, children) => *id == link_id || inlines_contain_link(children, link_id),
-        Inline::Strong(c) | Inline::Emphasis(c) => inlines_contain_link(c, link_id),
-        Inline::Text(_) | Inline::Code(_) | Inline::HardBreak | Inline::SoftBreak => false,
+        Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strikethrough(c) => {
+            inlines_contain_link(c, link_id)
+        }
+        Inline::Text(_)
+        | Inline::Code(_)
+        | Inline::HardBreak
+        | Inline::SoftBreak
+        | Inline::FootnoteReference(_, _) => false,
     })
 }

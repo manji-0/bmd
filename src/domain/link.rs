@@ -78,4 +78,15 @@ pub enum DocumentError {
 
     #[error("mermaid link {link_id} references missing diagram")]
     InvalidMermaidLink { link_id: LinkId },
+
+    #[error("dangling footnote {footnote_id} in block {block_index}")]
+    DanglingFootnote {
+        block_index: usize,
+        footnote_id: crate::domain::FootnoteId,
+    },
+
+    #[error("footnote {footnote_id} is referenced but not defined")]
+    UndefinedFootnote {
+        footnote_id: crate::domain::FootnoteId,
+    },
 }

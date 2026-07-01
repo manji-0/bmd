@@ -397,6 +397,9 @@ mod tests {
                 kind: LinkKind::Document,
             }],
             mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         };
         let session = DocumentPrefetchSession::new();
         let (session, spawns) =
@@ -423,6 +426,9 @@ mod tests {
             blocks: vec![],
             links: vec![],
             mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         };
         let mut session = DocumentPrefetchSession::new();
         session.store_ready(path.clone(), prefetched(document.clone(), &path));
@@ -447,6 +453,9 @@ mod tests {
                         blocks: vec![],
                         links: vec![],
                         mermaid_diagrams: vec![],
+                        footnotes: vec![],
+                        footnote_order: vec![],
+                        front_matter: None,
                     },
                     &paths[index],
                 ),
@@ -467,6 +476,9 @@ mod tests {
             blocks: vec![],
             links: vec![],
             mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         };
         let mut session = DocumentPrefetchSession::new();
         session.tasks.insert(
@@ -498,6 +510,9 @@ mod tests {
             blocks: vec![],
             links: vec![],
             mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         };
         let mut session = DocumentPrefetchSession::new();
         session.store_ready(path.clone(), prefetched(document, &path));
@@ -507,6 +522,9 @@ mod tests {
             blocks: vec![],
             links: vec![],
             mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         };
         let (session, spawns) = session.schedule_visible_prefetch(&[], &empty, None, |_| false);
         assert!(session.ready_document(&path).is_none());

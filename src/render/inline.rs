@@ -12,6 +12,10 @@ use crate::domain::{HeadingLevel, Inline};
 use super::context::RenderContext;
 use super::theme::Theme;
 
+pub(crate) fn footnote_marker_style(ctx: &RenderContext) -> Style {
+    ctx.theme.code_inline
+}
+
 pub(crate) fn heading_styles(level: HeadingLevel, theme: &Theme) -> (Style, Style) {
     match level {
         HeadingLevel::H1 => (theme.h1, theme.h1_prefix),
@@ -468,6 +472,14 @@ fn inlines_to_segments(
                     out,
                 );
             }
+            Inline::Strikethrough(children) => {
+                inlines_to_segments(
+                    children,
+                    ctx,
+                    base_style.add_modifier(Modifier::CROSSED_OUT),
+                    out,
+                );
+            }
             Inline::Link(id, children) => {
                 let style = match ctx.links.get(id.0) {
                     Some(link) if link.kind.is_preview() => {
@@ -487,6 +499,11 @@ fn inlines_to_segments(
                 };
                 inlines_to_segments(children, ctx, style, out);
             }
+            Inline::FootnoteReference(_, display) => out.push(Segment {
+                text: format!("[{display}]"),
+                style: footnote_marker_style(ctx),
+                force_break_after: false,
+            }),
             Inline::SoftBreak => out.push(Segment {
                 text: " ".to_string(),
                 style: base_style,

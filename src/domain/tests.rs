@@ -178,6 +178,9 @@ fn document_rejects_invalid_mermaid_link() {
                 kind: LinkKind::Mermaid,
             }],
             vec![],
+            vec![],
+            vec![],
+            None,
         ),
         Err(DocumentError::InvalidMermaidLink { link_id: LinkId(0) })
     ));
@@ -194,6 +197,9 @@ fn view_state_reset_for_reload_preserves_clamped_scroll() {
             kind: LinkKind::Web,
         }],
         vec![],
+        vec![],
+        vec![],
+        None,
     )
     .unwrap();
     let state = ViewState::new(size)

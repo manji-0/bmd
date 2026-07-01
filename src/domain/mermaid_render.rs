@@ -462,6 +462,9 @@ mod tests {
             blocks: vec![],
             links,
             mermaid_diagrams: diagrams,
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
         }
     }
 

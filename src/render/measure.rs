@@ -2,12 +2,13 @@
 
 use unicode_width::UnicodeWidthStr;
 
-use super::list_marker::list_marker_width_at;
+use super::footnotes::measure_footnotes_height;
 
 use crate::domain::{Block, CodeBlock, Document, Heading, Inline, List, Table};
 
 use super::context::RenderContext;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
+use super::list_marker::list_marker_width_at;
 use super::table::{allocate_column_widths, wrap_cell_inlines};
 
 /// Total logical height of the whole document, including one-row gaps between
@@ -20,7 +21,7 @@ pub fn measure_document_height(document: &Document, width: u16, ctx: &RenderCont
     if width == 0 {
         return 0;
     }
-    document
+    let body_height: usize = document
         .blocks
         .iter()
         .enumerate()
@@ -28,7 +29,8 @@ pub fn measure_document_height(document: &Document, width: u16, ctx: &RenderCont
             let gap = if idx == 0 { 0 } else { 1 };
             measure_block_height(block, idx, width, ctx) + gap
         })
-        .sum()
+        .sum();
+    body_height + measure_footnotes_height(document, width, ctx)
 }
 
 /// Number of logical rows a block occupies at the given width.

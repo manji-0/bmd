@@ -6,6 +6,7 @@ use crate::domain::{Document, ViewState};
 
 use super::blocks::render_block;
 use super::context::RenderContext;
+use super::footnotes::render_footnotes_section;
 use super::measure::measure_block_height;
 
 /// Stateful widget that renders the document with scroll.
@@ -97,5 +98,7 @@ impl Widget for MarkdownWidget<'_> {
                 break;
             }
         }
+
+        render_footnotes_section(self.document, area, buf, scroll, ctx, line_offset);
     }
 }

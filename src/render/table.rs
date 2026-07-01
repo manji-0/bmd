@@ -8,7 +8,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::{Inline, Table};
+use crate::domain::{Alignment, Inline, Table};
 
 use super::context::RenderContext;
 use super::inline::inlines_to_wrapped_lines;
@@ -51,6 +51,7 @@ pub(crate) fn render_table(
     let header_rows = render_table_row(
         &table.headers,
         &widths,
+        &table.alignments,
         ctx.theme.table_header,
         ctx,
         line_offset + 1,
@@ -103,7 +104,14 @@ pub(crate) fn render_table(
             })
             .max()
             .unwrap_or(1);
-        let row_lines = render_table_row(row, &widths, ctx.theme.table_cell, ctx, body_offset);
+        let row_lines = render_table_row(
+            row,
+            &widths,
+            &table.alignments,
+            ctx.theme.table_cell,
+            ctx,
+            body_offset,
+        );
         for (i, line) in row_lines.into_iter().enumerate() {
             rows.push((body_offset + i, line));
         }
@@ -133,6 +141,7 @@ pub(crate) fn render_table(
 pub(crate) fn render_table_row(
     cells: &[Vec<Inline>],
     widths: &[usize],
+    alignments: &[Alignment],
     style: Style,
     ctx: &RenderContext,
     row_start_line_offset: usize,
@@ -170,11 +179,15 @@ pub(crate) fn render_table_row(
                 .cloned()
                 .unwrap_or_else(|| Line::from(" "));
             let rendered_width = line.spans.iter().map(|s| s.content.width()).sum::<usize>();
-            let pad = width.saturating_sub(rendered_width);
+            let alignment = column_alignment(alignments, i);
+            let (pad_left, pad_right) = cell_padding(alignment, rendered_width, *width);
             spans.push(Span::styled(" ".to_string(), style));
+            if pad_left > 0 {
+                spans.push(Span::styled(" ".repeat(pad_left), style));
+            }
             spans.extend(line.spans);
-            if pad > 0 {
-                spans.push(Span::styled(" ".repeat(pad), style));
+            if pad_right > 0 {
+                spans.push(Span::styled(" ".repeat(pad_right), style));
             }
             spans.push(Span::styled(" ".to_string(), style));
             spans.push(Span::styled("│".to_string(), ctx.theme.table_border));
@@ -213,4 +226,20 @@ pub(crate) fn wrap_cell_inlines(
         return vec![Line::from(" ")];
     }
     lines.into_iter().map(|(_, line)| line).collect()
+}
+
+fn column_alignment(alignments: &[Alignment], column: usize) -> Alignment {
+    alignments.get(column).copied().unwrap_or(Alignment::None)
+}
+
+fn cell_padding(alignment: Alignment, content_width: usize, cell_width: usize) -> (usize, usize) {
+    let pad_total = cell_width.saturating_sub(content_width);
+    match alignment {
+        Alignment::Right => (pad_total, 0),
+        Alignment::Center => {
+            let pad_left = pad_total / 2;
+            (pad_left, pad_total - pad_left)
+        }
+        Alignment::Left | Alignment::None => (0, pad_total),
+    }
 }

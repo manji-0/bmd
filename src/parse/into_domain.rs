@@ -1,13 +1,15 @@
 //! DTO -> domain conversion with validation at the boundary.
 
 use crate::domain::{
-    Alignment, Block, ChecklistId, CodeBlock, Document, Heading, HeadingLevel, Inline, Link,
-    LinkId, LinkUrl, List, ListItem, MermaidDiagram, Table,
+    Alignment, Block, ChecklistId, CodeBlock, Document, FootnoteDefinition, FootnoteId,
+    FrontMatter, FrontMatterKind, Heading, HeadingLevel, Inline, Link, LinkId, LinkUrl, List,
+    ListItem, MermaidDiagram, Table,
 };
 
 use super::dto::{
-    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedHeading, ParsedInline,
-    ParsedLink, ParsedList, ParsedListItem, ParsedTable,
+    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedFootnoteDefinition,
+    ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink, ParsedList,
+    ParsedListItem, ParsedTable,
 };
 use crate::parse::normalize_anchor_slug;
 
@@ -43,8 +45,41 @@ impl ParsedDocument {
                 source: diagram.source,
             })
             .collect();
-        Document::new(blocks, links, mermaid_diagrams).map_err(IntoDomainError::Document)
+        let footnotes = self
+            .footnotes
+            .into_iter()
+            .map(convert_footnote)
+            .collect::<Result<Vec<_>, _>>()?;
+        let footnote_order = self.footnote_order.into_iter().map(FootnoteId).collect();
+        Document::new(
+            blocks,
+            links,
+            mermaid_diagrams,
+            footnotes,
+            footnote_order,
+            self.front_matter.map(convert_front_matter),
+        )
+        .map_err(IntoDomainError::Document)
     }
+}
+
+fn convert_front_matter(front_matter: ParsedFrontMatter) -> FrontMatter {
+    FrontMatter {
+        kind: match front_matter.kind {
+            ParsedFrontMatterKind::Yaml => FrontMatterKind::Yaml,
+            ParsedFrontMatterKind::Toml => FrontMatterKind::Toml,
+        },
+        raw: front_matter.raw,
+    }
+}
+
+fn convert_footnote(
+    footnote: ParsedFootnoteDefinition,
+) -> Result<FootnoteDefinition, IntoDomainError> {
+    Ok(FootnoteDefinition {
+        label: footnote.label,
+        content: convert_blocks(footnote.blocks)?,
+    })
 }
 
 fn convert_link(link: ParsedLink) -> Result<Link, IntoDomainError> {
@@ -161,10 +196,15 @@ fn convert_inline(inline: ParsedInline) -> Result<Inline, IntoDomainError> {
         ParsedInline::Text(text) => Inline::Text(text),
         ParsedInline::Strong(children) => Inline::Strong(convert_inlines(children)?),
         ParsedInline::Emphasis(children) => Inline::Emphasis(convert_inlines(children)?),
+        ParsedInline::Strikethrough(children) => Inline::Strikethrough(convert_inlines(children)?),
         ParsedInline::Code(code) => Inline::Code(code),
         ParsedInline::Link { link_id, children } => {
             Inline::Link(LinkId(link_id), convert_inlines(children)?)
         }
+        ParsedInline::FootnoteReference {
+            footnote_id,
+            display,
+        } => Inline::FootnoteReference(FootnoteId(footnote_id), display),
         ParsedInline::HardBreak => Inline::HardBreak,
         ParsedInline::SoftBreak => Inline::SoftBreak,
     })
@@ -185,6 +225,9 @@ mod tests {
             })],
             vec![ParsedLink::from_url("https://example.com".into(), None)],
             vec![],
+            vec![],
+            vec![],
+            None,
         );
         let doc = dto.into_domain().unwrap();
         assert_eq!(doc.links[0].kind, LinkKind::Web);
@@ -200,6 +243,9 @@ mod tests {
             })],
             vec![],
             vec![],
+            vec![],
+            vec![],
+            None,
         );
         assert!(matches!(
             dto.into_domain(),
@@ -217,6 +263,9 @@ mod tests {
             })],
             vec![],
             vec![],
+            vec![],
+            vec![],
+            None,
         );
         let doc = dto.into_domain().unwrap();
         let Block::Heading(heading) = &doc.blocks[0] else {

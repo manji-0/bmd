@@ -11,6 +11,7 @@ mod checklist;
 mod document_generation;
 mod document_link;
 mod document_prefetch;
+mod front_matter;
 mod image_render;
 mod link;
 mod link_jump_stack;
@@ -37,6 +38,7 @@ pub use document_prefetch::{
     DocumentPrefetchSession, DocumentPrefetchSessionSnapshot, DocumentPrefetchSpawnRequest,
     PrefetchedDocument,
 };
+pub use front_matter::{FrontMatter, FrontMatterKind};
 pub use image_render::{
     ImageCompletion, ImageRenderError, ImageRenderSession, ImageSessionSnapshot, ImageSource,
     ImageSpawnRequest, image_source_for_link,
@@ -44,8 +46,8 @@ pub use image_render::{
 pub use link::{DocumentError, Link, LinkId, LinkKind, LinkUrl, LinkUrlError};
 pub use link_jump_stack::{LinkJumpStack, LinkJumpStackEmpty, LinkJumpStackFull, PriorAtLinkJump};
 pub use markdown::{
-    Alignment, Block, CodeBlock, Document, Heading, HeadingLevel, Inline, List, ListItem,
-    MermaidDiagram, Table,
+    Alignment, Block, CodeBlock, Document, FootnoteDefinition, FootnoteId, Heading, HeadingLevel,
+    Inline, List, ListItem, MermaidDiagram, Table,
 };
 pub use mermaid_render::{
     MermaidCompletion, MermaidCompletionApplied, MermaidPreviewStatus, MermaidRenderError,

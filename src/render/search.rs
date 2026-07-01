@@ -8,6 +8,7 @@ use super::list_marker::list_marker_width_at;
 use crate::domain::{Block, CodeBlock, Document, Inline, List, SearchMatch, Table};
 
 use super::context::RenderContext;
+use super::footnotes::footnote_searchable_lines;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
 use super::measure::measure_block_height;
 use super::table::wrap_cell_inlines;
@@ -61,6 +62,21 @@ fn collect_searchable_lines(
         // Keep in sync with `MarkdownWidget::render`: gap rows trail block content.
         line_offset += block_height + gap;
     }
+
+    if !document.footnote_order.is_empty() {
+        line_offset += 1;
+        let footnote_lines = footnote_searchable_lines(document, width, ctx);
+        let footnote_body_height =
+            super::footnotes::measure_footnotes_height(document, width, ctx).saturating_sub(1);
+        for (i, line) in footnote_lines
+            .iter()
+            .enumerate()
+            .take(footnote_body_height.max(footnote_lines.len()))
+        {
+            out.push((line_offset + i, line.clone()));
+        }
+    }
+
     out
 }
 
