@@ -87,6 +87,10 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 ## Quick start
 
 ```bash
+# Install from crates.io
+cargo install bmd
+
+# Or build from source (devbox)
 devbox run setup
 devbox run build-release
 ./target/release/bmd sample.md
