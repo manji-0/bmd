@@ -38,8 +38,10 @@
         "tar czf dist/bmd-x86_64-unknown-linux-musl.tar.gz -C target/x86_64-unknown-linux-musl/release bmd",
         "RUSTFLAGS= RUSTC_WRAPPER= cargo zigbuild --release --locked --target aarch64-unknown-linux-musl",
         "tar czf dist/bmd-aarch64-unknown-linux-musl.tar.gz -C target/aarch64-unknown-linux-musl/release bmd",
-        "cargo package --locked --no-verify"
+        "cargo package --locked --no-verify",
+        "cargo publish --locked --no-verify"
       ],
+      "publish": "cargo publish --locked --no-verify",
       "test":        "cargo test -- --show-output",
       "run":         "cargo run --",
       "clippy":      "cargo clippy --all-targets -- -D warnings",
