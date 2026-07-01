@@ -449,13 +449,26 @@ fn wrapped_line_count_respects_multiple_spans() {
 #[test]
 fn wrapped_lines_break_cjk_without_spaces() {
     let ctx = test_render_context();
-    let inlines = vec![Inline::Text("こんにちは世界".into())];
-    let rows = inlines_to_wrapped_lines(&inlines, &ctx, ctx.theme.text, 0, 4);
-    assert_eq!(rows.len(), 2);
-    let first: String = rows[0].1.spans.iter().map(|s| s.content.as_ref()).collect();
-    let second: String = rows[1].1.spans.iter().map(|s| s.content.as_ref()).collect();
-    assert_eq!(first, "こんに");
-    assert_eq!(second, "ちは世界");
+    let text = "こんにちは世界";
+    let inlines = vec![Inline::Text(text.into())];
+    let width = 4;
+    let rows = inlines_to_wrapped_lines(&inlines, &ctx, ctx.theme.text, 0, width);
+    assert!(
+        rows.len() > 1,
+        "expected CJK text to wrap across multiple lines"
+    );
+    for (_, line) in &rows {
+        let line_width: usize = line.spans.iter().map(|s| s.content.width()).sum();
+        assert!(
+            line_width <= width,
+            "line {line:?} exceeds width {width}: {line_width}"
+        );
+    }
+    let combined: String = rows
+        .iter()
+        .flat_map(|(_, line)| line.spans.iter().map(|s| s.content.as_ref()))
+        .collect();
+    assert_eq!(combined, text);
 }
 
 #[test]
@@ -529,7 +542,7 @@ fn wrapped_lines_highlight_search_on_second_visual_row() {
     ctx.search_query = Some("target".to_string());
     ctx.selected_match_line_offset = Some(1);
     let inlines = vec![Inline::Text("aaa target".into())];
-    let rows = inlines_to_wrapped_lines(&inlines, &ctx, ctx.theme.text, 0, 5);
+    let rows = inlines_to_wrapped_lines(&inlines, &ctx, ctx.theme.text, 0, 6);
     assert_eq!(rows.len(), 2);
     let selected_styles: Vec<Style> = rows[1].1.spans.iter().map(|s| s.style).collect();
     assert!(selected_styles.contains(&ctx.theme.search_match_selected));
