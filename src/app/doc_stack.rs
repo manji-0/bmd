@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 
 use crate::domain::{
-    ChecklistState, DOCUMENT_STACK_MAX_LAYERS, Document, DocumentStackFull, ImageSessionSnapshot,
-    LinkId, LinkJumpStack, LinkJumpStackFull, MermaidSessionSnapshot, NavStack, PriorAtLinkJump,
-    ViewState,
+    ChecklistState, DOCUMENT_STACK_MAX_LAYERS, Document, DocumentPrefetchSessionSnapshot,
+    DocumentStackFull, ImageSessionSnapshot, LinkId, LinkJumpStack, LinkJumpStackFull,
+    MermaidSessionSnapshot, NavStack, PriorAtLinkJump, ViewState,
 };
 use crate::render::{DocumentRenderCache, PreviewRenderCache, RenderedDocument};
 
@@ -22,6 +22,7 @@ pub(crate) struct DocumentFrame {
     pub rendered: RenderedDocument,
     pub mermaid_session: MermaidSessionSnapshot,
     pub image_session: ImageSessionSnapshot,
+    pub document_prefetch_session: DocumentPrefetchSessionSnapshot,
     pub document_cache: DocumentRenderCache,
     pub preview_render_cache: PreviewRenderCache,
     pub pending_preview: Option<LinkId>,

@@ -1,5 +1,6 @@
 //! Background markdown image worker adapter over [`ImageRenderSession`].
 
+use std::mem;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -39,7 +40,8 @@ impl Default for ImageRenderPool {
 
 impl ImageRenderPool {
     pub fn begin_document(&mut self) {
-        self.session = self.session.clone().begin_document();
+        let session = mem::take(&mut self.session);
+        self.session = session.begin_document();
     }
 
     pub fn suspend(&self) -> ImageSessionSnapshot {
@@ -70,8 +72,9 @@ impl ImageRenderPool {
         self.spawn_all(spawns, picker, terminal);
     }
 
-    pub fn prefetch(
+    pub fn prefetch_visible(
         &mut self,
+        visible: &[LinkId],
         document: &Document,
         rendered: &RenderedDocument,
         base_path: Option<&PathBuf>,
@@ -83,7 +86,9 @@ impl ImageRenderPool {
                 .markdown_images
                 .contains_key(image_url(document, link_id).as_str())
         };
-        let (session, spawns) = self.session.clone().schedule_prefetch(
+        let session = mem::take(&mut self.session);
+        let (session, spawns) = session.schedule_visible_prefetch(
+            visible,
             document,
             base_path.map(PathBuf::as_path),
             is_cached,
@@ -103,7 +108,7 @@ impl ImageRenderPool {
     ) {
         let src = image_url(document, link_id);
         let cached = rendered.markdown_images.contains_key(src.as_str());
-        let Ok((session, spawns)) = self.session.clone().request(
+        let Ok((session, spawns)) = mem::take(&mut self.session).request(
             link_id,
             document,
             base_path.map(PathBuf::as_path),
@@ -125,7 +130,8 @@ impl ImageRenderPool {
     ) -> bool {
         let mut dirty = false;
         while let Ok(result) = self.receiver.try_recv() {
-            let (session, applied, spawns) = self.session.clone().apply_completion(
+            let session = mem::take(&mut self.session);
+            let (session, applied, spawns) = session.apply_completion(
                 result.completion.clone(),
                 document,
                 base_path.map(PathBuf::as_path),

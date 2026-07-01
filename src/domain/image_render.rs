@@ -1,6 +1,6 @@
 //! Markdown image preview load lifecycle with typed state transitions.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use super::document_generation::DocumentGeneration;
@@ -54,6 +54,7 @@ pub struct ImageSessionSnapshot {
     generation: DocumentGeneration,
     tasks: HashMap<LinkId, PreviewLoadTask>,
     queue: VecDeque<LinkId>,
+    queued: HashSet<LinkId>,
 }
 
 /// Aggregate image load state for the current document.
@@ -62,6 +63,7 @@ pub struct ImageRenderSession {
     generation: DocumentGeneration,
     tasks: HashMap<LinkId, PreviewLoadTask>,
     queue: VecDeque<LinkId>,
+    queued: HashSet<LinkId>,
 }
 
 impl Default for ImageRenderSession {
@@ -76,6 +78,7 @@ impl ImageRenderSession {
             generation: DocumentGeneration::INITIAL,
             tasks: HashMap::new(),
             queue: VecDeque::new(),
+            queued: HashSet::new(),
         }
     }
 
@@ -92,20 +95,41 @@ impl ImageRenderSession {
             generation: self.generation.next(),
             tasks: HashMap::new(),
             queue: VecDeque::new(),
+            queued: HashSet::new(),
         }
     }
 
     pub fn schedule_prefetch(
-        mut self,
+        self,
         document: &Document,
         base_path: Option<&Path>,
         is_cached: impl Fn(LinkId) -> bool,
     ) -> (Self, Vec<ImageSpawnRequest>) {
-        for (index, link) in document.links.iter().enumerate() {
+        let link_ids = document
+            .links
+            .iter()
+            .enumerate()
+            .filter(|(_, link)| link.kind == LinkKind::Image)
+            .map(|(index, _)| LinkId(index))
+            .collect::<Vec<_>>();
+        self.schedule_visible_prefetch(&link_ids, document, base_path, is_cached)
+    }
+
+    /// Queue visible image links that are not already cached or in flight.
+    pub fn schedule_visible_prefetch(
+        mut self,
+        visible: &[LinkId],
+        document: &Document,
+        base_path: Option<&Path>,
+        is_cached: impl Fn(LinkId) -> bool,
+    ) -> (Self, Vec<ImageSpawnRequest>) {
+        for &link_id in visible {
+            let Some(link) = document.links.get(link_id.0) else {
+                continue;
+            };
             if link.kind != LinkKind::Image {
                 continue;
             }
-            let link_id = LinkId(index);
             if is_cached(link_id) {
                 self = self.mark_ready(link_id);
                 continue;
@@ -147,10 +171,11 @@ impl ImageRenderSession {
     pub fn suspend(self) -> ImageSessionSnapshot {
         let mut tasks = self.tasks;
         let mut queue = self.queue;
+        let mut queued = self.queued;
         for (link_id, task) in &mut tasks {
             if matches!(task, PreviewLoadTask::Loading { .. }) {
                 *task = PreviewLoadTask::Queued;
-                if !queue.contains(link_id) {
+                if queued.insert(*link_id) {
                     queue.push_back(*link_id);
                 }
             }
@@ -159,6 +184,7 @@ impl ImageRenderSession {
             generation: self.generation,
             tasks,
             queue,
+            queued,
         }
     }
 
@@ -172,17 +198,20 @@ impl ImageRenderSession {
             generation: snapshot.generation,
             tasks: snapshot.tasks,
             queue: snapshot.queue,
+            queued: snapshot.queued,
         };
         for link_id in session.tasks.keys().copied().collect::<Vec<_>>() {
             if is_cached(link_id) {
                 session = session.mark_ready(link_id);
             }
         }
+        session.reconcile_queue();
         session.drain_spawns(document, base_path, MAX_CONCURRENT_IMAGE_LOADS)
     }
 
     fn mark_ready(mut self, link_id: LinkId) -> Self {
         self.tasks.insert(link_id, PreviewLoadTask::Ready);
+        self.queued.remove(&link_id);
         self.queue.retain(|id| *id != link_id);
         self
     }
@@ -204,7 +233,7 @@ impl ImageRenderSession {
                 self.tasks.insert(link_id, PreviewLoadTask::Queued);
             }
         }
-        if !self.queue.contains(&link_id) {
+        if self.queued.insert(link_id) {
             self.queue.push_back(link_id);
         }
         Ok(())
@@ -223,6 +252,7 @@ impl ImageRenderSession {
             let Some(link_id) = self.queue.pop_front() else {
                 break;
             };
+            self.queued.remove(&link_id);
             if self.tasks.get(&link_id).is_some_and(|task| {
                 matches!(
                     task,
@@ -287,6 +317,16 @@ impl ImageRenderSession {
             .filter(|task| task.is_in_flight())
             .count()
     }
+
+    fn reconcile_queue(&mut self) {
+        for link_id in self.tasks.keys().copied().collect::<Vec<_>>() {
+            if matches!(self.tasks.get(&link_id), Some(PreviewLoadTask::Queued))
+                && self.queued.insert(link_id)
+            {
+                self.queue.push_back(link_id);
+            }
+        }
+    }
 }
 
 /// Resolve image source URL for a link in `document`.
@@ -324,6 +364,21 @@ mod tests {
             links,
             mermaid_diagrams: vec![],
         }
+    }
+
+    #[test]
+    fn visible_prefetch_only_queues_visible_images() {
+        let document = image_document(3);
+        let session = ImageRenderSession::new();
+        let (session, spawns) =
+            session.schedule_visible_prefetch(&[LinkId(1)], &document, None, |_| false);
+        assert_eq!(spawns.len(), 1);
+        assert_eq!(spawns[0].link_id, LinkId(1));
+        assert!(matches!(
+            session.tasks[&LinkId(1)],
+            PreviewLoadTask::Loading { .. }
+        ));
+        assert!(!session.tasks.contains_key(&LinkId(0)));
     }
 
     #[test]

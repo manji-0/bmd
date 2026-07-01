@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use crate::domain::{
     AnchorIdle, ChecklistState, ChecklistStyle, DocumentStackFull, document_link_path_part,
-    document_stack_limit_message, plan_document_back, plan_document_reset, resolve_document_path,
+    document_stack_limit_message, normalize_document_path, plan_document_back, plan_document_reset,
+    resolve_document_path,
 };
 use crate::error::AppError;
 use crate::parse::parse;
@@ -18,7 +19,7 @@ use super::scroll::SCROLL_ANIM_SPEED;
 impl App {
     pub(crate) fn open_document_link(&mut self, dest: &str) {
         let resolved = match resolve_document_path(self.base_path.as_deref(), dest) {
-            Ok(path) => path,
+            Ok(path) => normalize_document_path(path),
             Err(e) => {
                 self.set_status_message(e.to_string());
                 return;
@@ -29,18 +30,22 @@ impl App {
             return;
         }
 
-        let content = match std::fs::read_to_string(&resolved) {
-            Ok(content) => content,
-            Err(e) => {
-                self.set_status_message(format!("read failed: {e}"));
-                return;
-            }
-        };
-        let document = match parse(&content) {
-            Ok(document) => document,
-            Err(e) => {
-                self.set_status_message(format!("parse error: {e}"));
-                return;
+        let document = if let Some(document) = self.document_prefetch.ready_document(&resolved) {
+            document
+        } else {
+            let content = match std::fs::read_to_string(&resolved) {
+                Ok(content) => content,
+                Err(e) => {
+                    self.set_status_message(format!("read failed: {e}"));
+                    return;
+                }
+            };
+            match parse(&content) {
+                Ok(document) => document,
+                Err(e) => {
+                    self.set_status_message(format!("parse error: {e}"));
+                    return;
+                }
             }
         };
 
@@ -109,6 +114,7 @@ impl App {
             rendered: self.rendered.clone(),
             mermaid_session: self.mermaid_render.suspend(),
             image_session: self.image_render.suspend(),
+            document_prefetch_session: self.document_prefetch.suspend(),
             document_cache: self.document_cache.clone(),
             preview_render_cache: self.preview_render_cache.clone(),
             pending_preview: self.pending_preview,
@@ -158,7 +164,9 @@ impl App {
         self.help_visible = false;
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
-        self.start_preview_prefetch();
+        self.document_prefetch.begin_document();
+        self.invalidate_prefetch_viewport();
+        self.maybe_prefetch_visible_links();
         Ok(())
     }
 
@@ -207,6 +215,8 @@ impl App {
             &self.picker,
             terminal_size,
         );
+        self.document_prefetch
+            .resume(frame.document_prefetch_session);
         Ok(())
     }
 }

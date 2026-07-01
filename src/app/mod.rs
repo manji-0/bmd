@@ -3,6 +3,7 @@
 mod checklist;
 mod doc_stack;
 mod document;
+mod document_prefetch;
 mod draw;
 mod image_render;
 mod input;
@@ -32,6 +33,7 @@ use crate::render::{
 };
 
 use doc_stack::DocStack;
+use document_prefetch::DocumentPrefetchPool;
 use image_render::ImageRenderPool;
 use layout::terminal_size;
 use mermaid_render::MermaidRenderPool;
@@ -39,6 +41,14 @@ use reload::FileWatch;
 use scroll::{
     ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED, STATUS_MESSAGE_DURATION,
 };
+
+#[derive(Clone, PartialEq, Eq)]
+struct PrefetchViewportKey {
+    scroll: usize,
+    visible_lines: usize,
+    width: u16,
+    document_path: Option<std::path::PathBuf>,
+}
 
 pub struct App {
     document: Document,
@@ -75,9 +85,11 @@ pub struct App {
     doc_stack: DocStack,
     mermaid_render: MermaidRenderPool,
     image_render: ImageRenderPool,
+    document_prefetch: DocumentPrefetchPool,
     /// Open preview once background render completes.
     pending_preview: Option<crate::domain::LinkId>,
     preview_render_cache: PreviewRenderCache,
+    last_prefetch_viewport: Option<PrefetchViewportKey>,
     should_quit: bool,
     #[cfg(test)]
     pub(crate) fail_apply_document: bool,
@@ -145,29 +157,70 @@ impl App {
             doc_stack: DocStack::default(),
             mermaid_render: MermaidRenderPool::default(),
             image_render: ImageRenderPool::default(),
+            document_prefetch: DocumentPrefetchPool::default(),
             pending_preview: None,
             preview_render_cache: PreviewRenderCache::default(),
+            last_prefetch_viewport: None,
             should_quit: false,
             #[cfg(test)]
             fail_apply_document: false,
             #[cfg(test)]
             fail_document_restore: false,
         };
-        app.start_preview_prefetch();
+        app.maybe_prefetch_visible_links();
         Ok(app)
     }
 
-    fn start_preview_prefetch(&mut self) {
+    pub(crate) fn prefetch_visible_links(&mut self) {
+        let visible = self.visible_link_ids();
         let terminal = self.view_state.terminal_size();
-        self.mermaid_render
-            .prefetch(&self.document, &self.rendered, &self.picker, terminal);
-        self.image_render.prefetch(
+        self.mermaid_render.prefetch_visible(
+            &visible,
+            &self.document,
+            &self.rendered,
+            &self.picker,
+            terminal,
+        );
+        self.image_render.prefetch_visible(
+            &visible,
             &self.document,
             &self.rendered,
             self.base_path.as_ref(),
             &self.picker,
             terminal,
         );
+        self.document_prefetch
+            .prefetch_visible(&visible, &self.document, self.base_path.as_ref());
+    }
+
+    pub(crate) fn maybe_prefetch_visible_links(&mut self) {
+        let key = self.current_prefetch_viewport();
+        if self.last_prefetch_viewport.as_ref() == Some(&key) {
+            return;
+        }
+        self.last_prefetch_viewport = Some(key);
+        self.prefetch_visible_links();
+    }
+
+    pub(crate) fn invalidate_prefetch_viewport(&mut self) {
+        self.last_prefetch_viewport = None;
+    }
+
+    fn current_prefetch_viewport(&self) -> PrefetchViewportKey {
+        PrefetchViewportKey {
+            scroll: self.view_state.scroll().offset(),
+            visible_lines: self.content_height() as usize,
+            width: self.view_state.terminal_size().width(),
+            document_path: self.base_path.clone(),
+        }
+    }
+
+    pub(crate) fn visible_link_ids(&self) -> Vec<crate::domain::LinkId> {
+        let ctx = self.render_context();
+        let width = self.view_state.terminal_size().width();
+        let scroll = self.view_state.scroll().offset();
+        let visible_lines = self.content_height() as usize;
+        crate::render::collect_visible_links(&self.document, width, &ctx, scroll, visible_lines)
     }
 
     pub(crate) fn poll_preview_renders(&mut self) -> bool {
@@ -182,14 +235,16 @@ impl App {
             &self.picker,
             terminal,
         );
+        let document_prefetch_dirty = self.document_prefetch.poll();
         let pending_opened = self.try_complete_pending_preview();
-        mermaid_dirty || image_dirty || pending_opened
+        mermaid_dirty || image_dirty || document_prefetch_dirty || pending_opened
     }
 
     pub(crate) fn preview_work_pending(&self) -> bool {
         self.pending_preview.is_some()
             || self.mermaid_render.has_pending()
             || self.image_render.has_pending()
+            || self.document_prefetch.has_pending()
     }
 
     pub(crate) fn set_status_message(&mut self, msg: String) {
@@ -250,6 +305,7 @@ impl App {
 
             let animating = self.tick_scroll_animation(dt);
             let image_dirty = self.update_terminal_image_visibility(now);
+            self.maybe_prefetch_visible_links();
             let mermaid_dirty = self.poll_preview_renders();
             let awaiting_images = self.images_reenable_at.is_some();
             let awaiting_preview = self.preview_work_pending();
