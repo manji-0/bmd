@@ -16,6 +16,7 @@ impl fmt::Display for LinkId {
 pub enum LinkKind {
     Web,
     Anchor,
+    Document,
     Image,
     Mermaid,
 }
@@ -29,8 +30,10 @@ impl LinkKind {
     pub fn for_link_dest(dest: &str) -> Self {
         if dest.starts_with('#') {
             Self::Anchor
-        } else {
+        } else if super::document_link::is_remote_link_dest(dest) {
             Self::Web
+        } else {
+            Self::Document
         }
     }
 }

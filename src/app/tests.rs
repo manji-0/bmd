@@ -304,3 +304,115 @@ fn anchor_navigation_stack_push_pop_and_reset() {
     assert_eq!(app.view_state.scroll().offset(), before_first);
     assert!(app.nav_stack.is_empty());
 }
+
+fn temp_markdown_dir(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("bmd-{name}-{}", std::process::id()))
+}
+
+#[test]
+fn document_stack_back_and_reset() {
+    let dir = temp_markdown_dir("doc-stack");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    let c = dir.join("c.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\n[open c](c.md)\n").unwrap();
+    std::fs::write(&c, "# C\n\nend\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert_eq!(app.doc_stack.len_frames(), 1);
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    assert_eq!(app.doc_stack.len_frames(), 2);
+
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert_eq!(app.doc_stack.len_frames(), 1);
+
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert!(app.doc_stack.is_empty());
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    app.nav_reset();
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert!(app.doc_stack.is_empty());
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn anchor_stack_takes_priority_over_document_stack() {
+    let dir = temp_markdown_dir("doc-anchor-priority");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(
+        &b,
+        "# Top\n\n[jump](#target)\n\n## Target\n\nsection body\n",
+    )
+    .unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+
+    app.view_state = app
+        .view_state
+        .clone()
+        .select_next_link_in(&[crate::domain::LinkId(0)]);
+    app.open_current_link();
+    assert!(!app.nav_stack.is_empty());
+
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert!(!app.doc_stack.is_empty());
+
+    let _ = std::fs::remove_dir_all(dir);
+}

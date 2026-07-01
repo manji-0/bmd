@@ -6,6 +6,7 @@
 //! - `ViewState` transitions consume `self`, so the old state cannot be reused.
 
 mod checklist;
+mod document_link;
 mod link;
 mod markdown;
 mod mode;
@@ -16,6 +17,9 @@ mod view;
 mod tests;
 
 pub use checklist::{ChecklistId, ChecklistState, ChecklistStyle};
+pub use document_link::{
+    DocumentPathError, document_link_path_part, is_remote_link_dest, resolve_document_path,
+};
 pub use link::{DocumentError, Link, LinkId, LinkKind, LinkUrl, LinkUrlError};
 pub use markdown::{
     Alignment, Block, CodeBlock, Document, Heading, HeadingLevel, Inline, List, ListItem,

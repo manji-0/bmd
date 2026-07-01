@@ -17,7 +17,7 @@ bmd — Markdown viewer (press h or Esc to close)
 
 Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   wheel scroll
 Headings      {{}} prev/next section   #anchor links jump in-document
-Links         n/N next/prev in viewport   o/Enter open   O back one step   Esc reset to origin
+Links         n/N next/prev in viewport   o/Enter open   O back (anchor/doc)   Esc reset
 Search        / forward   ? backward   n/N next/prev match   Esc clear
 Tasks         click checkbox   x toggle at top line
 Other         h help   q/Ctrl-c quit";
@@ -26,6 +26,7 @@ pub(crate) fn format_status_bar(
     source_label: Option<&str>,
     view_state: &ViewState,
     max_scroll: usize,
+    doc_stack_depth: usize,
     status_message: Option<&str>,
 ) -> Line<'static> {
     if let Some(msg) = status_message {
@@ -36,14 +37,14 @@ pub(crate) fn format_status_bar(
             ),
             Span::raw("  "),
             Span::styled(
-                trailing_status(source_label, view_state, max_scroll),
+                trailing_status(source_label, view_state, max_scroll, doc_stack_depth),
                 dim_style(),
             ),
         ]);
     }
 
     Line::from(vec![Span::styled(
-        trailing_status(source_label, view_state, max_scroll),
+        trailing_status(source_label, view_state, max_scroll, doc_stack_depth),
         dim_style(),
     )])
 }
@@ -52,6 +53,7 @@ fn trailing_status(
     source_label: Option<&str>,
     view_state: &ViewState,
     max_scroll: usize,
+    doc_stack_depth: usize,
 ) -> String {
     let mut parts = Vec::new();
     parts.push(
@@ -82,6 +84,10 @@ fn trailing_status(
 
     if let Some(id) = view_state.selected_link() {
         parts.push(format!("link #{}", id.0));
+    }
+
+    if doc_stack_depth > 0 {
+        parts.push(format!("doc+{doc_stack_depth}"));
     }
 
     parts.join("  |  ")

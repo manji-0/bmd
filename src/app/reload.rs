@@ -12,6 +12,7 @@ use super::App;
 pub(crate) const RELOAD_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Tracks modification time for a file-backed document.
+#[derive(Clone)]
 pub(crate) struct FileWatch {
     path: PathBuf,
     last_modified: SystemTime,
