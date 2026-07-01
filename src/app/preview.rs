@@ -78,7 +78,9 @@ impl App {
         self.rendered.markdown_images.clear();
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
-        self.start_preview_prefetch();
+        self.document_prefetch.begin_document();
+        self.invalidate_prefetch_viewport();
+        self.maybe_prefetch_visible_links();
     }
 }
 

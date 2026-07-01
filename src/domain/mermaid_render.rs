@@ -5,7 +5,7 @@
 //!
 //! [`DocumentGeneration`] invalidates in-flight work when the active document changes.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::document_generation::DocumentGeneration;
 use super::link::{LinkId, LinkKind};
@@ -113,6 +113,7 @@ pub struct MermaidSessionSnapshot {
     generation: DocumentGeneration,
     tasks: HashMap<LinkId, MermaidTask>,
     queue: VecDeque<LinkId>,
+    queued: HashSet<LinkId>,
 }
 
 /// Aggregate mermaid render state for the current document.
@@ -121,6 +122,7 @@ pub struct MermaidRenderSession {
     generation: DocumentGeneration,
     tasks: HashMap<LinkId, MermaidTask>,
     queue: VecDeque<LinkId>,
+    queued: HashSet<LinkId>,
 }
 
 impl Default for MermaidRenderSession {
@@ -135,6 +137,7 @@ impl MermaidRenderSession {
             generation: DocumentGeneration::INITIAL,
             tasks: HashMap::new(),
             queue: VecDeque::new(),
+            queued: HashSet::new(),
         }
     }
 
@@ -165,6 +168,7 @@ impl MermaidRenderSession {
             generation: self.generation.next(),
             tasks: HashMap::new(),
             queue: VecDeque::new(),
+            queued: HashSet::new(),
         }
     }
 
@@ -186,6 +190,29 @@ impl MermaidRenderSession {
             if let Ok(()) = self.try_enqueue(link_id, document) {
                 // queued
             }
+        }
+        self.drain_spawns(document, MAX_CONCURRENT_MERMAID_RENDERS)
+    }
+
+    /// Queue visible mermaid links that are not already cached or in flight.
+    pub fn schedule_visible_prefetch(
+        mut self,
+        visible: &[LinkId],
+        document: &Document,
+        is_cached: impl Fn(LinkId) -> bool,
+    ) -> (Self, Vec<MermaidSpawnRequest>) {
+        for &link_id in visible {
+            let Some(link) = document.links.get(link_id.0) else {
+                continue;
+            };
+            if link.kind != LinkKind::Mermaid {
+                continue;
+            }
+            if is_cached(link_id) {
+                self = self.mark_ready(link_id);
+                continue;
+            }
+            let _ = self.try_enqueue(link_id, document);
         }
         self.drain_spawns(document, MAX_CONCURRENT_MERMAID_RENDERS)
     }
@@ -223,10 +250,11 @@ impl MermaidRenderSession {
     pub fn suspend(self) -> MermaidSessionSnapshot {
         let mut tasks = self.tasks;
         let mut queue = self.queue;
+        let mut queued = self.queued;
         for (link_id, task) in &mut tasks {
             if matches!(task, MermaidTask::Rendering { .. }) {
                 *task = MermaidTask::Queued;
-                if !queue.contains(link_id) {
+                if queued.insert(*link_id) {
                     queue.push_back(*link_id);
                 }
             }
@@ -235,6 +263,7 @@ impl MermaidRenderSession {
             generation: self.generation,
             tasks,
             queue,
+            queued,
         }
     }
 
@@ -248,12 +277,14 @@ impl MermaidRenderSession {
             generation: snapshot.generation,
             tasks: snapshot.tasks,
             queue: snapshot.queue,
+            queued: snapshot.queued,
         };
         for link_id in session.tasks.keys().copied().collect::<Vec<_>>() {
             if is_cached(link_id) {
                 session = session.mark_ready(link_id);
             }
         }
+        session.reconcile_queue();
         session.drain_spawns(document, MAX_CONCURRENT_MERMAID_RENDERS)
     }
 
@@ -262,11 +293,13 @@ impl MermaidRenderSession {
             generation: self.generation,
             tasks: self.tasks.clone(),
             queue: self.queue.clone(),
+            queued: self.queued.clone(),
         }
     }
 
     fn mark_ready(mut self, link_id: LinkId) -> Self {
         self.tasks.insert(link_id, MermaidTask::Ready);
+        self.queued.remove(&link_id);
         self.queue.retain(|id| *id != link_id);
         self
     }
@@ -288,7 +321,7 @@ impl MermaidRenderSession {
                 self.tasks.insert(link_id, MermaidTask::Queued);
             }
         }
-        if !self.queue.contains(&link_id) {
+        if self.queued.insert(link_id) {
             self.queue.push_back(link_id);
         }
         Ok(())
@@ -306,6 +339,7 @@ impl MermaidRenderSession {
             let Some(link_id) = self.queue.pop_front() else {
                 break;
             };
+            self.queued.remove(&link_id);
             if self.tasks.get(&link_id).is_some_and(|task| {
                 matches!(task, MermaidTask::Ready | MermaidTask::Rendering { .. })
             }) {
@@ -362,6 +396,16 @@ impl MermaidRenderSession {
             .values()
             .filter(|task| task.is_in_flight())
             .count()
+    }
+
+    fn reconcile_queue(&mut self) {
+        for link_id in self.tasks.keys().copied().collect::<Vec<_>>() {
+            if matches!(self.tasks.get(&link_id), Some(MermaidTask::Queued))
+                && self.queued.insert(link_id)
+            {
+                self.queue.push_back(link_id);
+            }
+        }
     }
 }
 
@@ -503,6 +547,21 @@ mod tests {
             session.tasks[&LinkId(0)].phase(),
             MermaidTaskPhase::Rendering
         );
+    }
+
+    #[test]
+    fn visible_prefetch_only_queues_visible_mermaid_links() {
+        let document = mermaid_document(3);
+        let session = MermaidRenderSession::new();
+        let (session, spawns) =
+            session.schedule_visible_prefetch(&[LinkId(1)], &document, |_| false);
+        assert_eq!(spawns.len(), 1);
+        assert_eq!(spawns[0].link_id, LinkId(1));
+        assert_eq!(
+            session.tasks[&LinkId(1)].phase(),
+            MermaidTaskPhase::Rendering
+        );
+        assert!(!session.tasks.contains_key(&LinkId(0)));
     }
 
     #[test]

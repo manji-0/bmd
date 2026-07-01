@@ -29,10 +29,12 @@ mod tests;
 pub use checklist::{ChecklistId, ChecklistState, ChecklistStyle};
 pub use document_generation::DocumentGeneration;
 pub use document_link::{
-    DocumentPathError, document_link_path_part, is_remote_link_dest, resolve_document_path,
+    DocumentPathError, document_link_path_part, is_remote_link_dest, normalize_document_path,
+    resolve_document_path,
 };
 pub use document_prefetch::{
-    DocumentPrefetchCompletion, DocumentPrefetchSession, DocumentPrefetchSpawnRequest,
+    DocumentPrefetchCompletion, DocumentPrefetchCompletionApplied, DocumentPrefetchError,
+    DocumentPrefetchSession, DocumentPrefetchSessionSnapshot, DocumentPrefetchSpawnRequest,
     PrefetchedDocument,
 };
 pub use image_render::{

@@ -6,8 +6,7 @@ use crate::domain::{
     anchor_stack_limit_message, plan_back, plan_document_back, plan_document_reset, plan_reset,
 };
 use crate::render::{
-    collect_heading_offsets, collect_visible_links, find_heading_line_by_anchor, next_heading_line,
-    prev_heading_line,
+    collect_heading_offsets, find_heading_line_by_anchor, next_heading_line, prev_heading_line,
 };
 
 use super::App;
@@ -61,11 +60,7 @@ impl App {
     }
 
     fn visible_links(&self) -> Vec<crate::domain::LinkId> {
-        let ctx = self.render_context();
-        let width = self.view_state.terminal_size().width();
-        let scroll = self.view_state.scroll().offset();
-        let visible_lines = self.content_height() as usize;
-        collect_visible_links(&self.document, width, &ctx, scroll, visible_lines)
+        self.visible_link_ids()
     }
 
     pub(crate) fn next_heading(&mut self) {

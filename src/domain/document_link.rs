@@ -18,6 +18,13 @@ pub fn is_remote_link_dest(dest: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
 }
 
+/// Canonicalize a resolved path for cache keys and prefetch lookup.
+///
+/// Falls back to `path` when canonicalization fails (e.g. the file was removed).
+pub fn normalize_document_path(path: PathBuf) -> PathBuf {
+    std::fs::canonicalize(&path).unwrap_or(path)
+}
+
 /// Resolve a relative or absolute markdown file path against the current file.
 ///
 /// # Errors
@@ -95,5 +102,17 @@ mod tests {
         let base = PathBuf::from("/docs/readme.md");
         let resolved = resolve_document_path(Some(&base), "guide/other.md#section").unwrap();
         assert_eq!(resolved, PathBuf::from("/docs/guide/other.md"));
+    }
+
+    #[test]
+    fn normalize_uses_canonical_path_when_available() {
+        let dir = std::env::temp_dir().join(format!("bmd-norm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("note.md");
+        std::fs::write(&file, "# note\n").unwrap();
+        let normalized = normalize_document_path(file.clone());
+        assert!(normalized.is_absolute());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

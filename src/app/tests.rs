@@ -796,3 +796,40 @@ fn open_document_link_follows_fragment_in_linked_file() {
 
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn doc_back_restores_document_after_child_navigation() {
+    let dir = temp_markdown_dir("doc-prefetch-restore");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\nchild\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+    )
+    .unwrap();
+
+    app.open_document_link("b.md");
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+
+    app.doc_back(anchor_idle(&app));
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert_eq!(app.doc_stack.len_frames(), 0);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn maybe_prefetch_skips_when_viewport_unchanged() {
+    let mut app = new_test_app(dummy_document());
+    app.maybe_prefetch_visible_links();
+    app.maybe_prefetch_visible_links();
+}

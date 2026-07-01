@@ -1,5 +1,6 @@
 //! Background mermaid worker adapter over [`MermaidRenderSession`].
 
+use std::mem;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
@@ -38,7 +39,8 @@ impl Default for MermaidRenderPool {
 
 impl MermaidRenderPool {
     pub fn begin_document(&mut self) {
-        self.session = self.session.clone().begin_document();
+        let session = mem::take(&mut self.session);
+        self.session = session.begin_document();
     }
 
     pub fn suspend(&self) -> MermaidSessionSnapshot {
@@ -59,15 +61,17 @@ impl MermaidRenderPool {
         self.spawn_all(spawns, picker, terminal);
     }
 
-    pub fn prefetch(
+    pub fn prefetch_visible(
         &mut self,
+        visible: &[LinkId],
         document: &Document,
         rendered: &RenderedDocument,
         picker: &Picker,
         terminal: TerminalSize,
     ) {
         let is_cached = |link_id: LinkId| rendered.mermaid_images.contains_key(&link_id.0);
-        let (session, spawns) = self.session.clone().schedule_prefetch(document, is_cached);
+        let session = mem::take(&mut self.session);
+        let (session, spawns) = session.schedule_visible_prefetch(visible, document, is_cached);
         self.session = session;
         self.spawn_all(spawns, picker, terminal);
     }
@@ -81,7 +85,8 @@ impl MermaidRenderPool {
         terminal: TerminalSize,
     ) {
         let cached = rendered.mermaid_images.contains_key(&link_id.0);
-        let Ok((session, spawns)) = self.session.clone().request(link_id, document, cached) else {
+        let Ok((session, spawns)) = mem::take(&mut self.session).request(link_id, document, cached)
+        else {
             return;
         };
         self.session = session;
@@ -97,10 +102,9 @@ impl MermaidRenderPool {
     ) -> bool {
         let mut dirty = false;
         while let Ok(result) = self.receiver.try_recv() {
-            let (session, applied, spawns) = self
-                .session
-                .clone()
-                .apply_completion(result.completion.clone(), document);
+            let session = mem::take(&mut self.session);
+            let (session, applied, spawns) =
+                session.apply_completion(result.completion.clone(), document);
             self.session = session;
             if !matches!(applied, MermaidCompletionApplied::Stale)
                 && let Some(protocol) = result.protocol
