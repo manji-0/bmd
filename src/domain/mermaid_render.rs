@@ -495,6 +495,7 @@ mod tests {
     fn resume_drains_after_navigation() {
         let document = mermaid_document(1);
         let session = MermaidRenderSession::new();
+        let (session, _) = session.request(LinkId(0), &document, false).unwrap();
         let snapshot = session.suspend();
         let (session, spawns) = MermaidRenderSession::resume(snapshot, &document, |_| false);
         assert_eq!(spawns.len(), 1);
