@@ -115,7 +115,7 @@ fn table_column_count_derives_from_headers_and_rows() {
 }
 
 #[test]
-fn table_allocate_column_widths_fits_total_width() {
+fn table_allocate_column_widths_uses_ideal_when_content_fits() {
     let table = Table {
         headers: vec![
             vec![Inline::Text("A".to_string())],
@@ -128,12 +128,13 @@ fn table_allocate_column_widths_fits_total_width() {
         alignments: vec![Alignment::Left, Alignment::Left],
     };
     let widths = table.allocate_column_widths(20);
-    assert_eq!(Table::table_frame_width(&widths), 20);
+    assert_eq!(widths, vec![4, 1]);
+    assert!(Table::table_frame_width(&widths) < 20);
     assert!(widths.iter().all(|w| *w >= 1));
 }
 
 #[test]
-fn table_frame_width_fills_terminal_for_wrapped_content() {
+fn table_frame_width_fills_terminal_when_content_overflows() {
     let table = Table {
         headers: vec![
             vec![Inline::Text("とても長い説明文が入るカラム".to_string())],
@@ -147,14 +148,11 @@ fn table_frame_width_fills_terminal_for_wrapped_content() {
         ]],
         alignments: vec![Alignment::Left, Alignment::Left, Alignment::Left],
     };
-    for total in [40_usize, 60, 80] {
-        let widths = table.allocate_column_widths(total);
-        assert_eq!(
-            Table::table_frame_width(&widths),
-            total,
-            "expected frame width {total}"
-        );
-    }
+    let widths = table.allocate_column_widths(40);
+    assert_eq!(Table::table_frame_width(&widths), 40);
+
+    let widths = table.allocate_column_widths(80);
+    assert!(Table::table_frame_width(&widths) < 80);
 }
 
 #[test]
