@@ -158,6 +158,7 @@ Building through devbox sets linker flags, `CARGO_HOME`, and sccache configurati
 ```bash
 devbox run build          # debug
 devbox run build-release  # release
+devbox run package        # crates.io tarball (verify)
 ```
 
 Without devbox, macOS may require `RUSTFLAGS="-C linker=clang"` when the default `cc` is not Apple clang. Mixing devbox and plain `cargo` invalidates incremental artifacts due to differing `RUSTFLAGS`.
@@ -169,6 +170,7 @@ devbox shell
 devbox run setup        # toolchain and dependencies
 devbox run build
 devbox run build-release
+devbox run package
 devbox run test
 devbox run run -- sample.md
 devbox run clippy
