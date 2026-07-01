@@ -9,6 +9,7 @@ mod input;
 mod layout;
 mod mermaid_render;
 mod navigation;
+mod preview;
 mod reload;
 mod scroll;
 mod search;
@@ -26,7 +27,9 @@ use ratatui_image::picker::Picker;
 
 use crate::domain::{ChecklistState, ChecklistStyle, Document, NavStack, TerminalSize, ViewState};
 use crate::error::AppError;
-use crate::render::{DocumentRenderCache, RenderedDocument, SyntaxAssets, Theme};
+use crate::render::{
+    DocumentRenderCache, PreviewRenderCache, RenderedDocument, SyntaxAssets, Theme,
+};
 
 use doc_stack::DocStack;
 use image_render::ImageRenderPool;
@@ -72,6 +75,9 @@ pub struct App {
     doc_stack: DocStack,
     mermaid_render: MermaidRenderPool,
     image_render: ImageRenderPool,
+    /// Open preview once background render completes.
+    pending_preview: Option<crate::domain::LinkId>,
+    preview_render_cache: PreviewRenderCache,
     should_quit: bool,
     #[cfg(test)]
     pub(crate) fail_apply_document: bool,
@@ -132,6 +138,8 @@ impl App {
             doc_stack: DocStack::default(),
             mermaid_render: MermaidRenderPool::default(),
             image_render: ImageRenderPool::default(),
+            pending_preview: None,
+            preview_render_cache: PreviewRenderCache::default(),
             should_quit: false,
             #[cfg(test)]
             fail_apply_document: false,
@@ -167,11 +175,14 @@ impl App {
             &self.picker,
             terminal,
         );
-        mermaid_dirty || image_dirty
+        let pending_opened = self.try_complete_pending_preview();
+        mermaid_dirty || image_dirty || pending_opened
     }
 
     pub(crate) fn preview_work_pending(&self) -> bool {
-        self.mermaid_render.has_pending() || self.image_render.has_pending()
+        self.pending_preview.is_some()
+            || self.mermaid_render.has_pending()
+            || self.image_render.has_pending()
     }
 
     pub(crate) fn set_status_message(&mut self, msg: String) {

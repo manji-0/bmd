@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use image::DynamicImage;
 use ratatui::{
     buffer::Buffer,
-    layout::{Rect, Size},
+    layout::{Constraint, Direction, Layout, Rect, Size},
     widgets::Widget,
 };
 use ratatui_image::{FilterType, Resize, protocol::Protocol};
@@ -13,8 +13,29 @@ use ratatui_image::{FilterType, Resize, protocol::Protocol};
 use crate::domain::TerminalSize;
 use crate::error::AppError;
 
-/// Popup size as a percentage of the terminal, matching [`centered_rect`] in preview draw.
+/// Popup size as a percentage of the terminal, matching [`centered_rect`].
 pub(crate) const PREVIEW_POPUP_PERCENT: u16 = 85;
+
+/// Center a rectangle inside `r` using percentage width and height.
+pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
+}
 const PREVIEW_BORDER_INSET: u16 = 2;
 
 /// Inner content area of the bordered preview popup, in terminal cells.

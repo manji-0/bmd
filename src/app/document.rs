@@ -117,6 +117,8 @@ impl App {
         self.document = document;
         self.rendered = rendered;
         self.document_cache = DocumentRenderCache::default();
+        self.preview_render_cache.clear();
+        self.pending_preview = None;
         self.view_state = crate::domain::ViewState::new(terminal_size);
         self.nav_stack.clear();
         self.checklist_state = ChecklistState::new(ChecklistStyle::from_env());
@@ -153,6 +155,8 @@ impl App {
         self.rendered = frame.rendered;
         self.view_state = frame.view_state;
         self.document_cache = DocumentRenderCache::default();
+        self.preview_render_cache.clear();
+        self.pending_preview = None;
         self.scroll_visual = frame.scroll_visual;
         self.scroll_anim_speed = frame.scroll_anim_speed;
         self.tracked_scroll_position = frame.tracked_scroll_position;

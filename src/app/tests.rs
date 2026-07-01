@@ -61,12 +61,22 @@ fn open_link_without_selection_records_error() {
 
 #[test]
 fn preview_opens_and_closes() {
+    use std::time::{Duration, Instant};
+
     let doc = parse("```mermaid\ngraph TD; A-->B;\n```").unwrap();
     let mut app = new_test_app(doc);
 
     app.next_link();
     app.open_current_link();
-    assert!(app.view_state.mode().is_preview());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while app.pending_preview.is_some() && Instant::now() < deadline {
+        app.poll_preview_renders();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        app.view_state.mode().is_preview(),
+        "preview should open after background render completes"
+    );
 
     app.close_preview();
     assert!(app.view_state.mode().is_normal());
