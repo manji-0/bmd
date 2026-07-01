@@ -44,3 +44,9 @@ pub enum AppError {
     #[error("unsupported input: {0}")]
     UnsupportedInput(String),
 }
+
+impl From<std::convert::Infallible> for AppError {
+    fn from(value: std::convert::Infallible) -> Self {
+        match value {}
+    }
+}

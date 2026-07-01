@@ -1,55 +1,101 @@
-//! Scroll-position stack for in-document anchor navigation.
+//! In-document anchor navigation as a link-jump stack.
 
-/// Stack of scroll offsets visited before each anchor jump.
+use super::link_jump_stack::{LinkJumpStack, LinkJumpStackFull, PriorAtLinkJump};
+use super::navigation_limits::{ANCHOR_STACK_MAX_LAYERS, new_anchor_link_stack};
+
+/// Scroll offset fixed at the moment before an anchor link jump.
+pub type FixedScrollPrior = PriorAtLinkJump<usize>;
+
+/// Anchor navigation stack: live scroll lives in view state.
 ///
-/// The bottom entry is the position before the first anchor navigation.
-/// `pop` returns the most recent prior position; `bottom` is the origin.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct NavStack {
-    frames: Vec<usize>,
+/// [`FixedScrollPrior`] snapshots are stored only when following in-document anchor
+/// links via [`NavStack::fix_prior_on_link_jump`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NavStack(LinkJumpStack<usize>);
+
+impl Default for NavStack {
+    fn default() -> Self {
+        Self(new_anchor_link_stack())
+    }
 }
 
+/// No prior anchor link jumps are stored.
+pub use super::link_jump_stack::LinkJumpStackEmpty as AnchorStackEmpty;
+
+pub use super::navigation_limits::AnchorStackFull;
+
 impl NavStack {
-    pub fn push(&mut self, scroll_offset: usize) {
-        self.frames.push(scroll_offset);
+    pub fn max_layers() -> usize {
+        ANCHOR_STACK_MAX_LAYERS
     }
 
-    pub fn pop(&mut self) -> Option<usize> {
-        self.frames.pop()
+    pub fn max_frames() -> usize {
+        ANCHOR_STACK_MAX_LAYERS - 1
     }
 
-    pub fn bottom(&self) -> Option<usize> {
-        self.frames.first().copied()
+    /// Fix the current scroll offset and store it before following an anchor link.
+    pub fn fix_prior_on_link_jump(
+        &mut self,
+        prior: FixedScrollPrior,
+    ) -> Result<(), AnchorStackFull> {
+        self.0
+            .fix_prior_on_link_jump(prior)
+            .map_err(|LinkJumpStackFull| AnchorStackFull)
+    }
+
+    pub fn step_back(&mut self) -> Result<usize, AnchorStackEmpty> {
+        self.0.restore_latest_prior()
+    }
+
+    pub fn step_reset(&mut self) -> Result<usize, AnchorStackEmpty> {
+        self.0.reset_to_oldest_prior()
     }
 
     pub fn clear(&mut self) {
-        self.frames.clear();
+        self.0.clear_priors();
+    }
+
+    pub fn depth(&self) -> usize {
+        self.0.fixed_prior_count()
+    }
+
+    pub fn current_layer(&self) -> usize {
+        self.0.current_layer()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.frames.is_empty()
+        self.0.is_at_origin()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::NavStack;
+    use super::*;
 
     #[test]
-    fn push_pop_lifo() {
+    fn step_back_is_lifo() {
         let mut stack = NavStack::default();
-        stack.push(10);
-        stack.push(20);
-        assert_eq!(stack.pop(), Some(20));
-        assert_eq!(stack.pop(), Some(10));
-        assert_eq!(stack.pop(), None);
+        stack
+            .fix_prior_on_link_jump(FixedScrollPrior::fix(10))
+            .unwrap();
+        stack
+            .fix_prior_on_link_jump(FixedScrollPrior::fix(20))
+            .unwrap();
+        assert_eq!(stack.step_back(), Ok(20));
+        assert_eq!(stack.step_back(), Ok(10));
+        assert_eq!(stack.step_back(), Err(AnchorStackEmpty));
     }
 
     #[test]
-    fn bottom_is_first_push() {
+    fn step_reset_returns_first_fixed_prior() {
         let mut stack = NavStack::default();
-        stack.push(10);
-        stack.push(20);
-        assert_eq!(stack.bottom(), Some(10));
+        stack
+            .fix_prior_on_link_jump(FixedScrollPrior::fix(10))
+            .unwrap();
+        stack
+            .fix_prior_on_link_jump(FixedScrollPrior::fix(20))
+            .unwrap();
+        assert_eq!(stack.step_reset(), Ok(10));
+        assert!(stack.is_empty());
     }
 }

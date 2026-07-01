@@ -1,6 +1,10 @@
 //! Scrolling and link navigation commands.
 
 use crate::browser::open_link;
+use crate::domain::{
+    AnchorIdle, AnchorStackEmpty, AnchorStackFull, FixedScrollPrior, NavBackPlan, NavResetPlan,
+    anchor_stack_limit_message, plan_back, plan_document_back, plan_document_reset, plan_reset,
+};
 use crate::render::{
     collect_heading_offsets, collect_visible_links, find_heading_line_by_anchor, next_heading_line,
     prev_heading_line,
@@ -148,38 +152,59 @@ impl App {
 
     /// Pop one scroll position from the anchor stack, or the previous document.
     pub(crate) fn nav_back(&mut self) {
-        if !self.nav_stack.is_empty() {
-            self.anchor_back();
-            return;
+        let document_depth = self.doc_stack.len_frames();
+        match plan_back(&self.nav_stack, document_depth) {
+            NavBackPlan::AnchorStep => self.apply_anchor_back(),
+            NavBackPlan::DocumentStep => {
+                let Some(idle) = AnchorIdle::from_stack(&self.nav_stack) else {
+                    return;
+                };
+                let Some(()) = plan_document_back(idle, document_depth) else {
+                    return;
+                };
+                self.doc_back(idle);
+            }
+            NavBackPlan::Idle => self.set_status_message("navigation stack empty".into()),
         }
-        self.doc_back();
     }
 
-    /// Jump to anchor-stack origin, or the root document on the document stack.
+    /// Reset the anchor stack, or return to the root document on the file stack.
+    ///
+    /// Anchor jumps must be fully reset before the document stack is consulted.
     pub(crate) fn nav_reset(&mut self) {
-        if !self.nav_stack.is_empty() {
-            self.anchor_reset();
-            return;
+        let document_depth = self.doc_stack.len_frames();
+        match plan_reset(&self.nav_stack, document_depth) {
+            NavResetPlan::AnchorReset => self.apply_anchor_reset(),
+            NavResetPlan::DocumentReset => {
+                let Some(idle) = AnchorIdle::from_stack(&self.nav_stack) else {
+                    return;
+                };
+                let Some(()) = plan_document_reset(idle, document_depth) else {
+                    return;
+                };
+                self.doc_reset(idle);
+            }
+            NavResetPlan::Idle => {}
         }
-        self.doc_reset();
     }
 
-    fn anchor_back(&mut self) {
-        let Some(offset) = self.nav_stack.pop() else {
-            self.set_status_message("navigation stack empty".into());
-            return;
-        };
-        self.view_state = self.view_state.clone().scroll_to(offset);
-        self.snap_scroll_visual();
+    fn apply_anchor_back(&mut self) {
+        match self.nav_stack.step_back() {
+            Ok(offset) => {
+                self.view_state = self.view_state.clone().scroll_to(offset);
+                self.snap_scroll_visual();
+            }
+            Err(AnchorStackEmpty) => {
+                self.set_status_message("navigation stack empty".into());
+            }
+        }
     }
 
-    /// Jump to the bottom of the navigation stack and clear it.
-    fn anchor_reset(&mut self) {
-        let Some(offset) = self.nav_stack.bottom() else {
+    fn apply_anchor_reset(&mut self) {
+        let Ok(origin) = self.nav_stack.step_reset() else {
             return;
         };
-        self.nav_stack.clear();
-        self.view_state = self.view_state.clone().scroll_to(offset);
+        self.view_state = self.view_state.clone().scroll_to(origin);
         self.snap_scroll_visual();
     }
 
@@ -190,8 +215,11 @@ impl App {
             self.set_status_message(format!("heading not found: #{anchor}"));
             return;
         };
-        let current = self.view_state.scroll().offset();
-        self.nav_stack.push(current);
+        let prior = FixedScrollPrior::fix(self.view_state.scroll().offset());
+        if let Err(AnchorStackFull) = self.nav_stack.fix_prior_on_link_jump(prior) {
+            self.set_status_message(anchor_stack_limit_message());
+            return;
+        }
         self.scroll_to_line(line);
     }
 

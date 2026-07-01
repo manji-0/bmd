@@ -4,17 +4,22 @@
 //! - `LinkUrl` cannot be empty.
 //! - `TerminalSize` cannot have zero dimensions.
 //! - `ViewState` transitions consume `self`, so the old state cannot be reused.
+//! - `LinkJumpStack` stores priors fixed at link jumps; live current state stays outside.
 //! - `MermaidRenderSession` and `ImageRenderSession` track per-link preview phases.
 
 mod checklist;
 mod document_generation;
 mod document_link;
+mod document_prefetch;
 mod image_render;
 mod link;
+mod link_jump_stack;
 mod markdown;
 mod mermaid_render;
 mod mode;
 mod nav_stack;
+mod navigation;
+mod navigation_limits;
 mod preview_load;
 mod view;
 
@@ -26,11 +31,16 @@ pub use document_generation::DocumentGeneration;
 pub use document_link::{
     DocumentPathError, document_link_path_part, is_remote_link_dest, resolve_document_path,
 };
+pub use document_prefetch::{
+    DocumentPrefetchCompletion, DocumentPrefetchSession, DocumentPrefetchSpawnRequest,
+    PrefetchedDocument,
+};
 pub use image_render::{
     ImageCompletion, ImageRenderError, ImageRenderSession, ImageSessionSnapshot, ImageSource,
     ImageSpawnRequest, image_source_for_link,
 };
 pub use link::{DocumentError, Link, LinkId, LinkKind, LinkUrl, LinkUrlError};
+pub use link_jump_stack::{LinkJumpStack, LinkJumpStackEmpty, LinkJumpStackFull, PriorAtLinkJump};
 pub use markdown::{
     Alignment, Block, CodeBlock, Document, Heading, HeadingLevel, Inline, List, ListItem,
     MermaidDiagram, Table,
@@ -41,7 +51,16 @@ pub use mermaid_render::{
     MermaidTaskPhase, mermaid_diagram_index, mermaid_source_for_link,
 };
 pub use mode::{NormalSearch, UiMode};
-pub use nav_stack::NavStack;
+pub use nav_stack::{AnchorStackEmpty, FixedScrollPrior, NavStack};
+pub use navigation::{
+    AnchorIdle, NavBackPlan, NavLayer, NavResetPlan, plan_back, plan_document_back,
+    plan_document_reset, plan_reset,
+};
+pub use navigation_limits::{
+    ANCHOR_STACK_MAX_FRAMES, ANCHOR_STACK_MAX_LAYERS, AnchorStackFull, DOCUMENT_STACK_MAX_FRAMES,
+    DOCUMENT_STACK_MAX_LAYERS, DocumentStackFull, anchor_stack_limit_message,
+    document_stack_limit_message,
+};
 pub use preview_load::{
     PreviewLoadCompletionApplied, PreviewLoadPhase, PreviewLoadStatus, PreviewLoadTask,
 };
