@@ -133,6 +133,7 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `x` | Toggle task-list item on top visible line |
 | Mouse wheel | Scroll up / down |
 | `q` / `Ctrl-c` | Quit (`Esc` clears search when active; else resets anchor or document stack) |
+| Left click on link | Open link / preview |
 | Left click on checkbox | Toggle task-list item (normal mode) |
 
 ### Search input mode
@@ -152,6 +153,7 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `+` / `=` / `-` | Zoom in / out |
 | `0` | Reset zoom to fit |
 | Ctrl+trackpad pinch | Zoom in / out |
+| Left click outside preview | Close preview |
 | `q` / `Ctrl-c` | Quit |
 
 ## Configuration

@@ -1017,3 +1017,27 @@ fn checklist_at_click_finds_item_on_marker_column() {
     assert!(item.is_some());
     assert!(checklist::checklist_at_click(&document, 80, &ctx, 0, 2).is_none());
 }
+
+#[test]
+fn link_at_click_finds_paragraph_link() {
+    let document = parse("Click [here](https://example.com) now").unwrap();
+    let ctx = test_render_context();
+    let hits = super::links::collect_link_hits(&document, 80, &ctx);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].line, 0);
+    assert_eq!(hits[0].x, 7);
+    assert_eq!(hits[0].width, 4);
+    assert_eq!(
+        super::links::link_at_click(&document, 80, &ctx, 0, 7),
+        Some(LinkId(0))
+    );
+    assert!(super::links::link_at_click(&document, 80, &ctx, 0, 6).is_none());
+}
+
+#[test]
+fn link_at_click_finds_link_in_heading() {
+    let document = parse("## See [docs](./README.md)").unwrap();
+    let ctx = test_render_context();
+    let id = super::links::link_at_click(&document, 80, &ctx, 0, 8);
+    assert_eq!(id, Some(LinkId(0)));
+}

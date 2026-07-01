@@ -81,6 +81,11 @@ impl App {
         }
     }
 
+    pub(crate) fn open_link_by_id(&mut self, id: crate::domain::LinkId) {
+        self.view_state = self.view_state.clone().with_selected_link(id);
+        self.open_current_link();
+    }
+
     pub(crate) fn open_current_link(&mut self) {
         let Some(id) = self.view_state.selected_link() else {
             self.set_status_message("no link selected — press n to select a link".into());

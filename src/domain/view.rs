@@ -487,6 +487,13 @@ impl ViewState {
         }
     }
 
+    pub fn with_selected_link(self, id: LinkId) -> Self {
+        Self {
+            selected_link: Some(id),
+            ..self
+        }
+    }
+
     pub fn scroll(&self) -> Scroll {
         self.scroll
     }

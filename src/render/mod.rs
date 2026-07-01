@@ -31,7 +31,7 @@ pub use headings::{
 };
 pub(crate) use image::render_markdown_image_from_src;
 pub(crate) use image::{PREVIEW_POPUP_PERCENT, centered_rect, render_floating_image};
-pub use links::{collect_visible_links, find_link_line_offset};
+pub use links::{collect_link_hits, collect_visible_links, find_link_line_offset, link_at_click};
 pub use measure::{measure_block_height, measure_document_height};
 pub use mermaid::RenderedDocument;
 pub(crate) use mermaid::render_mermaid_from_source;
