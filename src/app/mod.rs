@@ -28,8 +28,10 @@ use crossterm::event;
 use ratatui::{Terminal, backend::Backend};
 use ratatui_image::picker::Picker;
 
+use crate::config::Config;
 use crate::domain::{ChecklistState, ChecklistStyle, Document, NavStack, TerminalSize, ViewState};
 use crate::error::AppError;
+use crate::keymap::Keymap;
 use crate::render::{
     DocumentRenderCache, HeadingOffsetCache, PreviewRenderCache, RenderContext, RenderedDocument,
     SyntaxAssets, Theme,
@@ -76,6 +78,7 @@ pub struct App {
     pub(crate) show_terminal_images: bool,
     syntax_assets: SyntaxAssets,
     theme: Theme,
+    keymap: Keymap,
     checklist_state: ChecklistState,
     base_path: Option<std::path::PathBuf>,
     source_label: Option<String>,
@@ -93,6 +96,8 @@ pub struct App {
     /// Open preview once background render completes.
     pending_preview: Option<crate::domain::LinkId>,
     preview_render_cache: PreviewRenderCache,
+    /// Pinch/keyboard zoom factor for the floating preview overlay (1.0 = fit).
+    preview_zoom: f32,
     last_prefetch_viewport: Option<PrefetchViewportKey>,
     document_revision: u64,
     heading_cache: HeadingOffsetCache,
@@ -121,7 +126,24 @@ impl App {
         base_path: Option<std::path::PathBuf>,
         source_label: Option<String>,
     ) -> Result<Self, AppError> {
-        Self::new_with_terminal_size(document, picker, base_path, source_label, terminal_size()?)
+        Self::new_with_config(document, picker, base_path, source_label, Config::load()?)
+    }
+
+    pub fn new_with_config(
+        document: Document,
+        picker: Picker,
+        base_path: Option<std::path::PathBuf>,
+        source_label: Option<String>,
+        config: Config,
+    ) -> Result<Self, AppError> {
+        Self::new_with_terminal_size(
+            document,
+            picker,
+            base_path,
+            source_label,
+            terminal_size()?,
+            config,
+        )
     }
 
     pub fn new_with_terminal_size(
@@ -130,6 +152,7 @@ impl App {
         base_path: Option<std::path::PathBuf>,
         source_label: Option<String>,
         terminal_size: TerminalSize,
+        config: Config,
     ) -> Result<Self, AppError> {
         let rendered =
             RenderedDocument::new(&document, &picker, terminal_size, base_path.as_deref())?;
@@ -154,7 +177,8 @@ impl App {
             images_reenable_at: None,
             show_terminal_images: true,
             syntax_assets: SyntaxAssets::new(),
-            theme: Theme::default(),
+            theme: config.theme,
+            keymap: config.keymap,
             checklist_state: ChecklistState::new(ChecklistStyle::from_env()),
             base_path: base_path.clone(),
             source_label,
@@ -171,6 +195,7 @@ impl App {
             document_prefetch: DocumentPrefetchPool::new(worker_pool),
             pending_preview: None,
             preview_render_cache: PreviewRenderCache::default(),
+            preview_zoom: 1.0,
             last_prefetch_viewport: None,
             document_revision: 0,
             heading_cache: HeadingOffsetCache::default(),

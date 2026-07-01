@@ -104,7 +104,7 @@ pub(crate) fn render_markdown_image_from_src(
     terminal_image_protocol(dyn_img, picker, target)
 }
 
-pub(crate) fn render_floating_image(protocol: &Protocol, area: Rect, buf: &mut Buffer) {
+pub(crate) fn render_floating_image(protocol: &Protocol, area: Rect, buf: &mut Buffer, zoom: f32) {
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -112,17 +112,20 @@ pub(crate) fn render_floating_image(protocol: &Protocol, area: Rect, buf: &mut B
     if img_size.width == 0 || img_size.height == 0 {
         return;
     }
-    let render_area = fit_and_center(img_size, area);
+    let render_area = fit_and_center_zoomed(img_size, area, zoom);
     let image = ratatui_image::Image::new(protocol).allow_clipping(true);
     image.render(render_area, buf);
 }
 
-fn fit_and_center(image: Size, area: Rect) -> Rect {
-    let w = image.width.min(area.width);
-    let h = image.height.min(area.height);
+fn fit_and_center_zoomed(image: Size, area: Rect, zoom: f32) -> Rect {
+    let fit_w = image.width.min(area.width);
+    let fit_h = image.height.min(area.height);
+    let zoom = zoom.max(0.01);
+    let w = ((fit_w as f32 * zoom).round() as u16).max(1);
+    let h = ((fit_h as f32 * zoom).round() as u16).max(1);
     Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 2,
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
         width: w,
         height: h,
     }
@@ -147,11 +150,19 @@ mod tests {
     #[test]
     fn fit_and_center_centers_smaller_image() {
         let area = Rect::new(0, 0, 20, 10);
-        let centered = fit_and_center(Size::new(8, 4), area);
+        let centered = fit_and_center_zoomed(Size::new(8, 4), area, 1.0);
         assert_eq!(centered.x, 6);
         assert_eq!(centered.y, 3);
         assert_eq!(centered.width, 8);
         assert_eq!(centered.height, 4);
+    }
+
+    #[test]
+    fn zoom_scales_render_area() {
+        let area = Rect::new(0, 0, 20, 10);
+        let zoomed = fit_and_center_zoomed(Size::new(8, 4), area, 2.0);
+        assert_eq!(zoomed.width, 16);
+        assert_eq!(zoomed.height, 8);
     }
 
     #[test]

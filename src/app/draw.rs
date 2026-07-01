@@ -88,24 +88,45 @@ impl App {
             return;
         }
 
+        let title = link
+            .title
+            .as_deref()
+            .unwrap_or(link.url.as_str())
+            .to_string();
+
         if let Some(protocol) =
             self.rendered
                 .preview_protocol(link_id.0, link.kind, link.url.as_str())
         {
             let terminal = self.view_state.terminal_size();
-            let title = link
-                .title
-                .as_deref()
-                .unwrap_or(link.url.as_str())
-                .to_string();
-            self.preview_render_cache
-                .ensure(link_id, terminal, &title, protocol);
-            if self
-                .preview_render_cache
-                .blit(link_id, terminal, area, frame.buffer_mut())
-            {
-                return;
+            let popup = crate::render::centered_rect(
+                crate::render::PREVIEW_POPUP_PERCENT,
+                crate::render::PREVIEW_POPUP_PERCENT,
+                area,
+            );
+
+            if (self.preview_zoom - 1.0).abs() < f32::EPSILON {
+                self.preview_render_cache
+                    .ensure(link_id, terminal, &title, protocol);
+                if self
+                    .preview_render_cache
+                    .blit(link_id, terminal, area, frame.buffer_mut())
+                {
+                    return;
+                }
             }
+
+            frame.render_widget(Clear, popup);
+            let block = Block::bordered().title(title);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            crate::render::render_floating_image(
+                protocol,
+                inner,
+                frame.buffer_mut(),
+                self.preview_zoom,
+            );
+            return;
         }
 
         if matches!(self.preview_load_status(link_id), PreviewLoadStatus::Failed) {
@@ -115,11 +136,6 @@ impl App {
                 area,
             );
             frame.render_widget(Clear, popup);
-            let title = link
-                .title
-                .as_deref()
-                .unwrap_or(link.url.as_str())
-                .to_string();
             let block = Block::bordered().title(title);
             let inner = block.inner(popup);
             frame.render_widget(block, popup);

@@ -403,10 +403,10 @@ fn selected_search_match_renders_selected_style_in_buffer() {
 #[test]
 fn theme_default_has_expected_styles() {
     let theme = Theme::default();
-    assert_eq!(theme.text.fg, Some(Color::White));
+    let midnight = Theme::from_preset(crate::render::DEFAULT_PRESET).unwrap();
+    assert_eq!(theme, midnight);
     assert!(theme.h1.add_modifier.contains(Modifier::BOLD));
     assert!(theme.h1.add_modifier.contains(Modifier::UNDERLINED));
-    assert_eq!(theme.link.fg, Some(Color::Blue));
     assert!(theme.link.add_modifier.contains(Modifier::UNDERLINED));
 }
 

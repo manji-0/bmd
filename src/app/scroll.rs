@@ -2,11 +2,8 @@
 
 use std::time::{Duration, Instant};
 
-use crossterm::event::KeyCode;
-
 use crate::domain::TerminalSize;
 use crate::error::AppError;
-use crate::keymap::Command;
 use crate::render::subpixel::SUBPIXEL_SNAP;
 use crate::render::{RenderContext, measure_document_height};
 
@@ -116,28 +113,5 @@ impl App {
         self.scroll_visual = clamped;
         self.invalidate_preview_caches();
         Ok(true)
-    }
-}
-
-pub(crate) fn is_line_scroll_key(code: &KeyCode) -> bool {
-    matches!(
-        code,
-        KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up
-    )
-}
-
-/// Keys that should fire once per physical press; OS repeat is ignored.
-pub(crate) fn is_single_press_key(code: &KeyCode) -> bool {
-    is_line_scroll_key(code)
-        || matches!(
-            code,
-            KeyCode::Char('d') | KeyCode::Char('u') | KeyCode::PageDown | KeyCode::PageUp
-        )
-}
-
-pub(crate) fn line_scroll_command(code: &KeyCode) -> Command {
-    match code {
-        KeyCode::Char('k') | KeyCode::Up => Command::ScrollUp,
-        _ => Command::ScrollDown,
     }
 }

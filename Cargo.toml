@@ -38,8 +38,10 @@ merman = { version = "0.6.2", features = ["raster"] }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 ratatui = "0.30"
 ratatui-image = { version = "11", default-features = false, features = ["crossterm", "image-defaults"] }
+serde = { version = "1", features = ["derive"] }
 syntect = "5"
 thiserror = "2"
+toml = "0.8"
 textwrap = "0.16"
 unicode-width = "0.2"
 unicode-segmentation = "1.13"

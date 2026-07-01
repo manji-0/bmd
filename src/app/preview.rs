@@ -4,6 +4,10 @@ use crate::domain::{LinkId, LinkKind, PreviewLoadStatus};
 
 use super::App;
 
+pub(crate) const PREVIEW_ZOOM_MIN: f32 = 0.25;
+pub(crate) const PREVIEW_ZOOM_MAX: f32 = 4.0;
+pub(crate) const PREVIEW_ZOOM_STEP: f32 = 1.15;
+
 impl App {
     pub(crate) fn preview_load_status(&self, link_id: LinkId) -> PreviewLoadStatus {
         let Some(link) = self.document.links.get(link_id.0) else {
@@ -71,6 +75,7 @@ impl App {
     }
 
     pub(crate) fn open_preview_now(&mut self, link_id: LinkId) {
+        self.reset_preview_zoom();
         self.warm_preview_cache(link_id);
         self.view_state = self.view_state.clone().open_preview(link_id);
     }
@@ -96,6 +101,21 @@ impl App {
         self.document_prefetch.begin_document();
         self.invalidate_prefetch_viewport();
         self.maybe_prefetch_visible_links();
+    }
+
+    pub(crate) fn adjust_preview_zoom(&mut self, factor: f32) {
+        if self.view_state.mode().preview_link().is_none() {
+            return;
+        }
+        let next = (self.preview_zoom * factor).clamp(PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX);
+        if (next - self.preview_zoom).abs() < f32::EPSILON {
+            return;
+        }
+        self.preview_zoom = next;
+    }
+
+    pub(crate) fn reset_preview_zoom(&mut self) {
+        self.preview_zoom = 1.0;
     }
 }
 
