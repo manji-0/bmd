@@ -197,6 +197,8 @@ fn convert_inline(inline: ParsedInline) -> Result<Inline, IntoDomainError> {
         ParsedInline::Strong(children) => Inline::Strong(convert_inlines(children)?),
         ParsedInline::Emphasis(children) => Inline::Emphasis(convert_inlines(children)?),
         ParsedInline::Strikethrough(children) => Inline::Strikethrough(convert_inlines(children)?),
+        ParsedInline::Subscript(children) => Inline::Subscript(convert_inlines(children)?),
+        ParsedInline::Superscript(children) => Inline::Superscript(convert_inlines(children)?),
         ParsedInline::Code(code) => Inline::Code(code),
         ParsedInline::Link { link_id, children } => {
             Inline::Link(LinkId(link_id), convert_inlines(children)?)

@@ -480,6 +480,17 @@ fn inlines_to_segments(
                     out,
                 );
             }
+            Inline::Subscript(children) => {
+                inlines_to_segments(children, ctx, base_style.add_modifier(Modifier::DIM), out);
+            }
+            Inline::Superscript(children) => {
+                inlines_to_segments(
+                    children,
+                    ctx,
+                    base_style.add_modifier(Modifier::ITALIC),
+                    out,
+                );
+            }
             Inline::Link(id, children) => {
                 let style = match ctx.links.get(id.0) {
                     Some(link) if link.kind.is_preview() => {

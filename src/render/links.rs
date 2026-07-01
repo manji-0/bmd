@@ -276,7 +276,9 @@ fn flatten_inline_pieces_inner(
             }
             Inline::Strong(children)
             | Inline::Emphasis(children)
-            | Inline::Strikethrough(children) => {
+            | Inline::Strikethrough(children)
+            | Inline::Subscript(children)
+            | Inline::Superscript(children) => {
                 flatten_inline_pieces_inner(children, active_link, out);
             }
             Inline::Link(id, children) => {
@@ -457,9 +459,11 @@ fn first_link_line_in_wrapped(
 fn inlines_contain_link(inlines: &[Inline], link_id: LinkId) -> bool {
     inlines.iter().any(|inline| match inline {
         Inline::Link(id, children) => *id == link_id || inlines_contain_link(children, link_id),
-        Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strikethrough(c) => {
-            inlines_contain_link(c, link_id)
-        }
+        Inline::Strong(c)
+        | Inline::Emphasis(c)
+        | Inline::Strikethrough(c)
+        | Inline::Subscript(c)
+        | Inline::Superscript(c) => inlines_contain_link(c, link_id),
         Inline::Text(_)
         | Inline::Code(_)
         | Inline::HardBreak

@@ -175,6 +175,8 @@ pub enum ParsedInline {
     Strong(Vec<ParsedInline>),
     Emphasis(Vec<ParsedInline>),
     Strikethrough(Vec<ParsedInline>),
+    Subscript(Vec<ParsedInline>),
+    Superscript(Vec<ParsedInline>),
     Code(String),
     Link {
         link_id: usize,
@@ -197,6 +199,8 @@ impl ParsedInline {
                 ParsedInline::Strong(c)
                 | ParsedInline::Emphasis(c)
                 | ParsedInline::Strikethrough(c)
+                | ParsedInline::Subscript(c)
+                | ParsedInline::Superscript(c)
                 | ParsedInline::Link { children: c, .. } => out.push_str(&Self::plain_text(c)),
                 ParsedInline::FootnoteReference { .. } => {}
                 ParsedInline::HardBreak | ParsedInline::SoftBreak => {

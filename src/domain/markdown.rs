@@ -131,7 +131,9 @@ impl Document {
                 }
                 Inline::Strong(children)
                 | Inline::Emphasis(children)
-                | Inline::Strikethrough(children) => {
+                | Inline::Strikethrough(children)
+                | Inline::Subscript(children)
+                | Inline::Superscript(children) => {
                     Self::validate_inlines_links(children, block_idx, link_count)?;
                 }
                 Inline::Text(_)
@@ -252,7 +254,9 @@ impl Document {
                 Inline::Link(_, children)
                 | Inline::Strong(children)
                 | Inline::Emphasis(children)
-                | Inline::Strikethrough(children) => {
+                | Inline::Strikethrough(children)
+                | Inline::Subscript(children)
+                | Inline::Superscript(children) => {
                     Self::validate_inlines_footnotes(
                         children,
                         block_idx,
@@ -594,6 +598,8 @@ pub enum Inline {
     Strong(Vec<Inline>),
     Emphasis(Vec<Inline>),
     Strikethrough(Vec<Inline>),
+    Subscript(Vec<Inline>),
+    Superscript(Vec<Inline>),
     Code(String),
     Link(LinkId, Vec<Inline>),
     FootnoteReference(FootnoteId, usize),
@@ -611,6 +617,8 @@ impl Inline {
                 Inline::Strong(c)
                 | Inline::Emphasis(c)
                 | Inline::Strikethrough(c)
+                | Inline::Subscript(c)
+                | Inline::Superscript(c)
                 | Inline::Link(_, c) => Self::text_width(c),
                 Inline::FootnoteReference(_, display) => footnote_marker_width(*display),
                 Inline::HardBreak | Inline::SoftBreak => 1,
@@ -629,6 +637,8 @@ impl Inline {
                 Inline::Strong(c)
                 | Inline::Emphasis(c)
                 | Inline::Strikethrough(c)
+                | Inline::Subscript(c)
+                | Inline::Superscript(c)
                 | Inline::Link(_, c) => Self::min_word_width(c),
                 Inline::FootnoteReference(_, display) => footnote_marker_width(*display),
                 Inline::HardBreak | Inline::SoftBreak => 0,
@@ -646,6 +656,8 @@ impl Inline {
                 Inline::Strong(c)
                 | Inline::Emphasis(c)
                 | Inline::Strikethrough(c)
+                | Inline::Subscript(c)
+                | Inline::Superscript(c)
                 | Inline::Link(_, c) => {
                     out.push_str(&Self::plain_text(c));
                 }
