@@ -99,6 +99,8 @@ impl App {
         self.rendered =
             RenderedDocument::new(&self.document, &self.picker, terminal_size, Some(&path))?;
         self.document_cache.invalidate();
+        self.preview_render_cache.clear();
+        self.pending_preview = None;
         self.checklist_state =
             crate::domain::ChecklistState::new(crate::domain::ChecklistStyle::from_env());
         self.help_visible = false;

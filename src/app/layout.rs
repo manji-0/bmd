@@ -1,6 +1,6 @@
 //! Terminal layout helpers.
 
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 use crate::domain::{TerminalSize, UiMode};
 use crate::error::AppError;
@@ -78,21 +78,5 @@ pub(crate) fn split_main_and_prompt(area: Rect, mode: &UiMode) -> (Rect, Rect) {
 }
 
 pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
+    crate::render::centered_rect(percent_x, percent_y, r)
 }

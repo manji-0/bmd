@@ -129,13 +129,20 @@ impl App {
                 }
                 _ => {}
             }
-            self.view_state = self.view_state.clone().open_preview(id);
+            if self.preview_ready_to_open(id) {
+                self.pending_preview = None;
+                self.open_preview_now(id);
+            } else {
+                self.pending_preview = Some(id);
+                self.set_status_message(super::preview::preview_waiting_message(link.kind));
+            }
         } else if let Err(e) = open_link(&link.url) {
             self.set_status_message(e.to_string());
         }
     }
 
     pub(crate) fn close_preview(&mut self) {
+        self.pending_preview = None;
         self.view_state = self.view_state.clone().close_preview();
     }
 

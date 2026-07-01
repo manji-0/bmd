@@ -114,6 +114,7 @@ impl App {
         let max = self.max_scroll();
         let clamped = self.view_state.scroll().offset().min(max) as f32;
         self.scroll_visual = clamped;
+        self.invalidate_preview_caches();
         Ok(true)
     }
 }

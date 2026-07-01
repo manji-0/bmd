@@ -6,14 +6,13 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use crate::domain::{LinkKind, PreviewLoadStatus, SearchDirection, UiMode};
+use crate::domain::{PreviewLoadStatus, SearchDirection, UiMode};
 use crate::error::AppError;
-use crate::render::{
-    CachedMarkdownView, PREVIEW_POPUP_PERCENT, RenderContext, render_floating_image,
-};
+use crate::render::{CachedMarkdownView, RenderContext};
 
 use super::App;
-use super::layout::{centered_rect, split_layout};
+use super::layout::split_layout;
+use super::preview::preview_failed_message;
 use super::status::{draw_help_overlay, draw_status_bar, format_status_bar};
 
 impl App {
@@ -77,7 +76,7 @@ impl App {
     }
 
     fn draw_floating_preview(
-        &self,
+        &mut self,
         frame: &mut ratatui::Frame,
         area: ratatui::layout::Rect,
         link_id: crate::domain::LinkId,
@@ -89,52 +88,43 @@ impl App {
             return;
         }
 
-        let popup = centered_rect(PREVIEW_POPUP_PERCENT, PREVIEW_POPUP_PERCENT, area);
-        frame.render_widget(Clear, popup);
-        let title = link
-            .title
-            .as_deref()
-            .unwrap_or(link.url.as_str())
-            .to_string();
-        let block = Block::bordered().title(title);
-        let inner = block.inner(popup);
-        frame.render_widget(block, popup);
-
         if let Some(protocol) =
             self.rendered
                 .preview_protocol(link_id.0, link.kind, link.url.as_str())
         {
-            render_floating_image(protocol, inner, frame.buffer_mut());
-        } else {
-            let status = match link.kind {
-                LinkKind::Mermaid => self.mermaid_render.preview_status(link_id, &self.rendered),
-                LinkKind::Image => {
-                    self.image_render
-                        .preview_status(link_id, &self.document, &self.rendered)
-                }
-                _ => PreviewLoadStatus::Idle,
-            };
-            let message = preview_loading_message(link.kind, status, link.url.as_str());
-            let para = Paragraph::new(message);
-            frame.render_widget(para, inner);
+            let terminal = self.view_state.terminal_size();
+            let title = link
+                .title
+                .as_deref()
+                .unwrap_or(link.url.as_str())
+                .to_string();
+            self.preview_render_cache
+                .ensure(link_id, terminal, &title, protocol);
+            if self
+                .preview_render_cache
+                .blit(link_id, terminal, area, frame.buffer_mut())
+            {
+                return;
+            }
         }
-    }
-}
 
-fn preview_loading_message(kind: LinkKind, status: PreviewLoadStatus, url: &str) -> String {
-    match status {
-        PreviewLoadStatus::Queued | PreviewLoadStatus::Loading => match kind {
-            LinkKind::Mermaid => "Rendering mermaid diagram…".to_string(),
-            LinkKind::Image => "Loading image…".to_string(),
-            _ => format!("[loading preview: {url}]"),
-        },
-        PreviewLoadStatus::Failed => match kind {
-            LinkKind::Mermaid => "[failed to render mermaid diagram]".to_string(),
-            LinkKind::Image => "[failed to load image]".to_string(),
-            _ => format!("[failed to load preview: {url}]"),
-        },
-        PreviewLoadStatus::Idle | PreviewLoadStatus::Ready => {
-            format!("[failed to load preview: {url}]")
+        if matches!(self.preview_load_status(link_id), PreviewLoadStatus::Failed) {
+            let popup = crate::render::centered_rect(
+                crate::render::PREVIEW_POPUP_PERCENT,
+                crate::render::PREVIEW_POPUP_PERCENT,
+                area,
+            );
+            frame.render_widget(Clear, popup);
+            let title = link
+                .title
+                .as_deref()
+                .unwrap_or(link.url.as_str())
+                .to_string();
+            let block = Block::bordered().title(title);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let message = preview_failed_message(link.kind);
+            frame.render_widget(Paragraph::new(message), inner);
         }
     }
 }

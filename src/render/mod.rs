@@ -11,6 +11,7 @@ mod links;
 mod list_marker;
 mod measure;
 mod mermaid;
+mod preview_cache;
 mod search;
 mod search_state;
 pub(crate) mod subpixel;
@@ -29,11 +30,12 @@ pub use headings::{
     slugify_heading,
 };
 pub(crate) use image::render_markdown_image_from_src;
-pub(crate) use image::{PREVIEW_POPUP_PERCENT, render_floating_image};
+pub(crate) use image::{PREVIEW_POPUP_PERCENT, centered_rect};
 pub use links::{collect_visible_links, find_link_line_offset};
 pub use measure::{measure_block_height, measure_document_height};
 pub use mermaid::RenderedDocument;
 pub(crate) use mermaid::render_mermaid_from_source;
+pub use preview_cache::PreviewRenderCache;
 pub use search::find_search_matches;
 pub use syntax::SyntaxAssets;
 pub use theme::Theme;
