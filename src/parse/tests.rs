@@ -549,3 +549,21 @@ fn parse_footnote_display_number_follows_first_reference_order() {
         ]
     );
 }
+
+#[test]
+fn parse_inline_math() {
+    let doc = parse("Energy is $E = mc^2$.").unwrap();
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(matches!(&inlines[1], Inline::Math(content) if content == "E = mc^2"));
+}
+
+#[test]
+fn parse_display_math() {
+    let doc = parse("$$\n\\frac{a}{b}\n$$").unwrap();
+    let Block::MathBlock(math) = &doc.blocks[0] else {
+        panic!("expected math block");
+    };
+    assert_eq!(math.content.trim(), "\\frac{a}{b}");
+}

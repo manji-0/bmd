@@ -4,10 +4,11 @@ use unicode_width::UnicodeWidthStr;
 
 use super::footnotes::measure_footnotes_height;
 
-use crate::domain::{Block, CodeBlock, Document, Heading, Inline, List, Table};
+use crate::domain::{Block, CodeBlock, Document, Heading, Inline, List, MathBlock, Table};
 
 use super::context::RenderContext;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
+use super::math::measure_math_height;
 use super::list_marker::list_marker_width_at;
 use super::table::{allocate_column_widths, wrap_cell_inlines};
 
@@ -51,6 +52,7 @@ pub fn measure_block_height(
         Block::Heading(h) => measure_heading_height(h, width, ctx),
         Block::Paragraph(inlines) => measure_paragraph_height(inlines, width, ctx),
         Block::CodeBlock(cb) => measure_code_block_height(cb, width),
+        Block::MathBlock(math) => measure_math_block_height(math, width),
         Block::BlockQuote(blocks) => measure_blockquote_height(blocks, width, ctx),
         Block::List(list) => measure_list_height(list, width, ctx),
         Block::Table(table) => measure_table_height(table, width, ctx),
@@ -82,6 +84,10 @@ fn measure_heading_height(heading: &Heading, width: u16, ctx: &RenderContext) ->
 pub(crate) fn measure_code_block_height(cb: &CodeBlock, width: u16) -> usize {
     let _ = width; // width only matters for rendering, not for height.
     cb.logical_height()
+}
+
+fn measure_math_block_height(math: &MathBlock, width: u16) -> usize {
+    measure_math_height(&math.content, width)
 }
 
 fn measure_blockquote_height(blocks: &[Block], width: u16, ctx: &RenderContext) -> usize {

@@ -57,6 +57,7 @@ pub enum ParsedBlock {
     Heading(ParsedHeading),
     Paragraph(Vec<ParsedInline>),
     CodeBlock(ParsedCodeBlock),
+    MathBlock(ParsedMathBlock),
     BlockQuote(Vec<ParsedBlock>),
     List(ParsedList),
     Table(ParsedTable),
@@ -74,6 +75,11 @@ pub struct ParsedHeading {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedCodeBlock {
     pub language: Option<String>,
+    pub content: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedMathBlock {
     pub content: String,
 }
 
@@ -186,6 +192,7 @@ pub enum ParsedInline {
         footnote_id: usize,
         display: usize,
     },
+    Math(String),
     HardBreak,
     SoftBreak,
 }
@@ -202,7 +209,7 @@ impl ParsedInline {
                 | ParsedInline::Subscript(c)
                 | ParsedInline::Superscript(c)
                 | ParsedInline::Link { children: c, .. } => out.push_str(&Self::plain_text(c)),
-                ParsedInline::FootnoteReference { .. } => {}
+                ParsedInline::FootnoteReference { .. } | ParsedInline::Math(_) => {}
                 ParsedInline::HardBreak | ParsedInline::SoftBreak => {
                     if i > 0 {
                         out.push(' ');

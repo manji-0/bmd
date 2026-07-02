@@ -47,7 +47,7 @@ pub use link::{DocumentError, Link, LinkId, LinkKind, LinkUrl, LinkUrlError};
 pub use link_jump_stack::{LinkJumpStack, LinkJumpStackEmpty, LinkJumpStackFull, PriorAtLinkJump};
 pub use markdown::{
     Alignment, Block, CodeBlock, Document, FootnoteDefinition, FootnoteId, Heading, HeadingLevel,
-    Inline, List, ListItem, MermaidDiagram, Table,
+    Inline, List, ListItem, MathBlock, MermaidDiagram, Table,
 };
 pub use mermaid_render::{
     MermaidCompletion, MermaidCompletionApplied, MermaidPreviewStatus, MermaidRenderError,

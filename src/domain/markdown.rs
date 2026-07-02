@@ -86,7 +86,7 @@ impl Document {
             }) => {
                 Self::validate_inlines_links(inlines, block_idx, link_count)?;
             }
-            Block::CodeBlock(_) | Block::Rule => {}
+            Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
             Block::BlockQuote(blocks) => {
                 for child in blocks {
                     Self::validate_block_links(child, block_idx, link_count)?;
@@ -138,6 +138,7 @@ impl Document {
                 }
                 Inline::Text(_)
                 | Inline::Code(_)
+                | Inline::Math(_)
                 | Inline::HardBreak
                 | Inline::SoftBreak
                 | Inline::FootnoteReference(_, _) => {}
@@ -180,7 +181,7 @@ impl Document {
                     footnotes,
                 )?;
             }
-            Block::CodeBlock(_) | Block::Rule => {}
+            Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
             Block::BlockQuote(blocks) => {
                 for child in blocks {
                     Self::validate_block_footnotes(
@@ -265,7 +266,7 @@ impl Document {
                         footnotes,
                     )?;
                 }
-                Inline::Text(_) | Inline::Code(_) | Inline::HardBreak | Inline::SoftBreak => {}
+                Inline::Text(_) | Inline::Code(_) | Inline::Math(_) | Inline::HardBreak | Inline::SoftBreak => {}
             }
         }
         Ok(())
@@ -296,6 +297,7 @@ pub enum Block {
     Heading(Heading),
     Paragraph(Vec<Inline>),
     CodeBlock(CodeBlock),
+    MathBlock(MathBlock),
     BlockQuote(Vec<Block>),
     List(List),
     Table(Table),
@@ -360,6 +362,11 @@ pub struct Heading {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeBlock {
     pub language: Option<String>,
+    pub content: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MathBlock {
     pub content: String,
 }
 
@@ -603,6 +610,7 @@ pub enum Inline {
     Code(String),
     Link(LinkId, Vec<Inline>),
     FootnoteReference(FootnoteId, usize),
+    Math(String),
     HardBreak,
     SoftBreak,
 }
@@ -613,7 +621,7 @@ impl Inline {
         inlines
             .iter()
             .map(|i| match i {
-                Inline::Text(t) | Inline::Code(t) => t.width(),
+                Inline::Text(t) | Inline::Code(t) | Inline::Math(t) => t.width(),
                 Inline::Strong(c)
                 | Inline::Emphasis(c)
                 | Inline::Strikethrough(c)
@@ -631,7 +639,7 @@ impl Inline {
         inlines
             .iter()
             .map(|i| match i {
-                Inline::Text(t) | Inline::Code(t) => {
+                Inline::Text(t) | Inline::Code(t) | Inline::Math(t) => {
                     t.split_whitespace().map(|w| w.width()).max().unwrap_or(0)
                 }
                 Inline::Strong(c)
@@ -652,7 +660,7 @@ impl Inline {
         let mut out = String::new();
         for (i, inline) in inlines.iter().enumerate() {
             match inline {
-                Inline::Text(t) | Inline::Code(t) => out.push_str(t),
+                Inline::Text(t) | Inline::Code(t) | Inline::Math(t) => out.push_str(t),
                 Inline::Strong(c)
                 | Inline::Emphasis(c)
                 | Inline::Strikethrough(c)

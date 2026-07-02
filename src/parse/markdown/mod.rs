@@ -23,6 +23,7 @@ pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
         content,
         Options::all()
             | Options::ENABLE_GFM
+            | Options::ENABLE_MATH
             | Options::ENABLE_HEADING_ATTRIBUTES
             | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
             | Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS,

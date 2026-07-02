@@ -7,7 +7,7 @@ use parserst::{Block as RstBlock, Field, Inline as RstInline, ListKind};
 use crate::parse::dto::{
     ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedDocumentParts, ParsedFootnoteDefinition,
     ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink,
-    ParsedLinkKind, ParsedList, ParsedListItem, ParsedTable,
+    ParsedLinkKind, ParsedList, ParsedListItem, ParsedMathBlock, ParsedTable,
 };
 use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
@@ -279,6 +279,17 @@ fn map_directive(
             link_id,
             children: vec![ParsedInline::Text(label)],
         }])]);
+    }
+    if name.eq_ignore_ascii_case("math") {
+        let body = if argument.trim().is_empty() {
+            collect_verbatim(content)
+        } else {
+            argument.trim().to_string()
+        };
+        if body.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Ok(vec![ParsedBlock::MathBlock(ParsedMathBlock { content: body })]);
     }
     if name.eq_ignore_ascii_case("image") {
         let url = argument.trim();
@@ -567,5 +578,14 @@ mod tests {
         assert!(front_matter.raw.contains("Author: Jane Doe"));
         assert!(front_matter.raw.contains("Date: 2025-01-01"));
         assert_eq!(dto.blocks.len(), 1);
+    }
+
+    #[test]
+    fn parse_rest_math_directive() {
+        let dto = parse(".. math::\n\n    x^2 + y^2 = z^2\n").unwrap();
+        let ParsedBlock::MathBlock(math) = &dto.blocks[0] else {
+            panic!("expected math block, got {:?}", dto.blocks);
+        };
+        assert!(math.content.contains("x^2"));
     }
 }

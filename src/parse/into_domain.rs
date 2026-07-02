@@ -3,13 +3,13 @@
 use crate::domain::{
     Alignment, Block, ChecklistId, CodeBlock, Document, FootnoteDefinition, FootnoteId,
     FrontMatter, FrontMatterKind, Heading, HeadingLevel, Inline, Link, LinkId, LinkUrl, List,
-    ListItem, MermaidDiagram, Table,
+    ListItem, MathBlock, MermaidDiagram, Table,
 };
 
 use super::dto::{
     ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedFootnoteDefinition,
     ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink, ParsedList,
-    ParsedListItem, ParsedTable,
+    ParsedListItem, ParsedMathBlock, ParsedTable,
 };
 use crate::parse::normalize_anchor_slug;
 
@@ -95,6 +95,7 @@ fn convert_block(owned: ParsedBlock) -> Result<Block, IntoDomainError> {
         ParsedBlock::Heading(heading) => Ok(Block::Heading(convert_heading(heading)?)),
         ParsedBlock::Paragraph(inlines) => Ok(Block::Paragraph(convert_inlines(inlines)?)),
         ParsedBlock::CodeBlock(code) => Ok(Block::CodeBlock(convert_code_block(code))),
+        ParsedBlock::MathBlock(math) => Ok(Block::MathBlock(convert_math_block(math))),
         ParsedBlock::BlockQuote(blocks) => Ok(Block::BlockQuote(convert_blocks(blocks)?)),
         ParsedBlock::List(list) => Ok(Block::List(convert_list(list)?)),
         ParsedBlock::Table(table) => Ok(Block::Table(convert_table(table)?)),
@@ -129,6 +130,12 @@ fn convert_code_block(code: ParsedCodeBlock) -> CodeBlock {
     CodeBlock {
         language: code.language,
         content: code.content,
+    }
+}
+
+fn convert_math_block(math: ParsedMathBlock) -> MathBlock {
+    MathBlock {
+        content: math.content,
     }
 }
 
@@ -207,6 +214,7 @@ fn convert_inline(inline: ParsedInline) -> Result<Inline, IntoDomainError> {
             footnote_id,
             display,
         } => Inline::FootnoteReference(FootnoteId(footnote_id), display),
+        ParsedInline::Math(content) => Inline::Math(content),
         ParsedInline::HardBreak => Inline::HardBreak,
         ParsedInline::SoftBreak => Inline::SoftBreak,
     })

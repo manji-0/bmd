@@ -10,6 +10,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::{HeadingLevel, Inline};
 
 use super::context::RenderContext;
+use super::math::render_latex;
 use super::theme::Theme;
 
 pub(crate) fn footnote_marker_style(ctx: &RenderContext) -> Style {
@@ -515,6 +516,31 @@ fn inlines_to_segments(
                 style: footnote_marker_style(ctx),
                 force_break_after: false,
             }),
+            Inline::Math(latex) => {
+                let rendered = render_latex(latex);
+                if rendered.is_empty() {
+                    out.push(Segment {
+                        text: latex.clone(),
+                        style: ctx.theme.math,
+                        force_break_after: false,
+                    });
+                } else {
+                    for (row_idx, row) in rendered.cells().iter().enumerate() {
+                        out.push(Segment {
+                            text: row.iter().map(|cell| cell.as_str()).collect(),
+                            style: ctx.theme.math,
+                            force_break_after: false,
+                        });
+                        if row_idx + 1 < rendered.height() {
+                            out.push(Segment {
+                                text: String::new(),
+                                style: ctx.theme.math,
+                                force_break_after: true,
+                            });
+                        }
+                    }
+                }
+            }
             Inline::SoftBreak => out.push(Segment {
                 text: " ".to_string(),
                 style: base_style,

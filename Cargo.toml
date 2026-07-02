@@ -47,6 +47,7 @@ unicode-width = "0.2"
 unicode-segmentation = "1.13"
 parserst = "0.1.1"
 acdc-parser = "0.9.0"
+term-maths = { version = "1.0.0", features = ["ratatui"] }
 
 [profile.release]
 opt-level = 3

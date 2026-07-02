@@ -9,7 +9,8 @@ use acdc_parser::{
 use crate::parse::dto::{
     ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedDocumentParts,
     ParsedFootnoteDefinition, ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading,
-    ParsedInline, ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem, ParsedTable,
+    ParsedInline, ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem, ParsedMathBlock,
+    ParsedTable,
 };
 use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
@@ -408,8 +409,7 @@ fn map_delimited_block(
             map_verbatim_inlines(inlines, state),
         )]),
         DelimitedBlockType::DelimitedStem(StemContent { content, .. }) => {
-            Ok(vec![ParsedBlock::CodeBlock(ParsedCodeBlock {
-                language: Some("stem".into()),
+            Ok(vec![ParsedBlock::MathBlock(ParsedMathBlock {
                 content: (*content).to_string(),
             })])
         }
@@ -839,7 +839,7 @@ fn map_inline_macro(
             .text
             .map(|text| vec![ParsedInline::Text(text.to_string())])
             .unwrap_or_default(),
-        InlineMacro::Stem(stem) => vec![ParsedInline::Code(stem.content.to_string())],
+        InlineMacro::Stem(stem) => vec![ParsedInline::Math(stem.content.to_string())],
         InlineMacro::Icon(icon) => vec![ParsedInline::Text(format!(
             "[icon:{}]",
             source_to_string(&icon.target)
@@ -874,7 +874,7 @@ fn map_inline_macro_without_state(macro_node: &InlineMacro<'_>) -> Vec<ParsedInl
             .text
             .map(|text| vec![ParsedInline::Text(text.to_string())])
             .unwrap_or_default(),
-        InlineMacro::Stem(stem) => vec![ParsedInline::Code(stem.content.to_string())],
+        InlineMacro::Stem(stem) => vec![ParsedInline::Math(stem.content.to_string())],
         _ => Vec::new(),
     }
 }
@@ -1083,5 +1083,24 @@ mod tests {
             panic!("expected table");
         };
         assert_eq!(table.rows[0].len(), 2);
+    }
+
+    #[test]
+    fn parse_asciidoc_inline_and_block_stem() {
+        let dto = parse("= Doc\n\nInline stem:[x^2] here.\n\n[stem]\n++++\nx^2 + y^2\n++++\n")
+            .unwrap();
+        let doc = dto.into_domain().unwrap();
+        let Block::Paragraph(inlines) = &doc.blocks[1] else {
+            panic!("expected paragraph");
+        };
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::Math(content) if content == "x^2"))
+        );
+        let Block::MathBlock(math) = &doc.blocks[2] else {
+            panic!("expected math block, got {:?}", doc.blocks[2]);
+        };
+        assert!(math.content.contains("x^2"));
     }
 }

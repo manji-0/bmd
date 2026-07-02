@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::parse::dto::{
     ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedFootnoteDefinition,
     ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink,
-    ParsedLinkKind, ParsedList, ParsedListItem, ParsedMermaidDiagram, ParsedTable,
+    ParsedLinkKind, ParsedList, ParsedListItem, ParsedMathBlock, ParsedMermaidDiagram, ParsedTable,
 };
 use crate::parse::error::ParseError;
 
@@ -112,7 +112,8 @@ impl<'a> ParserState<'a> {
                 Event::HardBreak => self.hard_break(),
                 Event::Rule => self.blocks.push(ParsedBlock::Rule),
                 Event::FootnoteReference(label) => self.footnote_reference(label.into_string()),
-                Event::InlineMath(_) | Event::DisplayMath(_) => {}
+                Event::InlineMath(math) => self.inline_math(math.into_string()),
+                Event::DisplayMath(math) => self.display_math(math.into_string()),
                 Event::TaskListMarker(checked) => self.task_list_marker(checked),
             }
         }
@@ -701,6 +702,21 @@ impl<'a> ParserState<'a> {
         } else {
             self.push_inline_to_list_item(inline);
         }
+    }
+
+    fn inline_math(&mut self, content: String) {
+        let inline = ParsedInline::Math(content);
+        if let Some(parser) = self.inline_parser() {
+            parser.current_target().push(inline);
+        } else {
+            self.push_inline_to_list_item(inline);
+        }
+    }
+
+    fn display_math(&mut self, content: String) {
+        self.blocks.push(ParsedBlock::MathBlock(ParsedMathBlock {
+            content,
+        }));
     }
 }
 

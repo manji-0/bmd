@@ -97,7 +97,7 @@ fn collect_block_link_hits(
         Block::List(list) => {
             collect_list_link_hits(list, block_idx, width, base_x, ctx, hits, line_offset);
         }
-        Block::Table(_) | Block::CodeBlock(_) | Block::Rule => {
+        Block::Table(_) | Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {
             *line_offset += measure_block_height(block, block_idx, width, ctx);
         }
     }
@@ -290,6 +290,7 @@ fn flatten_inline_pieces_inner(
                     link_id: None,
                 });
             }
+            Inline::Math(latex) => flatten_text_pieces(latex, active_link, out),
             Inline::SoftBreak => out.push(FlatPiece::Space {
                 link_id: active_link,
             }),
@@ -418,7 +419,7 @@ fn block_first_link_line(
             }
             None
         }
-        Block::CodeBlock(_) | Block::Rule => None,
+        Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => None,
     }
 }
 
@@ -466,6 +467,7 @@ fn inlines_contain_link(inlines: &[Inline], link_id: LinkId) -> bool {
         | Inline::Superscript(c) => inlines_contain_link(c, link_id),
         Inline::Text(_)
         | Inline::Code(_)
+        | Inline::Math(_)
         | Inline::HardBreak
         | Inline::SoftBreak
         | Inline::FootnoteReference(_, _) => false,

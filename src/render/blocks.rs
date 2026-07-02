@@ -13,10 +13,11 @@ use unicode_width::UnicodeWidthStr;
 
 use super::context::RenderContext;
 use super::inline::{heading_styles, highlight_line, inlines_to_wrapped_lines, syntect_span};
+use super::math::render_math_block;
 use super::measure::measure_block_height;
 use super::table::render_table;
 
-use crate::domain::{Block, CodeBlock, Heading, Inline, List};
+use crate::domain::{Block, CodeBlock, Heading, Inline, List, MathBlock};
 
 pub(crate) fn render_block(
     block: &Block,
@@ -33,6 +34,9 @@ pub(crate) fn render_block(
             render_paragraph(inlines, area, buf, skip_rows, ctx, line_offset)
         }
         Block::CodeBlock(cb) => render_code_block(cb, area, buf, skip_rows, ctx, line_offset),
+        Block::MathBlock(math) => {
+            render_math_block_content(math, area, buf, skip_rows, ctx)
+        }
         Block::BlockQuote(blocks) => {
             render_blockquote(blocks, area, buf, skip_rows, ctx, line_offset)
         }
@@ -86,6 +90,16 @@ fn render_paragraph(
         area.width as usize,
     );
     render_offset_lines(&rows, area, buf, skip_rows);
+}
+
+fn render_math_block_content(
+    math: &MathBlock,
+    area: Rect,
+    buf: &mut Buffer,
+    skip_rows: usize,
+    ctx: &RenderContext,
+) {
+    render_math_block(&math.content, area, buf, skip_rows, ctx);
 }
 
 fn render_offset_lines(

@@ -51,6 +51,7 @@ pub struct Theme {
     pub table_cell: Style,
     pub table_border: Style,
     pub mermaid_placeholder: Style,
+    pub math: Style,
     pub search_match: Style,
     pub search_match_selected: Style,
 }
@@ -442,6 +443,7 @@ impl Palette {
             table_cell: Style::default(),
             table_border: fg(self.table_border),
             mermaid_placeholder: fg(self.mermaid),
+            math: fg(self.code_fg).italic(),
         }
     }
 }

@@ -180,6 +180,7 @@ impl ThemeSection {
                 base.mermaid_placeholder,
                 self.mermaid_placeholder,
             )?,
+            math: base.math,
             search_match: override_style(base.search_match, self.search_match)?,
             search_match_selected: override_style(
                 base.search_match_selected,

@@ -11,6 +11,7 @@ mod inline;
 mod links;
 mod list_marker;
 mod measure;
+mod math;
 mod mermaid;
 mod preview_cache;
 mod search;
