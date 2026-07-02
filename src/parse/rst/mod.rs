@@ -1,17 +1,19 @@
 //! reStructuredText parser: parserst AST -> DTO.
 
 mod lists;
+mod tables;
 
 use std::collections::HashMap;
 
 use lists::{EnhancedBlock, RichBody, RichList, RichListItem};
 use parserst::{Block as RstBlock, Field, Inline as RstInline, ListKind};
+use tables::TableRegionMeta;
 
 use crate::parse::dto::{
     ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList, ParsedDocument,
     ParsedDocumentParts, ParsedFootnoteDefinition, ParsedFrontMatter, ParsedFrontMatterKind,
     ParsedHeading, ParsedInline, ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem,
-    ParsedMathBlock, ParsedTable,
+    ParsedMathBlock, ParsedTable, ParsedAlignment,
 };
 use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
@@ -36,17 +38,33 @@ struct RestState {
     footnote_order: Vec<usize>,
     footnote_label_to_id: HashMap<String, usize>,
     front_matter: Option<ParsedFrontMatter>,
+    table_regions: Vec<TableRegionMeta>,
+    table_region_index: usize,
 }
 
 impl RestState {
-    fn new(front_matter: Option<ParsedFrontMatter>) -> Self {
+    fn new(front_matter: Option<ParsedFrontMatter>, table_regions: Vec<TableRegionMeta>) -> Self {
         Self {
             parts: ParsedDocumentParts::default(),
             footnotes: Vec::new(),
             footnote_order: Vec::new(),
             footnote_label_to_id: HashMap::new(),
             front_matter,
+            table_regions,
+            table_region_index: 0,
         }
+    }
+
+    fn next_table_meta(&mut self, columns: usize) -> TableRegionMeta {
+        let meta = self
+            .table_regions
+            .get(self.table_region_index)
+            .cloned()
+            .unwrap_or_else(|| TableRegionMeta {
+                alignments: vec![ParsedAlignment::Left; columns.max(1)],
+            });
+        self.table_region_index += 1;
+        meta
     }
 
     fn into_document(self, blocks: Vec<ParsedBlock>) -> ParsedDocument {
@@ -88,8 +106,9 @@ pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
     let blocks = parserst::parse(content)
         .map_err(|error| ParseError::syntax(MarkupFormat::Rest, error.to_string()))?;
     let (front_matter, body_start) = extract_leading_front_matter(&blocks);
+    let table_regions = tables::find_table_regions(content);
     let enhanced = lists::enhance_blocks(content, &blocks[body_start..]);
-    let mut state = RestState::new(front_matter);
+    let mut state = RestState::new(front_matter, table_regions);
     let parsed_blocks = map_enhanced_blocks(&enhanced, &mut state)?;
     Ok(state.into_document(parsed_blocks))
 }
@@ -195,14 +214,19 @@ fn map_rich_list_item(
     item: &RichListItem,
     state: &mut RestState,
 ) -> Result<ParsedListItem, ParseError> {
+    let (inlines, checklist_id, checked) = parse_checklist_item_prefix(&item.inlines, state);
     let mut blocks = Vec::new();
-    if !item.inlines.is_empty() {
-        blocks.push(ParsedBlock::Paragraph(map_inlines(&item.inlines, state)));
+    if !inlines.is_empty() {
+        blocks.push(ParsedBlock::Paragraph(map_inlines(&inlines, state)));
     }
     for body in &item.body {
         blocks.extend(map_rich_body(body, state)?);
     }
-    Ok(ParsedListItem::plain(blocks))
+    Ok(ParsedListItem {
+        checklist_id,
+        checked,
+        content: blocks,
+    })
 }
 
 fn map_rich_body(body: &RichBody, state: &mut RestState) -> Result<Vec<ParsedBlock>, ParseError> {
@@ -246,21 +270,43 @@ fn map_block(block: &RstBlock, state: &mut RestState) -> Result<Vec<ParsedBlock>
             items: items
                 .iter()
                 .map(|item| {
-                    ParsedListItem::plain(vec![ParsedBlock::Paragraph(map_inlines(item, state))])
+                    let (inlines, checklist_id, checked) =
+                        parse_checklist_item_prefix(item, state);
+                    ParsedListItem {
+                        checklist_id,
+                        checked,
+                        content: vec![ParsedBlock::Paragraph(map_inlines(&inlines, state))],
+                    }
                 })
                 .collect(),
         })],
-        RstBlock::Table { headers, rows } => vec![ParsedBlock::Table(ParsedTable {
-            headers: headers
-                .iter()
-                .map(|cell| map_inlines(cell, state))
-                .collect(),
-            rows: rows
-                .iter()
-                .map(|row| row.iter().map(|cell| map_inlines(cell, state)).collect())
-                .collect(),
-            alignments: vec![],
-        })],
+        RstBlock::Table { headers, rows } => {
+            let column_count = headers
+                .len()
+                .max(rows.first().map(|row| row.len()).unwrap_or(0))
+                .max(1);
+            let meta = state.next_table_meta(column_count);
+            vec![ParsedBlock::Table(ParsedTable {
+                headers: headers
+                    .iter()
+                    .map(|cell| map_inlines(cell, state))
+                    .collect(),
+                rows: rows
+                    .iter()
+                    .filter(|row| {
+                        let cells: Vec<String> =
+                            row.iter().map(|cell| rst_inline_plain(cell)).collect();
+                        !tables::is_alignment_separator_row(&cells)
+                    })
+                    .map(|row| {
+                        row.iter()
+                            .map(|cell| map_inlines(cell, state))
+                            .collect()
+                    })
+                    .collect(),
+                alignments: meta.alignments,
+            })]
+        }
         RstBlock::Directive {
             name,
             argument,
@@ -600,6 +646,40 @@ fn read_footnote_reference(text: &str, open: usize) -> Option<(String, usize)> {
     Some((label, after + 1))
 }
 
+fn parse_checklist_item_prefix(
+    inlines: &[RstInline],
+    state: &mut RestState,
+) -> (Vec<RstInline>, Option<u32>, bool) {
+    let plain = rst_inline_plain(inlines);
+    let Some((checked, rest)) = parse_checkbox_prefix(&plain) else {
+        return (inlines.to_vec(), None, false);
+    };
+    let id = state.parts.next_checklist_id();
+    let remaining = if inlines.len() == 1 && matches!(&inlines[0], RstInline::Text(_)) {
+        if rest.is_empty() {
+            Vec::new()
+        } else {
+            vec![RstInline::Text(rest)]
+        }
+    } else {
+        vec![RstInline::Text(rest)]
+    };
+    (remaining, Some(id), checked)
+}
+
+fn parse_checkbox_prefix(text: &str) -> Option<(bool, String)> {
+    let trimmed = text.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("[ ]") {
+        return Some((false, rest.trim_start().to_string()));
+    }
+    for prefix in ["[x]", "[X]"] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            return Some((true, rest.trim_start().to_string()));
+        }
+    }
+    None
+}
+
 fn paragraph_is_horizontal_rule(inlines: &[RstInline]) -> bool {
     if inlines.len() != 1 {
         return false;
@@ -650,7 +730,7 @@ fn mermaid_link_label(source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Block, Inline, LinkKind};
+    use crate::domain::{Alignment, Block, Inline, LinkKind};
 
     #[test]
     fn parse_rest_heading_and_emphasis() {
@@ -853,5 +933,28 @@ mod tests {
             &inlines[0],
             Inline::Strikethrough(children) if children == &[Inline::Text("deleted".into())]
         ));
+    }
+
+    #[test]
+    fn parse_rest_table_column_alignments() {
+        let source = "=====  =====\nLeft   Right\n=====  =====\nA      B\n-----  ------:\nC       D\n=====  =====\n";
+        let doc = parse(source).unwrap().into_domain().unwrap();
+        let Block::Table(table) = &doc.blocks[0] else {
+            panic!("expected table");
+        };
+        assert_eq!(table.alignments, vec![Alignment::Left, Alignment::Right]);
+        assert_eq!(table.rows.len(), 2);
+    }
+
+    #[test]
+    fn parse_rest_checklist_items() {
+        let doc = parse("- [ ] Todo\n- [x] Done").unwrap().into_domain().unwrap();
+        let Block::List(list) = &doc.blocks[0] else {
+            panic!("expected list");
+        };
+        assert!(list.items[0].checklist_id.is_some());
+        assert!(!list.items[0].checked);
+        assert!(list.items[1].checklist_id.is_some());
+        assert!(list.items[1].checked);
     }
 }

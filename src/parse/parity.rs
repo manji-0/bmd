@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::domain::{Block, Inline};
+    use crate::domain::{Alignment, Block, Inline};
     use crate::parse::{MarkupFormat, parse_dto};
 
     fn domain(format: MarkupFormat, source: &str) -> crate::domain::Document {
@@ -144,6 +144,51 @@ mod tests {
                 panic!("expected paragraph");
             };
             assert!(inlines.iter().any(|inline| matches!(inline, Inline::Code(c) if c == "code")));
+        }
+    }
+
+    #[test]
+    fn parity_checklist_items() {
+        let markdown = domain(MarkupFormat::Markdown, "- [ ] Todo\n- [x] Done");
+        let asciidoc = domain(MarkupFormat::AsciiDoc, "* [ ] Todo\n* [x] Done");
+        let rest = domain(MarkupFormat::Rest, "- [ ] Todo\n- [x] Done");
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            let Block::List(list) = &doc.blocks[0] else {
+                panic!("expected list");
+            };
+            assert!(list.items[0].checklist_id.is_some());
+            assert!(!list.items[0].checked);
+            assert!(list.items[1].checklist_id.is_some());
+            assert!(list.items[1].checked);
+        }
+    }
+
+    #[test]
+    fn parity_table_column_alignments() {
+        let markdown = domain(
+            MarkupFormat::Markdown,
+            "| Left | Right |\n|------|------:|\n| A | B |",
+        );
+        let asciidoc = domain(
+            MarkupFormat::AsciiDoc,
+            "[cols=\"<,>\"]\n|===\n|Left |Right\n\n|A |B\n|===\n",
+        );
+        let rest = domain(
+            MarkupFormat::Rest,
+            "=====  =====\nLeft   Right\n=====  =====\nA      B\n-----  ------:\nC       D\n=====  =====\n",
+        );
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            let block = doc
+                .blocks
+                .iter()
+                .find(|block| matches!(block, Block::Table(_)))
+                .unwrap_or_else(|| panic!("expected table in {:?}", doc.blocks));
+            let Block::Table(table) = block else {
+                unreachable!();
+            };
+            assert_eq!(table.alignments.last().copied(), Some(Alignment::Right));
         }
     }
 }
