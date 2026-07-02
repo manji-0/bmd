@@ -5,6 +5,8 @@ use crate::parse::dto::ParsedAlignment;
 #[derive(Debug, Clone)]
 pub(crate) struct TableRegionMeta {
     pub alignments: Vec<ParsedAlignment>,
+    pub headers: Vec<String>,
+    pub rows: Vec<Vec<String>>,
 }
 
 pub(crate) fn find_table_regions(content: &str) -> Vec<TableRegionMeta> {
@@ -54,12 +56,36 @@ fn is_alignment_row(line: &str) -> bool {
             .all(|c| c == '-' || c == ':' || c == ' ' || c == '\t')
 }
 
+fn split_grid_row(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') {
+        return split_table_row(line);
+    }
+    trimmed
+        .split('|')
+        .map(str::trim)
+        .filter(|cell| !cell.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn is_grid_data_row(line: &str) -> bool {
+    line.trim().starts_with('|') && line.contains('|')
+}
 fn split_table_row(line: &str) -> Vec<String> {
     line.split("  ")
         .map(str::trim)
         .filter(|cell| !cell.is_empty())
         .map(str::to_string)
         .collect()
+}
+
+fn pad_row(mut row: Vec<String>, column_count: usize) -> Vec<String> {
+    while row.len() < column_count {
+        row.push(String::new());
+    }
+    row.truncate(column_count);
+    row
 }
 
 fn parse_alignment_cell(cell: &str) -> ParsedAlignment {
@@ -92,14 +118,16 @@ fn parse_simple_table_region(lines: &[&str], start: usize) -> Option<(TableRegio
     if header.is_empty() {
         return None;
     }
+    let headers = split_table_row(header);
     index += 1;
     if index >= lines.len() || !is_simple_table_boundary(lines[index]) {
         return None;
     }
     index += 1;
 
-    let column_count = split_table_row(header).len().max(1);
+    let column_count = headers.len().max(1);
     let mut alignments = vec![ParsedAlignment::Left; column_count];
+    let mut rows = Vec::new();
 
     while index < lines.len() && !is_simple_table_boundary(lines[index]) {
         if lines[index].trim().is_empty() {
@@ -112,6 +140,8 @@ fn parse_simple_table_region(lines: &[&str], start: usize) -> Option<(TableRegio
                 alignments.push(ParsedAlignment::Left);
             }
             alignments.truncate(column_count);
+        } else {
+            rows.push(pad_row(split_table_row(lines[index]), column_count));
         }
         index += 1;
     }
@@ -120,7 +150,14 @@ fn parse_simple_table_region(lines: &[&str], start: usize) -> Option<(TableRegio
         index += 1;
     }
 
-    Some((TableRegionMeta { alignments }, index))
+    Some((
+        TableRegionMeta {
+            alignments,
+            headers,
+            rows,
+        },
+        index,
+    ))
 }
 
 fn parse_grid_separator_alignments(line: &str) -> Vec<ParsedAlignment> {
@@ -141,8 +178,11 @@ fn parse_grid_table_region(lines: &[&str], start: usize) -> Option<(TableRegionM
         .count()
         .max(1);
     let mut alignments = vec![ParsedAlignment::Left; column_count];
+    let mut headers = Vec::new();
+    let mut rows = Vec::new();
     let mut index = start + 1;
     let mut end = start + 1;
+    let mut saw_header_separator = false;
 
     while index < lines.len() {
         if lines[index].trim().is_empty() {
@@ -157,6 +197,14 @@ fn parse_grid_table_region(lines: &[&str], start: usize) -> Option<(TableRegionM
                     alignments.push(ParsedAlignment::Left);
                 }
                 alignments.truncate(column_count);
+            }
+            saw_header_separator = true;
+        } else if is_grid_data_row(lines[index]) {
+            let row = pad_row(split_grid_row(lines[index]), column_count);
+            if headers.is_empty() {
+                headers = row;
+            } else if saw_header_separator {
+                rows.push(row);
             }
         }
         if is_grid_border(lines[index]) {
@@ -175,7 +223,14 @@ fn parse_grid_table_region(lines: &[&str], start: usize) -> Option<(TableRegionM
         end = index;
     }
 
-    Some((TableRegionMeta { alignments }, end))
+    Some((
+        TableRegionMeta {
+            alignments,
+            headers,
+            rows,
+        },
+        end,
+    ))
 }
 
 pub(crate) fn is_alignment_separator_row(cells: &[String]) -> bool {
@@ -207,5 +262,18 @@ mod tests {
         let regions = find_table_regions(source);
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].alignments, vec![ParsedAlignment::Left, ParsedAlignment::Right]);
+        assert_eq!(regions[0].headers, vec!["Left", "Right"]);
+        assert_eq!(regions[0].rows, vec![vec!["A".to_string(), "B".to_string()]]);
+    }
+
+    #[test]
+    fn rest_simple_table_region_reads_body_cells() {
+        let source = "=====  =====\nLeft   Right\n=====  =====\n`link <https://example.com>`_  text\n-----  -----\n=====  =====\n";
+        let regions = find_table_regions(source);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].headers, vec!["Left", "Right"]);
+        assert_eq!(regions[0].rows.len(), 1);
+        assert!(regions[0].rows[0][0].contains("link"));
+        assert_eq!(regions[0].rows[0][1], "text");
     }
 }

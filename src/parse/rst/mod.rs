@@ -68,6 +68,8 @@ impl RestState {
             .cloned()
             .unwrap_or_else(|| TableRegionMeta {
                 alignments: vec![ParsedAlignment::Left; columns.max(1)],
+                headers: Vec::new(),
+                rows: Vec::new(),
             });
         self.table_region_index += 1;
         meta
@@ -293,24 +295,42 @@ fn map_block(block: &RstBlock, state: &mut RestState) -> Result<Vec<ParsedBlock>
                 .max(rows.first().map(|row| row.len()).unwrap_or(0))
                 .max(1);
             let meta = state.next_table_meta(column_count);
+            let use_source = !meta.headers.is_empty() || !meta.rows.is_empty();
             vec![ParsedBlock::Table(ParsedTable {
-                headers: headers
-                    .iter()
-                    .map(|cell| map_inlines(cell, state))
-                    .collect(),
-                rows: rows
-                    .iter()
-                    .filter(|row| {
-                        let cells: Vec<String> =
-                            row.iter().map(|cell| rst_inline_plain(cell)).collect();
-                        !tables::is_alignment_separator_row(&cells)
-                    })
-                    .map(|row| {
-                        row.iter()
-                            .map(|cell| map_inlines(cell, state))
-                            .collect()
-                    })
-                    .collect(),
+                headers: if use_source && !meta.headers.is_empty() {
+                    meta.headers
+                        .iter()
+                        .map(|cell| map_inlines(&lists::parse_rst_inlines(cell), state))
+                        .collect()
+                } else {
+                    headers
+                        .iter()
+                        .map(|cell| map_inlines(cell, state))
+                        .collect()
+                },
+                rows: if use_source && !meta.rows.is_empty() {
+                    meta.rows
+                        .iter()
+                        .map(|row| {
+                            row.iter()
+                                .map(|cell| map_inlines(&lists::parse_rst_inlines(cell), state))
+                                .collect()
+                        })
+                        .collect()
+                } else {
+                    rows.iter()
+                        .filter(|row| {
+                            let cells: Vec<String> =
+                                row.iter().map(|cell| rst_inline_plain(cell)).collect();
+                            !tables::is_alignment_separator_row(&cells)
+                        })
+                        .map(|row| {
+                            row.iter()
+                                .map(|cell| map_inlines(cell, state))
+                                .collect()
+                        })
+                        .collect()
+                },
                 alignments: meta.alignments,
             })]
         }
@@ -1049,6 +1069,39 @@ mod tests {
             panic!("expected paragraph");
         };
         assert!(inlines.iter().any(|inline| matches!(inline, Inline::Math(s) if s == "x^2")));
+    }
+
+    #[test]
+    fn parse_rest_table_inline_link() {
+        let source = "=====  =====\nLeft   Right\n=====  =====\n`link <https://example.com>`_  text\n-----  -----\n=====  =====\n";
+        let doc = parse(source).unwrap().into_domain().unwrap();
+        let Block::Table(table) = &doc.blocks[0] else {
+            panic!("expected table, got {:?}", doc.blocks);
+        };
+        assert_eq!(doc.links.len(), 1);
+        assert_eq!(doc.links[0].url.as_str(), "https://example.com");
+        let has_link = table
+            .rows
+            .iter()
+            .flatten()
+            .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+        assert!(has_link);
+    }
+
+    #[test]
+    fn parse_rest_grid_table_inline_link() {
+        let source = "+---+---+\n| A | B |\n+===+===+\n| `link <https://example.com>`_ | text |\n+---+---+\n";
+        let doc = parse(source).unwrap().into_domain().unwrap();
+        let Block::Table(table) = &doc.blocks[0] else {
+            panic!("expected table, got {:?}", doc.blocks);
+        };
+        assert_eq!(doc.links.len(), 1);
+        let has_link = table
+            .rows
+            .iter()
+            .flatten()
+            .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+        assert!(has_link);
     }
 
     #[test]

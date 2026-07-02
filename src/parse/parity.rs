@@ -228,6 +228,10 @@ mod tests {
                 MarkupFormat::AsciiDoc,
                 "|===\n|A |B\n\n|https://example.com[link] |text\n|===\n",
             ),
+            (
+                MarkupFormat::Rest,
+                "=====  =====\nLeft   Right\n=====  =====\n`link <https://example.com>`_  text\n-----  -----\n=====  =====\n",
+            ),
         ];
 
         for (format, source) in cases {
@@ -265,6 +269,35 @@ mod tests {
                 inlines
                     .iter()
                     .any(|inline| matches!(inline, Inline::Math(content) if content.contains("x^2")))
+            );
+        }
+    }
+
+    #[test]
+    fn parity_inline_subscript_and_superscript() {
+        let markdown = domain(MarkupFormat::Markdown, "H~2~O and x^2^y");
+        let asciidoc = domain(MarkupFormat::AsciiDoc, "= Doc\n\nH~2~O and x^2^y");
+
+        for doc in [&markdown, &asciidoc] {
+            let block = doc
+                .blocks
+                .iter()
+                .find(|block| matches!(block, Block::Paragraph(_)))
+                .unwrap_or_else(|| panic!("expected paragraph in {:?}", doc.blocks));
+            let Block::Paragraph(inlines) = block else {
+                unreachable!();
+            };
+            assert!(
+                inlines
+                    .iter()
+                    .any(|inline| matches!(inline, Inline::Subscript(_))),
+                "expected subscript in {doc:?}"
+            );
+            assert!(
+                inlines
+                    .iter()
+                    .any(|inline| matches!(inline, Inline::Superscript(_))),
+                "expected superscript in {doc:?}"
             );
         }
     }

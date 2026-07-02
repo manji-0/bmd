@@ -375,7 +375,7 @@ fn parse_literal_block(
     (RstBlock::LiteralBlock(body.trim_end().to_string()), index - start)
 }
 
-fn parse_rst_inlines(text: &str) -> Vec<RstInline> {
+pub(crate) fn parse_rst_inlines(text: &str) -> Vec<RstInline> {
     match parserst::parse(&format!("{text}\n")) {
         Ok(blocks) => match blocks.first() {
             Some(RstBlock::Paragraph(inlines)) => inlines.clone(),
