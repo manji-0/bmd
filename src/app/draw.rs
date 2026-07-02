@@ -3,6 +3,8 @@
 use ratatui::{
     Terminal,
     backend::Backend,
+    style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Clear, Paragraph},
 };
 
@@ -88,6 +90,11 @@ impl App {
             return;
         }
 
+        if link.kind == crate::domain::LinkKind::Toc {
+            self.draw_toc_preview(frame, area);
+            return;
+        }
+
         let title = link
             .title
             .as_deref()
@@ -142,5 +149,57 @@ impl App {
             let message = preview_failed_message(link.kind);
             frame.render_widget(Paragraph::new(message), inner);
         }
+    }
+
+    fn draw_toc_preview(&self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+        let entries = self.collect_toc_entries();
+        let popup = crate::render::centered_rect(
+            crate::render::PREVIEW_POPUP_PERCENT,
+            crate::render::PREVIEW_POPUP_PERCENT,
+            area,
+        );
+        frame.render_widget(Clear, popup);
+        let block = Block::bordered().title("Table of Contents");
+        let inner = block.inner(popup);
+        frame.render_widget(block, popup);
+
+        if entries.is_empty() {
+            frame.render_widget(Paragraph::new("(no headings)"), inner);
+            return;
+        }
+
+        let selected = self.toc_selected_index;
+        let normal_style = self.theme.text;
+        let selected_style = self.theme.link_selected;
+        let prefix_style = Style::default().add_modifier(Modifier::DIM);
+
+        let lines: Vec<Line> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, (level, text, _slug))| {
+                let indent = "  ".repeat(level.as_u8().saturating_sub(1) as usize);
+                let prefix = level.prefix();
+                if i == selected {
+                    Line::from(vec![
+                        Span::styled(format!("{indent}{prefix}"), selected_style),
+                        Span::styled(text.as_str(), selected_style),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled(format!("{indent}{prefix}"), prefix_style),
+                        Span::styled(text.as_str(), normal_style),
+                    ])
+                }
+            })
+            .collect();
+
+        let visible_height = inner.height as usize;
+        let scroll_y = if visible_height > 0 && selected >= visible_height {
+            selected - visible_height + 1
+        } else {
+            0
+        };
+        let paragraph = Paragraph::new(lines).scroll((scroll_y as u16, 0));
+        frame.render_widget(paragraph, inner);
     }
 }

@@ -461,6 +461,17 @@ fn map_directive(
             children: vec![ParsedInline::Text(label)],
         }])]);
     }
+    if name.eq_ignore_ascii_case("contents") {
+        let link_id = state.parts.push_link(ParsedLink::new(
+            "bmd:toc".into(),
+            None,
+            ParsedLinkKind::Toc,
+        ));
+        return Ok(vec![ParsedBlock::Paragraph(vec![ParsedInline::Link {
+            link_id,
+            children: vec![ParsedInline::Text("[table of contents]".into())],
+        }])]);
+    }
     if is_admonition(name) {
         return map_admonition(name, content, state);
     }

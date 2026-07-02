@@ -152,6 +152,7 @@ pub enum ParsedLinkKind {
     Document,
     Image,
     Mermaid,
+    Toc,
 }
 
 impl ParsedLinkKind {
@@ -172,6 +173,7 @@ impl ParsedLinkKind {
             Self::Document => LinkKind::Document,
             Self::Image => LinkKind::Image,
             Self::Mermaid => LinkKind::Mermaid,
+            Self::Toc => LinkKind::Toc,
         }
     }
 }

@@ -295,7 +295,24 @@ impl<'a> ParserState<'a> {
                             }]));
                         }
                     } else {
-                        self.finish_block(ParsedBlock::Paragraph(parser.into_inlines()));
+                        let inlines = parser.into_inlines();
+                        if let Some(link_id) = toc_marker_link_id(&inlines, &self.links) {
+                            self.links[link_id] = ParsedLink::new(
+                                "bmd:toc".into(),
+                                None,
+                                ParsedLinkKind::Toc,
+                            );
+                            self.finish_block(ParsedBlock::Paragraph(vec![
+                                ParsedInline::Link {
+                                    link_id,
+                                    children: vec![ParsedInline::Text(
+                                        "[table of contents]".into(),
+                                    )],
+                                },
+                            ]));
+                        } else {
+                            self.finish_block(ParsedBlock::Paragraph(inlines));
+                        }
                     }
                 }
             }
@@ -833,5 +850,29 @@ fn map_alignment(a: CmarkAlignment) -> ParsedAlignment {
         CmarkAlignment::Left => ParsedAlignment::Left,
         CmarkAlignment::Center => ParsedAlignment::Center,
         CmarkAlignment::Right => ParsedAlignment::Right,
+    }
+}
+
+fn toc_marker_link_id(inlines: &[ParsedInline], links: &[ParsedLink]) -> Option<usize> {
+    if inlines.len() != 1 {
+        return None;
+    }
+    let ParsedInline::Link { link_id, children } = &inlines[0] else {
+        return None;
+    };
+    if children.len() != 1 {
+        return None;
+    }
+    let ParsedInline::Text(t) = &children[0] else {
+        return None;
+    };
+    if !t.trim().eq_ignore_ascii_case("toc") {
+        return None;
+    }
+    let link = links.get(*link_id)?;
+    if link.url.eq_ignore_ascii_case(t.trim()) {
+        Some(*link_id)
+    } else {
+        None
     }
 }

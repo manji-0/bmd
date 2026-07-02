@@ -105,6 +105,11 @@ impl App {
             self.open_document_link(&url);
             return;
         }
+        if link.kind == crate::domain::LinkKind::Toc {
+            self.toc_selected_index = 0;
+            self.open_preview_now(id);
+            return;
+        }
         if link.kind.is_preview() {
             let terminal_size = self.view_state.terminal_size();
             match link.kind {
@@ -218,6 +223,60 @@ impl App {
             return;
         }
         self.scroll_to_line(line);
+    }
+
+    pub(crate) fn collect_toc_entries(&self) -> Vec<(crate::domain::HeadingLevel, String, String)> {
+        use crate::domain::{Block, Heading, Inline};
+        use crate::parse::slugify_heading;
+        let mut entries = Vec::new();
+        for block in &self.document.blocks {
+            if let Block::Heading(Heading {
+                level,
+                content,
+                anchor,
+            }) = block
+            {
+                let text = Inline::plain_text(content);
+                let slug = match anchor {
+                    Some(a) if !a.is_empty() => a.clone(),
+                    _ => slugify_heading(&text),
+                };
+                if !text.is_empty() {
+                    entries.push((*level, text, slug));
+                }
+            }
+        }
+        entries
+    }
+
+    pub(crate) fn jump_to_toc_heading(&mut self) {
+        let entries = self.collect_toc_entries();
+        let Some((_, _, slug)) = entries.get(self.toc_selected_index) else {
+            return;
+        };
+        let slug = slug.clone();
+        self.close_preview();
+        self.follow_anchor(&slug);
+    }
+
+    pub(crate) fn toc_select_next(&mut self) {
+        let count = self.collect_toc_entries().len();
+        if count == 0 {
+            return;
+        }
+        self.toc_selected_index = (self.toc_selected_index + 1) % count;
+    }
+
+    pub(crate) fn toc_select_prev(&mut self) {
+        let count = self.collect_toc_entries().len();
+        if count == 0 {
+            return;
+        }
+        self.toc_selected_index = if self.toc_selected_index == 0 {
+            count - 1
+        } else {
+            self.toc_selected_index - 1
+        };
     }
 
     fn scroll_to_line(&mut self, line_offset: usize) {

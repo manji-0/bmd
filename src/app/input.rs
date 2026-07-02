@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use crossterm::event::{Event, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 
 use crate::domain::SearchDirection;
 use crate::error::AppError;
@@ -66,6 +66,14 @@ impl App {
                 && !self.keymap.is_line_scroll_key(key)
             {
                 return Ok(false);
+            }
+        }
+
+        if let Event::Key(key) = &event {
+            if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
+                if let Some(handled) = self.handle_toc_preview_key(key) {
+                    return Ok(handled);
+                }
             }
         }
 
@@ -176,6 +184,29 @@ impl App {
             Command::Quit => self.should_quit = true,
         }
         Ok(())
+    }
+
+    fn handle_toc_preview_key(&mut self, key: &KeyEvent) -> Option<bool> {
+        let link_id = self.view_state.mode().preview_link()?;
+        let link = self.document.links.get(link_id.0)?;
+        if link.kind != crate::domain::LinkKind::Toc {
+            return None;
+        }
+        match key.code {
+            KeyCode::Char('n') | KeyCode::Tab | KeyCode::Down => {
+                self.toc_select_next();
+                Some(true)
+            }
+            KeyCode::Char('N') | KeyCode::Char('p') | KeyCode::BackTab | KeyCode::Up => {
+                self.toc_select_prev();
+                Some(true)
+            }
+            KeyCode::Char('o') | KeyCode::Enter => {
+                self.jump_to_toc_heading();
+                Some(true)
+            }
+            _ => None,
+        }
     }
 
     pub(crate) fn is_quit(&self, command: &Command) -> bool {

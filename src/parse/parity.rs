@@ -514,4 +514,26 @@ mod tests {
             .count();
         assert_eq!(link_paragraphs, 2);
     }
+
+    #[test]
+    fn parity_table_of_contents_link() {
+        let markdown = domain(
+            MarkupFormat::Markdown,
+            "# Title\n\n[[TOC]]\n\n## Section A\n\n## Section B\n",
+        );
+        let rest = domain(
+            MarkupFormat::Rest,
+            "Title\n=====\n\n.. contents::\n\nSection A\n---------\n\nSection B\n---------\n",
+        );
+
+        for doc in [&markdown, &rest] {
+            let toc_links: Vec<_> = doc
+                .links
+                .iter()
+                .filter(|l| l.kind == LinkKind::Toc)
+                .collect();
+            assert_eq!(toc_links.len(), 1, "expected exactly one TOC link");
+            assert_eq!(toc_links[0].url.as_str(), "bmd:toc");
+        }
+    }
 }

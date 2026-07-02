@@ -19,11 +19,12 @@ pub enum LinkKind {
     Document,
     Image,
     Mermaid,
+    Toc,
 }
 
 impl LinkKind {
     pub fn is_preview(self) -> bool {
-        matches!(self, Self::Image | Self::Mermaid)
+        matches!(self, Self::Image | Self::Mermaid | Self::Toc)
     }
 
     /// Classify a markdown link destination (not image URLs).

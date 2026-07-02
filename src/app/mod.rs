@@ -98,6 +98,8 @@ pub struct App {
     preview_render_cache: PreviewRenderCache,
     /// Pinch/keyboard zoom factor for the floating preview overlay (1.0 = fit).
     preview_zoom: f32,
+    /// Selected heading index within the TOC preview.
+    toc_selected_index: usize,
     last_prefetch_viewport: Option<PrefetchViewportKey>,
     document_revision: u64,
     heading_cache: HeadingOffsetCache,
@@ -196,6 +198,7 @@ impl App {
             pending_preview: None,
             preview_render_cache: PreviewRenderCache::default(),
             preview_zoom: 1.0,
+            toc_selected_index: 0,
             last_prefetch_viewport: None,
             document_revision: 0,
             heading_cache: HeadingOffsetCache::default(),

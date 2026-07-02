@@ -1,4 +1,5 @@
 use super::parse;
+use super::{MarkupFormat, parse_document};
 use crate::domain::{Block, Inline, LinkId, LinkKind};
 
 #[test]
@@ -627,4 +628,38 @@ fn parse_definition_list() {
         panic!("expected definition paragraph");
     };
     assert!(matches!(&inlines[0], Inline::Text(t) if t == "red fruit"));
+}
+
+#[test]
+fn parse_toc_marker_creates_toc_link() {
+    let doc = parse("# Title\n\n[[TOC]]\n\n## Section A\n").unwrap();
+    assert_eq!(doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(), 1);
+    assert_eq!(doc.links.iter().find(|l| l.kind == LinkKind::Toc).unwrap().url.as_str(), "bmd:toc");
+    let has_toc_inline = doc.blocks.iter().any(|b| {
+        matches!(b, Block::Paragraph(inlines) if inlines.iter().any(|i| matches!(i, Inline::Link(_, _))))
+    });
+    assert!(has_toc_inline, "expected paragraph with TOC link");
+}
+
+#[test]
+fn parse_toc_marker_case_insensitive() {
+    let doc = parse("# H1\n\n[[toc]]\n\n## H2\n").unwrap();
+    assert_eq!(doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(), 1);
+}
+
+#[test]
+fn parse_toc_without_headings_still_creates_link() {
+    let doc = parse("[[TOC]]\n\nJust a paragraph.\n").unwrap();
+    assert_eq!(doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(), 1);
+}
+
+#[test]
+fn parse_rst_contents_directive_creates_toc_link() {
+    let doc = parse_document(
+        MarkupFormat::Rest,
+        "Title\n=====\n\n.. contents::\n\nSection\n-------\n\nBody.\n",
+    )
+    .unwrap();
+    assert_eq!(doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(), 1);
+    assert_eq!(doc.links.iter().find(|l| l.kind == LinkKind::Toc).unwrap().url.as_str(), "bmd:toc");
 }

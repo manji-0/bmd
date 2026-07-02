@@ -19,11 +19,18 @@ impl App {
                 self.image_render
                     .preview_status(link_id, &self.document, &self.rendered)
             }
+            LinkKind::Toc => PreviewLoadStatus::Ready,
             _ => PreviewLoadStatus::Idle,
         }
     }
 
     pub(crate) fn preview_ready_to_open(&self, link_id: LinkId) -> bool {
+        let Some(link) = self.document.links.get(link_id.0) else {
+            return false;
+        };
+        if link.kind == LinkKind::Toc {
+            return true;
+        }
         if self.preview_protocol_cached(link_id) {
             return true;
         }

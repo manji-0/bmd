@@ -78,7 +78,7 @@ impl RenderedDocument {
         match kind {
             LinkKind::Image => self.markdown_images.get(url),
             LinkKind::Mermaid => self.mermaid_images.get(&link_id),
-            LinkKind::Web | LinkKind::Anchor | LinkKind::Document => None,
+            LinkKind::Web | LinkKind::Anchor | LinkKind::Document | LinkKind::Toc => None,
         }
     }
 }
