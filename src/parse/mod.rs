@@ -6,6 +6,7 @@ mod error;
 mod format;
 mod into_domain;
 mod markdown;
+mod parity;
 mod rst;
 mod slug;
 
