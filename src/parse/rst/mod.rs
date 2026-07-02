@@ -1,7 +1,10 @@
 //! reStructuredText parser: parserst AST -> DTO.
 
+mod lists;
+
 use std::collections::HashMap;
 
+use lists::{EnhancedBlock, RichBody, RichList, RichListItem};
 use parserst::{Block as RstBlock, Field, Inline as RstInline, ListKind};
 
 use crate::parse::dto::{
@@ -85,8 +88,9 @@ pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
     let blocks = parserst::parse(content)
         .map_err(|error| ParseError::syntax(MarkupFormat::Rest, error.to_string()))?;
     let (front_matter, body_start) = extract_leading_front_matter(&blocks);
+    let enhanced = lists::enhance_blocks(content, &blocks[body_start..]);
     let mut state = RestState::new(front_matter);
-    let parsed_blocks = map_blocks(&blocks[body_start..], &mut state)?;
+    let parsed_blocks = map_enhanced_blocks(&enhanced, &mut state)?;
     Ok(state.into_document(parsed_blocks))
 }
 
@@ -153,6 +157,59 @@ fn field_list_value_plain(field: &Field) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn map_enhanced_blocks(
+    blocks: &[EnhancedBlock],
+    state: &mut RestState,
+) -> Result<Vec<ParsedBlock>, ParseError> {
+    let mut out = Vec::new();
+    for block in blocks {
+        out.extend(map_enhanced_block(block, state)?);
+    }
+    Ok(out)
+}
+
+fn map_enhanced_block(
+    block: &EnhancedBlock,
+    state: &mut RestState,
+) -> Result<Vec<ParsedBlock>, ParseError> {
+    match block {
+        EnhancedBlock::Plain(rst_block) => map_block(rst_block, state),
+        EnhancedBlock::RichList(list) => Ok(vec![ParsedBlock::List(map_rich_list(list, state)?)]),
+    }
+}
+
+fn map_rich_list(list: &RichList, state: &mut RestState) -> Result<ParsedList, ParseError> {
+    Ok(ParsedList {
+        ordered: list.ordered,
+        items: list
+            .items
+            .iter()
+            .map(|item| map_rich_list_item(item, state))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn map_rich_list_item(
+    item: &RichListItem,
+    state: &mut RestState,
+) -> Result<ParsedListItem, ParseError> {
+    let mut blocks = Vec::new();
+    if !item.inlines.is_empty() {
+        blocks.push(ParsedBlock::Paragraph(map_inlines(&item.inlines, state)));
+    }
+    for body in &item.body {
+        blocks.extend(map_rich_body(body, state)?);
+    }
+    Ok(ParsedListItem::plain(blocks))
+}
+
+fn map_rich_body(body: &RichBody, state: &mut RestState) -> Result<Vec<ParsedBlock>, ParseError> {
+    match body {
+        RichBody::Block(block) => map_block(block, state),
+        RichBody::List(list) => Ok(vec![ParsedBlock::List(map_rich_list(list, state)?)]),
+    }
 }
 
 fn map_blocks(blocks: &[RstBlock], state: &mut RestState) -> Result<Vec<ParsedBlock>, ParseError> {
@@ -620,5 +677,32 @@ mod tests {
             &list.items[0].term[0],
             ParsedInline::Strong(children) if children == &[ParsedInline::Text("Author".into())]
         ));
+    }
+
+    #[test]
+    fn parse_rest_nested_list_preserves_structure() {
+        let doc = parse("- One\n  - Nested\n- Two").unwrap().into_domain().unwrap();
+        let Block::List(list) = &doc.blocks[0] else {
+            panic!("expected list");
+        };
+        assert_eq!(list.items.len(), 2);
+        let Block::List(nested) = &list.items[0].content[1] else {
+            panic!("expected nested list, got {:?}", list.items[0].content);
+        };
+        assert_eq!(nested.items.len(), 1);
+    }
+
+    #[test]
+    fn parse_rest_list_item_continuation() {
+        let doc = parse("- One\n\n  Continuation.\n\n- Two").unwrap().into_domain().unwrap();
+        let Block::List(list) = &doc.blocks[0] else {
+            panic!("expected list");
+        };
+        assert_eq!(list.items.len(), 2);
+        assert_eq!(list.items[0].content.len(), 2);
+        let Block::Paragraph(inlines) = &list.items[0].content[1] else {
+            panic!("expected continuation paragraph");
+        };
+        assert!(matches!(&inlines[0], Inline::Text(t) if t == "Continuation."));
     }
 }
