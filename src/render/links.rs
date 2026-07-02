@@ -1,16 +1,20 @@
 //! Link position discovery for navigation.
 
+use ratatui::style::Style;
 use ratatui::text::Line;
 
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::{Block, DefinitionList, Document, Inline, LinkId, List};
+use crate::domain::{Alignment, Block, DefinitionList, Document, Inline, LinkId, List, Table};
 
 use super::context::RenderContext;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
 use super::list_marker::list_marker_width_at;
 use super::measure::measure_block_height;
+use super::table::{
+    allocate_column_widths, cell_padding, column_alignment, wrap_cell_inlines,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LinkHit {
@@ -100,7 +104,10 @@ fn collect_block_link_hits(
         Block::DefinitionList(list) => {
             collect_definition_list_link_hits(list, block_idx, width, base_x, ctx, hits, line_offset);
         }
-        Block::Table(_) | Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {
+        Block::Table(table) => {
+            collect_table_link_hits(table, width, base_x, ctx, hits, line_offset);
+        }
+        Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {
             *line_offset += measure_block_height(block, block_idx, width, ctx);
         }
     }
@@ -176,6 +183,207 @@ fn collect_definition_list_link_hits(
     }
 }
 
+fn collect_table_link_hits(
+    table: &Table,
+    width: u16,
+    base_x: usize,
+    ctx: &RenderContext,
+    hits: &mut Vec<LinkHit>,
+    line_offset: &mut usize,
+) {
+    let col_count = table.column_count();
+    if col_count == 0 || width < 3 {
+        *line_offset += 1;
+        return;
+    }
+
+    let widths = allocate_column_widths(table, width as usize);
+
+    // Top border.
+    *line_offset += 1;
+
+    // Header rows.
+    let header_height = table_row_height(&table.headers, &widths, ctx.theme.table_header, ctx);
+    collect_table_row_link_hits(
+        &table.headers,
+        &widths,
+        &table.alignments,
+        ctx.theme.table_header,
+        ctx,
+        base_x,
+        *line_offset,
+        hits,
+    );
+    *line_offset += header_height;
+
+    // Separator.
+    *line_offset += 1;
+
+    // Body rows.
+    for row in &table.rows {
+        let row_height = table_row_height(row, &widths, ctx.theme.table_cell, ctx);
+        collect_table_row_link_hits(
+            row,
+            &widths,
+            &table.alignments,
+            ctx.theme.table_cell,
+            ctx,
+            base_x,
+            *line_offset,
+            hits,
+        );
+        *line_offset += row_height;
+    }
+
+    // Bottom border.
+    *line_offset += 1;
+}
+
+fn table_row_height(
+    cells: &[Vec<Inline>],
+    widths: &[usize],
+    style: Style,
+    ctx: &RenderContext,
+) -> usize {
+    widths
+        .iter()
+        .enumerate()
+        .map(|(i, width)| {
+            cells
+                .get(i)
+                .map(|cell| wrap_cell_inlines(cell, *width, style, ctx, 0).len())
+                .unwrap_or(1)
+        })
+        .max()
+        .unwrap_or(1)
+        .max(1)
+}
+
+fn collect_table_row_link_hits(
+    cells: &[Vec<Inline>],
+    widths: &[usize],
+    alignments: &[Alignment],
+    style: Style,
+    ctx: &RenderContext,
+    base_x: usize,
+    row_start_line: usize,
+    hits: &mut Vec<LinkHit>,
+) {
+    let max_height = table_row_height(cells, widths, style, ctx);
+
+    for row_line in 0..max_height {
+        let line = row_start_line + row_line;
+        let mut col_x = base_x + 1;
+        for (i, width) in widths.iter().enumerate() {
+            let cell = cells.get(i);
+            let wrapped = cell
+                .map(|c| wrap_cell_inlines(c, *width, style, ctx, row_start_line))
+                .unwrap_or_else(|| vec![Line::from(" ")]);
+            let line_content = wrapped
+                .get(row_line)
+                .cloned()
+                .unwrap_or_else(|| Line::from(" "));
+            let rendered_width = line_content
+                .spans
+                .iter()
+                .map(|s| s.content.width())
+                .sum::<usize>();
+            let alignment = column_alignment(alignments, i);
+            let (pad_left, _) = cell_padding(alignment, rendered_width, *width);
+            let content_x = col_x + 1 + pad_left;
+
+            if let Some(cell_inlines) = cell {
+                collect_inline_link_hits_filtered(
+                    cell_inlines,
+                    *width,
+                    content_x,
+                    row_start_line,
+                    Some(line),
+                    hits,
+                );
+            }
+
+            col_x += 1 + width + 1 + 1;
+        }
+    }
+}
+
+fn table_first_link_line(
+    table: &Table,
+    width: u16,
+    ctx: &RenderContext,
+    link_id: LinkId,
+) -> Option<usize> {
+    let col_count = table.column_count();
+    if col_count == 0 || width < 3 {
+        return None;
+    }
+
+    let widths = allocate_column_widths(table, width as usize);
+    let mut line = 0usize;
+
+    // Top border.
+    line += 1;
+
+    // Header rows.
+    if let Some(local) = first_link_line_in_table_row(
+        &table.headers,
+        &widths,
+        &table.alignments,
+        ctx.theme.table_header,
+        ctx,
+        link_id,
+    ) {
+        return Some(line + local);
+    }
+    line += table_row_height(&table.headers, &widths, ctx.theme.table_header, ctx);
+
+    // Separator.
+    line += 1;
+
+    // Body rows.
+    for row in &table.rows {
+        if let Some(local) = first_link_line_in_table_row(
+            row,
+            &widths,
+            &table.alignments,
+            ctx.theme.table_cell,
+            ctx,
+            link_id,
+        ) {
+            return Some(line + local);
+        }
+        line += table_row_height(row, &widths, ctx.theme.table_cell, ctx);
+    }
+
+    None
+}
+
+fn first_link_line_in_table_row(
+    cells: &[Vec<Inline>],
+    widths: &[usize],
+    _alignments: &[Alignment],
+    style: Style,
+    ctx: &RenderContext,
+    link_id: LinkId,
+) -> Option<usize> {
+    let mut first: Option<usize> = None;
+    for (i, cell) in cells.iter().enumerate() {
+        if !inlines_contain_link(cell, link_id) {
+            continue;
+        }
+        let width = widths.get(i).copied().unwrap_or(1);
+        let wrapped = inlines_to_wrapped_lines(cell, ctx, style, 0, width);
+        if let Some(local) = first_link_line_in_wrapped(&wrapped, cell, link_id) {
+            first = Some(match first {
+                Some(f) => f.min(local),
+                None => local,
+            });
+        }
+    }
+    first
+}
+
 #[derive(Clone, Debug)]
 enum FlatPiece {
     Word {
@@ -193,6 +401,17 @@ fn collect_inline_link_hits(
     width: usize,
     base_x: usize,
     start_line: usize,
+    hits: &mut Vec<LinkHit>,
+) {
+    collect_inline_link_hits_filtered(inlines, width, base_x, start_line, None, hits);
+}
+
+fn collect_inline_link_hits_filtered(
+    inlines: &[Inline],
+    width: usize,
+    base_x: usize,
+    start_line: usize,
+    target_line: Option<usize>,
     hits: &mut Vec<LinkHit>,
 ) {
     if width == 0 {
@@ -218,29 +437,41 @@ fn collect_inline_link_hits(
                     continue;
                 }
                 if let Some(id) = link_id {
-                    push_link_hit(hits, id, line, base_x + x, 1);
+                    if target_line.is_none_or(|target| target == line) {
+                        push_link_hit(hits, id, line, base_x + x, 1);
+                    }
                 }
                 x += 1;
             }
             FlatPiece::Word { text, link_id } => {
-                append_word_hits(&text, link_id, width, base_x, &mut line, &mut x, hits);
+                append_word_hits_filtered(
+                    &text,
+                    link_id,
+                    width,
+                    base_x,
+                    &mut line,
+                    &mut x,
+                    target_line,
+                    hits,
+                );
             }
         }
     }
 }
 
-fn append_word_hits(
+fn append_word_hits_filtered(
     word: &str,
     link_id: Option<LinkId>,
     width: usize,
     base_x: usize,
     line: &mut usize,
     x: &mut usize,
+    target_line: Option<usize>,
     hits: &mut Vec<LinkHit>,
 ) {
     let word_width = word.width();
     if word_width <= width {
-        append_fitting_word(word, link_id, width, base_x, line, x, hits);
+        append_fitting_word_filtered(word, link_id, width, base_x, line, x, target_line, hits);
         return;
     }
     for grapheme in word.graphemes(true) {
@@ -250,19 +481,22 @@ fn append_word_hits(
             *x = 0;
         }
         if let Some(id) = link_id {
-            push_link_hit(hits, id, *line, base_x + *x, grapheme_width);
+            if target_line.is_none_or(|target| target == *line) {
+                push_link_hit(hits, id, *line, base_x + *x, grapheme_width);
+            }
         }
         *x += grapheme_width;
     }
 }
 
-fn append_fitting_word(
+fn append_fitting_word_filtered(
     word: &str,
     link_id: Option<LinkId>,
     width: usize,
     base_x: usize,
     line: &mut usize,
     x: &mut usize,
+    target_line: Option<usize>,
     hits: &mut Vec<LinkHit>,
 ) {
     let word_width = word.width();
@@ -275,7 +509,9 @@ fn append_fitting_word(
         *x += 1;
     }
     if let Some(id) = link_id {
-        push_link_hit(hits, id, *line, base_x + *x, word_width);
+        if target_line.is_none_or(|target| target == *line) {
+            push_link_hit(hits, id, *line, base_x + *x, word_width);
+        }
     }
     *x += word_width;
 }
@@ -450,18 +686,7 @@ fn block_first_link_line(
         Block::DefinitionList(list) => {
             definition_list_first_link_line(list, block_idx, width, ctx, link_id)
         }
-        Block::Table(table) => {
-            for cell in table
-                .headers
-                .iter()
-                .chain(table.rows.iter().flat_map(|row| row.iter()))
-            {
-                if inlines_contain_link(cell, link_id) {
-                    return Some(0);
-                }
-            }
-            None
-        }
+        Block::Table(table) => table_first_link_line(table, width, ctx, link_id),
         Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => None,
     }
 }

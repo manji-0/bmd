@@ -1181,3 +1181,29 @@ fn link_at_click_finds_link_in_heading() {
     let id = super::links::link_at_click(&document, 80, &ctx, 0, 8);
     assert_eq!(id, Some(LinkId(0)));
 }
+
+#[test]
+fn link_at_click_finds_link_in_table_cell() {
+    let document = parse("| A | B |\n|---|---|\n| [link](https://example.com) | text |").unwrap();
+    let ctx = test_render_context();
+    let hits = super::links::collect_link_hits(&document, 80, &ctx);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, LinkId(0));
+    // top border (0), header (1), separator (2), body row (3), bottom border (4)
+    assert_eq!(hits[0].line, 3);
+    assert_eq!(
+        super::links::link_at_click(&document, 80, &ctx, 3, hits[0].x),
+        Some(LinkId(0))
+    );
+    assert!(super::links::link_at_click(&document, 80, &ctx, 3, hits[0].x - 1).is_none());
+}
+
+#[test]
+fn find_link_line_offset_in_table_body_row() {
+    let document = parse("| A | B |\n|---|---|\n| [link](https://example.com) | text |").unwrap();
+    let ctx = test_render_context();
+    assert_eq!(
+        super::find_link_line_offset(&document, 80, &ctx, LinkId(0)),
+        Some(3)
+    );
+}
