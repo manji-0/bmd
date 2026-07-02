@@ -438,15 +438,16 @@ fn collect_verbatim(blocks: &[RstBlock]) -> String {
 }
 
 fn map_inlines(inlines: &[RstInline], state: &mut RestState) -> Vec<ParsedInline> {
-    inlines
+    let mapped = inlines
         .iter()
         .flat_map(|inline| map_inline(inline, state))
-        .collect()
+        .collect::<Vec<_>>();
+    normalize_rst_inline_patterns(mapped)
 }
 
 fn map_inline(inline: &RstInline, state: &mut RestState) -> Vec<ParsedInline> {
     match inline {
-        RstInline::Text(text) => expand_footnote_refs(text, state),
+        RstInline::Text(text) => expand_rst_text(text, state),
         RstInline::Em(children) => vec![ParsedInline::Emphasis(map_inlines(children, state))],
         RstInline::Strong(children) => vec![ParsedInline::Strong(map_inlines(children, state))],
         RstInline::Code(code) => vec![ParsedInline::Code(code.clone())],
@@ -463,6 +464,89 @@ fn map_inline(inline: &RstInline, state: &mut RestState) -> Vec<ParsedInline> {
             }]
         }
     }
+}
+
+fn expand_rst_text(text: &str, state: &mut RestState) -> Vec<ParsedInline> {
+    let mut out = Vec::new();
+    for (index, segment) in text.split("\\\n").enumerate() {
+        if index > 0 {
+            out.push(ParsedInline::HardBreak);
+        }
+        for inline in expand_footnote_refs(segment, state) {
+            match inline {
+                ParsedInline::Text(value) => out.extend(expand_strikethrough(&value)),
+                other => out.push(other),
+            }
+        }
+    }
+    out
+}
+
+fn expand_strikethrough(text: &str) -> Vec<ParsedInline> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("~~") {
+        if start > 0 {
+            out.push(ParsedInline::Text(rest[..start].to_string()));
+        }
+        rest = &rest[start + 2..];
+        let Some(end) = rest.find("~~") else {
+            out.push(ParsedInline::Text(format!("~~{rest}")));
+            return out;
+        };
+        out.push(ParsedInline::Strikethrough(vec![ParsedInline::Text(
+            rest[..end].to_string(),
+        )]));
+        rest = &rest[end + 2..];
+    }
+    if !rest.is_empty() {
+        out.push(ParsedInline::Text(rest.to_string()));
+    }
+    out
+}
+
+fn normalize_rst_inline_patterns(inlines: Vec<ParsedInline>) -> Vec<ParsedInline> {
+    let mut out = Vec::new();
+    let mut iter = inlines.into_iter();
+    while let Some(inline) = iter.next() {
+        let Some((before, role)) = parse_inline_role_prefix(&inline) else {
+            out.push(inline);
+            continue;
+        };
+        let Some(ParsedInline::Code(content)) = iter.next() else {
+            out.push(inline);
+            continue;
+        };
+        if !before.is_empty() {
+            out.push(ParsedInline::Text(before));
+        }
+        out.push(match role {
+            InlineRole::Math => ParsedInline::Math(content),
+            InlineRole::Strike => ParsedInline::Strikethrough(vec![ParsedInline::Text(content)]),
+        });
+    }
+    out
+}
+
+#[derive(Clone, Copy)]
+enum InlineRole {
+    Math,
+    Strike,
+}
+
+fn parse_inline_role_prefix(inline: &ParsedInline) -> Option<(String, InlineRole)> {
+    let ParsedInline::Text(prefix) = inline else {
+        return None;
+    };
+    for (marker, role) in [(":math:", InlineRole::Math), (":m:", InlineRole::Math)] {
+        if let Some(before) = prefix.strip_suffix(marker) {
+            return Some((before.to_string(), role));
+        }
+    }
+    if let Some(before) = prefix.strip_suffix(":strike:") {
+        return Some((before.to_string(), InlineRole::Strike));
+    }
+    None
 }
 
 fn expand_footnote_refs(text: &str, state: &mut RestState) -> Vec<ParsedInline> {
@@ -739,5 +823,35 @@ mod tests {
         assert!(matches!(doc.blocks[0], Block::Paragraph(_)));
         assert!(matches!(doc.blocks[1], Block::Rule));
         assert!(matches!(doc.blocks[2], Block::Paragraph(_)));
+    }
+
+    #[test]
+    fn parse_rest_inline_math_role() {
+        let doc = parse("Text :math:`x^2` here.").unwrap().into_domain().unwrap();
+        let Block::Paragraph(inlines) = &doc.blocks[0] else {
+            panic!("expected paragraph");
+        };
+        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Math(s) if s == "x^2")));
+    }
+
+    #[test]
+    fn parse_rest_hard_line_break() {
+        let doc = parse("line one\\\nline two").unwrap().into_domain().unwrap();
+        let Block::Paragraph(inlines) = &doc.blocks[0] else {
+            panic!("expected paragraph");
+        };
+        assert!(inlines.iter().any(|inline| matches!(inline, Inline::HardBreak)));
+    }
+
+    #[test]
+    fn parse_rest_strikethrough_markup() {
+        let doc = parse("~~deleted~~").unwrap().into_domain().unwrap();
+        let Block::Paragraph(inlines) = &doc.blocks[0] else {
+            panic!("expected paragraph");
+        };
+        assert!(matches!(
+            &inlines[0],
+            Inline::Strikethrough(children) if children == &[Inline::Text("deleted".into())]
+        ));
     }
 }
