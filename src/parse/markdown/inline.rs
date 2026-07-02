@@ -16,6 +16,8 @@ pub(crate) enum InlineFrame {
     Strong(Vec<ParsedInline>),
     Emphasis(Vec<ParsedInline>),
     Strikethrough(Vec<ParsedInline>),
+    Subscript(Vec<ParsedInline>),
+    Superscript(Vec<ParsedInline>),
     Link(usize, Vec<ParsedInline>),
     /// Transparent fallback for links with invalid URLs: children are flattened.
     Group(Vec<ParsedInline>),
@@ -36,6 +38,8 @@ impl InlineParser {
             Some(InlineFrame::Strong(v))
             | Some(InlineFrame::Emphasis(v))
             | Some(InlineFrame::Strikethrough(v))
+            | Some(InlineFrame::Subscript(v))
+            | Some(InlineFrame::Superscript(v))
             | Some(InlineFrame::Link(_, v))
             | Some(InlineFrame::Group(v))
             | Some(InlineFrame::Code(v)) => v,
@@ -117,6 +121,42 @@ impl InlineParser {
         Ok(())
     }
 
+    pub(crate) fn start_subscript(&mut self) {
+        self.stack.push(InlineFrame::Subscript(Vec::new()));
+    }
+
+    pub(crate) fn end_subscript(&mut self) -> Result<(), ParseError> {
+        let frame = self
+            .stack
+            .pop()
+            .ok_or_else(|| syntax_error("unmatched subscript end"))?;
+        match frame {
+            InlineFrame::Subscript(children) => {
+                self.current_target().push(ParsedInline::Subscript(children))
+            }
+            _ => return Err(syntax_error("unmatched subscript end")),
+        }
+        Ok(())
+    }
+
+    pub(crate) fn start_superscript(&mut self) {
+        self.stack.push(InlineFrame::Superscript(Vec::new()));
+    }
+
+    pub(crate) fn end_superscript(&mut self) -> Result<(), ParseError> {
+        let frame = self
+            .stack
+            .pop()
+            .ok_or_else(|| syntax_error("unmatched superscript end"))?;
+        match frame {
+            InlineFrame::Superscript(children) => self
+                .current_target()
+                .push(ParsedInline::Superscript(children)),
+            _ => return Err(syntax_error("unmatched superscript end")),
+        }
+        Ok(())
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.output.is_empty() && self.stack.is_empty()
     }
@@ -179,6 +219,8 @@ impl InlineParser {
                 InlineFrame::Strong(c) => vec![ParsedInline::Strong(c)],
                 InlineFrame::Emphasis(c) => vec![ParsedInline::Emphasis(c)],
                 InlineFrame::Strikethrough(c) => vec![ParsedInline::Strikethrough(c)],
+                InlineFrame::Subscript(c) => vec![ParsedInline::Subscript(c)],
+                InlineFrame::Superscript(c) => vec![ParsedInline::Superscript(c)],
                 InlineFrame::Link(link_id, c) => vec![ParsedInline::Link {
                     link_id,
                     children: c,

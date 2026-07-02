@@ -339,6 +339,20 @@ fn parse_strikethrough() {
 }
 
 #[test]
+fn parse_subscript_and_superscript() {
+    let doc = parse("H ~2~ O and x ^2^ y").unwrap();
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(inlines.iter().any(|inline| {
+        matches!(inline, Inline::Subscript(c) if c == &[Inline::Text("2".into())])
+    }));
+    assert!(inlines.iter().any(|inline| {
+        matches!(inline, Inline::Superscript(c) if c == &[Inline::Text("2".into())])
+    }));
+}
+
+#[test]
 fn parse_empty_link_url_is_rejected() {
     let doc = parse("[text](  )").unwrap();
     assert!(doc.links.is_empty());

@@ -184,6 +184,8 @@ impl<'a> ParserState<'a> {
             Tag::Emphasis => self.with_inline_parser(|p| p.start_emphasis()),
             Tag::Strong => self.with_inline_parser(|p| p.start_strong()),
             Tag::Strikethrough => self.with_inline_parser(|p| p.start_strikethrough()),
+            Tag::Subscript => self.with_inline_parser(|p| p.start_subscript()),
+            Tag::Superscript => self.with_inline_parser(|p| p.start_superscript()),
             Tag::Link {
                 dest_url, title, ..
             } => {
@@ -260,7 +262,7 @@ impl<'a> ParserState<'a> {
             Tag::DefinitionListDefinition => self.stack.push(BlockFrame::DefinitionListDefinition {
                 blocks: Vec::new(),
             }),
-            Tag::HtmlBlock | Tag::Superscript | Tag::Subscript => {}
+            Tag::HtmlBlock => {}
         }
         Ok(())
     }
@@ -434,6 +436,12 @@ impl<'a> ParserState<'a> {
             TagEnd::Strikethrough => self.with_inline_parser(|p| {
                 p.end_strikethrough().ok();
             }),
+            TagEnd::Subscript => self.with_inline_parser(|p| {
+                p.end_subscript().ok();
+            }),
+            TagEnd::Superscript => self.with_inline_parser(|p| {
+                p.end_superscript().ok();
+            }),
             TagEnd::Link => self.with_inline_parser(|p| {
                 p.end_link().ok();
             }),
@@ -496,7 +504,7 @@ impl<'a> ParserState<'a> {
                     self.finish_definition_list_definition(blocks);
                 }
             }
-            TagEnd::HtmlBlock | TagEnd::Superscript | TagEnd::Subscript => {}
+            TagEnd::HtmlBlock => {}
         }
         Ok(())
     }
