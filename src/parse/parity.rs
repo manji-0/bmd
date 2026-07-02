@@ -2,11 +2,35 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::domain::{Alignment, Block, Inline};
+    use crate::domain::{Alignment, Block, Inline, LinkKind};
     use crate::parse::{MarkupFormat, parse_dto};
 
     fn domain(format: MarkupFormat, source: &str) -> crate::domain::Document {
         parse_dto(format, source).unwrap().into_domain().unwrap()
+    }
+
+    fn first_paragraph<'a>(doc: &'a crate::domain::Document) -> &'a [Inline] {
+        let block = doc
+            .blocks
+            .iter()
+            .find(|block| matches!(block, Block::Paragraph(_)))
+            .unwrap_or_else(|| panic!("expected paragraph in {:?}", doc.blocks));
+        let Block::Paragraph(inlines) = block else {
+            unreachable!();
+        };
+        inlines
+    }
+
+    fn first_list(doc: &crate::domain::Document) -> &crate::domain::List {
+        let block = doc
+            .blocks
+            .iter()
+            .find(|block| matches!(block, Block::List(_)))
+            .unwrap_or_else(|| panic!("expected list in {:?}", doc.blocks));
+        let Block::List(list) = block else {
+            unreachable!();
+        };
+        list
     }
 
     fn block_kinds(doc: &crate::domain::Document) -> Vec<&'static str> {
@@ -300,5 +324,193 @@ mod tests {
                 "expected superscript in {doc:?}"
             );
         }
+    }
+
+    #[test]
+    fn parity_ordered_list() {
+        let markdown = domain(MarkupFormat::Markdown, "1. first\n2. second");
+        let asciidoc = domain(MarkupFormat::AsciiDoc, ". first\n. second");
+        let rest = domain(MarkupFormat::Rest, "1. first\n2. second");
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            assert_eq!(block_kinds(doc), vec!["list"]);
+            let list = first_list(doc);
+            assert!(list.ordered, "expected ordered list in {doc:?}");
+            assert_eq!(list.items.len(), 2);
+        }
+    }
+
+    #[test]
+    fn parity_blockquote() {
+        let markdown = domain(MarkupFormat::Markdown, "> quoted text");
+        let asciidoc = domain(MarkupFormat::AsciiDoc, "____\nquoted text\n____");
+        let rest = domain(MarkupFormat::Rest, ".. note::\n\n   quoted text\n");
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            let quote = doc
+                .blocks
+                .iter()
+                .find(|block| matches!(block, Block::BlockQuote(_)))
+                .unwrap_or_else(|| panic!("expected blockquote in {doc:?}"));
+            let Block::BlockQuote(children) = quote else {
+                unreachable!();
+            };
+            assert!(
+                children.iter().any(|block| matches!(block, Block::Paragraph(_))),
+                "expected quoted paragraph in {doc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parity_footnote_reference() {
+        let markdown = domain(
+            MarkupFormat::Markdown,
+            "Text with footnote[^note].\n\n[^note]: Footnote body.\n",
+        );
+        let asciidoc = domain(
+            MarkupFormat::AsciiDoc,
+            "= Doc\n\nText footnote:[Footnote body].\n",
+        );
+        let rest = domain(
+            MarkupFormat::Rest,
+            "Text [#note]_.\n\n.. [#note] Footnote body.\n",
+        );
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            assert_eq!(doc.footnotes.len(), 1, "footnotes in {doc:?}");
+            assert!(
+                first_paragraph(doc)
+                    .iter()
+                    .any(|inline| matches!(inline, Inline::FootnoteReference(_, 1))),
+                "expected footnote reference in {doc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parity_strikethrough() {
+        let markdown = domain(MarkupFormat::Markdown, "~~deleted~~");
+        let asciidoc = domain(MarkupFormat::AsciiDoc, "[line-through]#deleted#");
+        let rest = domain(MarkupFormat::Rest, "~~deleted~~");
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            let inlines = first_paragraph(doc);
+            assert!(
+                inlines.iter().any(|inline| {
+                    matches!(
+                        inline,
+                        Inline::Strikethrough(children) if children == &[Inline::Text("deleted".into())]
+                    )
+                }),
+                "expected strikethrough in {doc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parity_anchor_link() {
+        let markdown = domain(
+            MarkupFormat::Markdown,
+            "## Hello World\n\nSee [jump](#hello-world).",
+        );
+        let asciidoc = domain(
+            MarkupFormat::AsciiDoc,
+            "= Doc\n\n[#hello-world]\n\nSee <<hello-world>>.",
+        );
+        let rest = domain(
+            MarkupFormat::Rest,
+            "Hello World\n===========\n\nSee `jump <#hello-world>`_ now.",
+        );
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            assert_eq!(doc.links.len(), 1, "links in {doc:?}");
+            assert_eq!(doc.links[0].kind, LinkKind::Anchor, "anchor in {doc:?}");
+            assert!(
+                doc.links[0].url.as_str().contains("hello-world"),
+                "url in {doc:?}"
+            );
+            assert!(
+                first_paragraph(doc)
+                    .iter()
+                    .any(|inline| matches!(inline, Inline::Link(_, _))),
+                "expected link inline in {doc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parity_inline_image_link_in_paragraph() {
+        let markdown = domain(
+            MarkupFormat::Markdown,
+            "See ![logo](/img/logo.png) here.",
+        );
+        let asciidoc = domain(
+            MarkupFormat::AsciiDoc,
+            "See image:/img/logo.png[logo] here.",
+        );
+        let rest = domain(
+            MarkupFormat::Rest,
+            ".. |logo| image:: /img/logo.png\n\nSee |logo| here.\n",
+        );
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            assert_eq!(doc.links.len(), 1, "{doc:?}");
+            assert_eq!(doc.links[0].kind, LinkKind::Image);
+            assert_eq!(doc.links[0].url.as_str(), "/img/logo.png");
+            assert!(
+                first_paragraph(doc)
+                    .iter()
+                    .any(|inline| matches!(inline, Inline::Link(_, _))),
+                "expected inline image link in {doc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parity_asciidoc_table_of_contents() {
+        let doc = domain(
+            MarkupFormat::AsciiDoc,
+            "= Doc\n\n== Section One\n\nBody.\n\ntoc::[]\n",
+        );
+        let list = first_list(&doc);
+        assert!(!list.items.is_empty());
+        assert!(
+            list.items.iter().any(|item| {
+                matches!(
+                    &item.content[0],
+                    Block::Paragraph(inlines)
+                        if inlines.iter().any(|inline| matches!(inline, Inline::Link(_, _)))
+                )
+            })
+        );
+        assert!(
+            doc.links
+                .iter()
+                .any(|link| link.kind == LinkKind::Anchor && link.url.as_str().contains("section"))
+        );
+    }
+
+    #[test]
+    fn parity_asciidoc_media_blocks() {
+        let doc = domain(
+            MarkupFormat::AsciiDoc,
+            "= Doc\n\nvideo::/media/demo.mp4[]\n\naudio::/media/note.mp3[Chime]\n",
+        );
+        assert_eq!(doc.links.len(), 2);
+        assert!(doc.links.iter().any(|link| link.url.as_str() == "/media/demo.mp4"));
+        assert!(doc.links.iter().any(|link| link.url.as_str() == "/media/note.mp3"));
+        let link_paragraphs = doc
+            .blocks
+            .iter()
+            .filter(|block| {
+                matches!(
+                    block,
+                    Block::Paragraph(inlines)
+                        if inlines.iter().any(|inline| matches!(inline, Inline::Link(_, _)))
+                )
+            })
+            .count();
+        assert_eq!(link_paragraphs, 2);
     }
 }
