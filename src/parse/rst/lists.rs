@@ -104,10 +104,7 @@ fn list_marker(line: &LineInfo) -> Option<(ListKind, &str)> {
     while digits < bytes.len() && bytes[digits].is_ascii_digit() {
         digits += 1;
     }
-    if digits > 0
-        && digits + 1 < bytes.len()
-        && bytes[digits] == b'.'
-        && bytes[digits + 1] == b' '
+    if digits > 0 && digits + 1 < bytes.len() && bytes[digits] == b'.' && bytes[digits + 1] == b' '
     {
         let rest = trimmed[digits + 2..].trim_end();
         return Some((ListKind::Ordered, rest));
@@ -143,7 +140,7 @@ fn find_list_regions(lines: &[LineInfo]) -> Vec<(usize, usize)> {
             index += 1;
             continue;
         };
-        if index > 0 && !is_blank(&lines[index - 1]) && !list_marker(&lines[index - 1]).is_some() {
+        if index > 0 && !is_blank(&lines[index - 1]) && list_marker(&lines[index - 1]).is_none() {
             index += 1;
             continue;
         }
@@ -157,12 +154,7 @@ fn find_list_regions(lines: &[LineInfo]) -> Vec<(usize, usize)> {
     regions
 }
 
-fn list_region_end(
-    lines: &[LineInfo],
-    start: usize,
-    base_indent: usize,
-    kind: ListKind,
-) -> usize {
+fn list_region_end(lines: &[LineInfo], start: usize, base_indent: usize, kind: ListKind) -> usize {
     let mut index = start + 1;
     while index < lines.len() {
         if is_blank(&lines[index]) {
@@ -248,7 +240,14 @@ fn parse_list_items(
                     ordered: matches!(line_kind, ListKind::Ordered),
                     items: Vec::new(),
                 };
-                parse_list_items(lines, end, cursor, line.indent, line_kind, &mut nested.items);
+                parse_list_items(
+                    lines,
+                    end,
+                    cursor,
+                    line.indent,
+                    line_kind,
+                    &mut nested.items,
+                );
                 if let Some(last) = items.last_mut() {
                     last.body.push(RichBody::List(nested));
                 } else {
@@ -380,7 +379,10 @@ fn parse_literal_block(
         body.push('\n');
         index += 1;
     }
-    (RstBlock::LiteralBlock(body.trim_end().to_string()), index - start)
+    (
+        RstBlock::LiteralBlock(body.trim_end().to_string()),
+        index - start,
+    )
 }
 
 pub(crate) fn parse_rst_inlines(text: &str) -> Vec<RstInline> {
@@ -405,7 +407,10 @@ fn parse_code_fence(lines: &[LineInfo], end: usize, start: usize) -> (RstBlock, 
         body.push('\n');
         index += 1;
     }
-    (RstBlock::CodeBlock(body.trim_end().to_string()), index - start)
+    (
+        RstBlock::CodeBlock(body.trim_end().to_string()),
+        index - start,
+    )
 }
 
 fn is_list_segment_start(blocks: &[RstBlock]) -> bool {
@@ -456,7 +461,10 @@ fn coalesce_parserst_lists(blocks: &[RstBlock]) -> RichList {
 
     for block in blocks {
         match block {
-            RstBlock::List { kind, items: list_items } => {
+            RstBlock::List {
+                kind,
+                items: list_items,
+            } => {
                 ordered = matches!(kind, ListKind::Ordered);
                 for item in list_items {
                     items.push(RichListItem {
@@ -475,9 +483,10 @@ fn coalesce_parserst_lists(blocks: &[RstBlock]) -> RichList {
                         })
                         .collect::<Vec<_>>()
                         .join("");
-                    last.body.push(RichBody::Block(RstBlock::Paragraph(vec![
-                        RstInline::Text(text),
-                    ])));
+                    last.body
+                        .push(RichBody::Block(RstBlock::Paragraph(vec![RstInline::Text(
+                            text,
+                        )])));
                 }
             }
             RstBlock::LiteralBlock(content) | RstBlock::CodeBlock(content) => {

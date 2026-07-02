@@ -99,7 +99,9 @@ fn convert_block(owned: ParsedBlock) -> Result<Block, IntoDomainError> {
         ParsedBlock::MathBlock(math) => Ok(Block::MathBlock(convert_math_block(math))),
         ParsedBlock::BlockQuote(blocks) => Ok(Block::BlockQuote(convert_blocks(blocks)?)),
         ParsedBlock::List(list) => Ok(Block::List(convert_list(list)?)),
-        ParsedBlock::DefinitionList(list) => Ok(Block::DefinitionList(convert_definition_list(list)?)),
+        ParsedBlock::DefinitionList(list) => {
+            Ok(Block::DefinitionList(convert_definition_list(list)?))
+        }
         ParsedBlock::Table(table) => Ok(Block::Table(convert_table(table)?)),
         ParsedBlock::Rule => Ok(Block::Rule),
     }

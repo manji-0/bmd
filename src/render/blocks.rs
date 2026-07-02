@@ -34,9 +34,7 @@ pub(crate) fn render_block(
             render_paragraph(inlines, area, buf, skip_rows, ctx, line_offset)
         }
         Block::CodeBlock(cb) => render_code_block(cb, area, buf, skip_rows, ctx, line_offset),
-        Block::MathBlock(math) => {
-            render_math_block_content(math, area, buf, skip_rows, ctx)
-        }
+        Block::MathBlock(math) => render_math_block_content(math, area, buf, skip_rows, ctx),
         Block::BlockQuote(blocks) => {
             render_blockquote(blocks, area, buf, skip_rows, ctx, line_offset)
         }

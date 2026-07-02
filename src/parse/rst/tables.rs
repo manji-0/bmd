@@ -210,10 +210,7 @@ fn parse_grid_table_region(lines: &[&str], start: usize) -> Option<(TableRegionM
         if is_grid_border(lines[index]) {
             end = index + 1;
             index += 1;
-            if index < lines.len()
-                && is_grid_border(lines[index])
-                && !lines[index].contains('|')
-            {
+            if index < lines.len() && is_grid_border(lines[index]) && !lines[index].contains('|') {
                 end = index + 1;
                 break;
             }
@@ -253,7 +250,10 @@ mod tests {
         let source = "=====  =====\nLeft   Right\n=====  =====\nA      B\n-----  ------:\nC       D\n=====  =====\n";
         let regions = find_table_regions(source);
         assert_eq!(regions.len(), 1);
-        assert_eq!(regions[0].alignments, vec![ParsedAlignment::Left, ParsedAlignment::Right]);
+        assert_eq!(
+            regions[0].alignments,
+            vec![ParsedAlignment::Left, ParsedAlignment::Right]
+        );
     }
 
     #[test]
@@ -261,9 +261,15 @@ mod tests {
         let source = "+-------+--------+\n| Left  | Right  |\n+=======+=======:+\n| A     |      B |\n+-------+--------+\n";
         let regions = find_table_regions(source);
         assert_eq!(regions.len(), 1);
-        assert_eq!(regions[0].alignments, vec![ParsedAlignment::Left, ParsedAlignment::Right]);
+        assert_eq!(
+            regions[0].alignments,
+            vec![ParsedAlignment::Left, ParsedAlignment::Right]
+        );
         assert_eq!(regions[0].headers, vec!["Left", "Right"]);
-        assert_eq!(regions[0].rows, vec![vec!["A".to_string(), "B".to_string()]]);
+        assert_eq!(
+            regions[0].rows,
+            vec![vec!["A".to_string(), "B".to_string()]]
+        );
     }
 
     #[test]

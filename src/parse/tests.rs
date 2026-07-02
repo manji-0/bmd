@@ -42,11 +42,10 @@ fn parse_table_inline_link() {
         panic!("expected table, got {:?}", doc.blocks);
     };
     assert_eq!(doc.links.len(), 1);
-    let has_link = table
-        .rows
-        .iter()
-        .flatten()
-        .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+    let has_link = table.rows.iter().flatten().any(|cell| {
+        cell.iter()
+            .any(|inline| matches!(inline, Inline::Link(_, _)))
+    });
     assert!(has_link);
 }
 
@@ -614,10 +613,7 @@ fn parse_display_math() {
 
 #[test]
 fn parse_definition_list() {
-    let doc = parse(
-        "apple\n:   red fruit\n\norange\n:   orange fruit\n",
-    )
-    .unwrap();
+    let doc = parse("apple\n:   red fruit\n\norange\n:   orange fruit\n").unwrap();
     let Block::DefinitionList(list) = &doc.blocks[0] else {
         panic!("expected definition list");
     };
@@ -633,8 +629,19 @@ fn parse_definition_list() {
 #[test]
 fn parse_toc_marker_creates_toc_link() {
     let doc = parse("# Title\n\n[[TOC]]\n\n## Section A\n").unwrap();
-    assert_eq!(doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(), 1);
-    assert_eq!(doc.links.iter().find(|l| l.kind == LinkKind::Toc).unwrap().url.as_str(), "bmd:toc");
+    assert_eq!(
+        doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(),
+        1
+    );
+    assert_eq!(
+        doc.links
+            .iter()
+            .find(|l| l.kind == LinkKind::Toc)
+            .unwrap()
+            .url
+            .as_str(),
+        "bmd:toc"
+    );
     let has_toc_inline = doc.blocks.iter().any(|b| {
         matches!(b, Block::Paragraph(inlines) if inlines.iter().any(|i| matches!(i, Inline::Link(_, _))))
     });
@@ -644,13 +651,19 @@ fn parse_toc_marker_creates_toc_link() {
 #[test]
 fn parse_toc_marker_case_insensitive() {
     let doc = parse("# H1\n\n[[toc]]\n\n## H2\n").unwrap();
-    assert_eq!(doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(), 1);
+    assert_eq!(
+        doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(),
+        1
+    );
 }
 
 #[test]
 fn parse_toc_without_headings_still_creates_link() {
     let doc = parse("[[TOC]]\n\nJust a paragraph.\n").unwrap();
-    assert_eq!(doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(), 1);
+    assert_eq!(
+        doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(),
+        1
+    );
 }
 
 #[test]
@@ -660,6 +673,17 @@ fn parse_rst_contents_directive_creates_toc_link() {
         "Title\n=====\n\n.. contents::\n\nSection\n-------\n\nBody.\n",
     )
     .unwrap();
-    assert_eq!(doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(), 1);
-    assert_eq!(doc.links.iter().find(|l| l.kind == LinkKind::Toc).unwrap().url.as_str(), "bmd:toc");
+    assert_eq!(
+        doc.links.iter().filter(|l| l.kind == LinkKind::Toc).count(),
+        1
+    );
+    assert_eq!(
+        doc.links
+            .iter()
+            .find(|l| l.kind == LinkKind::Toc)
+            .unwrap()
+            .url
+            .as_str(),
+        "bmd:toc"
+    );
 }

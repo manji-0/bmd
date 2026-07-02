@@ -157,13 +157,11 @@ fn find_checklist_item_in_block(block: &Block, id: ChecklistId) -> Option<&ListI
             .iter()
             .find_map(|child| find_checklist_item_in_block(child, id)),
         Block::DefinitionList(list) => list.items.iter().find_map(|item| {
-            item.definitions
-                .iter()
-                .find_map(|definition| {
-                    definition
-                        .iter()
-                        .find_map(|child| find_checklist_item_in_block(child, id))
-                })
+            item.definitions.iter().find_map(|definition| {
+                definition
+                    .iter()
+                    .find_map(|child| find_checklist_item_in_block(child, id))
+            })
         }),
         _ => None,
     }

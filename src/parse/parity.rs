@@ -9,7 +9,7 @@ mod tests {
         parse_dto(format, source).unwrap().into_domain().unwrap()
     }
 
-    fn first_paragraph<'a>(doc: &'a crate::domain::Document) -> &'a [Inline] {
+    fn first_paragraph(doc: &crate::domain::Document) -> &[Inline] {
         let block = doc
             .blocks
             .iter()
@@ -54,8 +54,16 @@ mod tests {
         let Block::Paragraph(inlines) = &doc.blocks[1] else {
             panic!("expected paragraph at index 1, got {:?}", doc.blocks);
         };
-        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Emphasis(_))));
-        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Strong(_))));
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::Emphasis(_)))
+        );
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::Strong(_)))
+        );
     }
 
     #[test]
@@ -143,7 +151,11 @@ mod tests {
         let rest = domain(MarkupFormat::Rest, "Intro.\n\n:term: definition");
 
         for doc in [&markdown, &asciidoc, &rest] {
-            assert!(doc.blocks.iter().any(|block| matches!(block, Block::DefinitionList(_))));
+            assert!(
+                doc.blocks
+                    .iter()
+                    .any(|block| matches!(block, Block::DefinitionList(_)))
+            );
             let block = doc
                 .blocks
                 .iter()
@@ -167,7 +179,11 @@ mod tests {
             let Block::Paragraph(inlines) = &doc.blocks[0] else {
                 panic!("expected paragraph");
             };
-            assert!(inlines.iter().any(|inline| matches!(inline, Inline::Code(c) if c == "code")));
+            assert!(
+                inlines
+                    .iter()
+                    .any(|inline| matches!(inline, Inline::Code(c) if c == "code"))
+            );
         }
     }
 
@@ -261,7 +277,11 @@ mod tests {
         for (format, source) in cases {
             let doc = domain(format, source);
             assert_eq!(doc.links.len(), 1, "{format:?} links");
-            assert_eq!(doc.links[0].url.as_str(), "https://example.com", "{format:?} url");
+            assert_eq!(
+                doc.links[0].url.as_str(),
+                "https://example.com",
+                "{format:?} url"
+            );
             let block = doc
                 .blocks
                 .iter()
@@ -270,11 +290,10 @@ mod tests {
             let Block::Table(table) = block else {
                 unreachable!();
             };
-            let has_link = table
-                .rows
-                .iter()
-                .flatten()
-                .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+            let has_link = table.rows.iter().flatten().any(|cell| {
+                cell.iter()
+                    .any(|inline| matches!(inline, Inline::Link(_, _)))
+            });
             assert!(has_link, "{format:?} expected link inline in table cell");
         }
     }
@@ -290,9 +309,9 @@ mod tests {
                 panic!("expected paragraph, got {:?}", doc.blocks);
             };
             assert!(
-                inlines
-                    .iter()
-                    .any(|inline| matches!(inline, Inline::Math(content) if content.contains("x^2")))
+                inlines.iter().any(
+                    |inline| matches!(inline, Inline::Math(content) if content.contains("x^2"))
+                )
             );
         }
     }
@@ -357,7 +376,9 @@ mod tests {
                 unreachable!();
             };
             assert!(
-                children.iter().any(|block| matches!(block, Block::Paragraph(_))),
+                children
+                    .iter()
+                    .any(|block| matches!(block, Block::Paragraph(_))),
                 "expected quoted paragraph in {doc:?}"
             );
         }
@@ -442,10 +463,7 @@ mod tests {
 
     #[test]
     fn parity_inline_image_link_in_paragraph() {
-        let markdown = domain(
-            MarkupFormat::Markdown,
-            "See ![logo](/img/logo.png) here.",
-        );
+        let markdown = domain(MarkupFormat::Markdown, "See ![logo](/img/logo.png) here.");
         let asciidoc = domain(
             MarkupFormat::AsciiDoc,
             "See image:/img/logo.png[logo] here.",
@@ -476,15 +494,13 @@ mod tests {
         );
         let list = first_list(&doc);
         assert!(!list.items.is_empty());
-        assert!(
-            list.items.iter().any(|item| {
-                matches!(
-                    &item.content[0],
-                    Block::Paragraph(inlines)
-                        if inlines.iter().any(|inline| matches!(inline, Inline::Link(_, _)))
-                )
-            })
-        );
+        assert!(list.items.iter().any(|item| {
+            matches!(
+                &item.content[0],
+                Block::Paragraph(inlines)
+                    if inlines.iter().any(|inline| matches!(inline, Inline::Link(_, _)))
+            )
+        }));
         assert!(
             doc.links
                 .iter()
@@ -499,8 +515,16 @@ mod tests {
             "= Doc\n\nvideo::/media/demo.mp4[]\n\naudio::/media/note.mp3[Chime]\n",
         );
         assert_eq!(doc.links.len(), 2);
-        assert!(doc.links.iter().any(|link| link.url.as_str() == "/media/demo.mp4"));
-        assert!(doc.links.iter().any(|link| link.url.as_str() == "/media/note.mp3"));
+        assert!(
+            doc.links
+                .iter()
+                .any(|link| link.url.as_str() == "/media/demo.mp4")
+        );
+        assert!(
+            doc.links
+                .iter()
+                .any(|link| link.url.as_str() == "/media/note.mp3")
+        );
         let link_paragraphs = doc
             .blocks
             .iter()

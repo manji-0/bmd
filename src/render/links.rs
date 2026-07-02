@@ -12,9 +12,7 @@ use super::context::RenderContext;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
 use super::list_marker::list_marker_width_at;
 use super::measure::measure_block_height;
-use super::table::{
-    allocate_column_widths, cell_padding, column_alignment, wrap_cell_inlines,
-};
+use super::table::{allocate_column_widths, cell_padding, column_alignment, wrap_cell_inlines};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LinkHit {
@@ -22,6 +20,24 @@ pub struct LinkHit {
     pub line: usize,
     pub x: usize,
     pub width: usize,
+}
+
+struct TableRowLinkContext<'a> {
+    widths: &'a [usize],
+    alignments: &'a [Alignment],
+    style: Style,
+    ctx: &'a RenderContext<'a>,
+    base_x: usize,
+    row_start_line: usize,
+}
+
+struct WordHitCursor<'a> {
+    width: usize,
+    base_x: usize,
+    line: &'a mut usize,
+    x: &'a mut usize,
+    target_line: Option<usize>,
+    hits: &'a mut Vec<LinkHit>,
 }
 
 /// Collect screen positions of link text in document order.
@@ -102,7 +118,15 @@ fn collect_block_link_hits(
             collect_list_link_hits(list, block_idx, width, base_x, ctx, hits, line_offset);
         }
         Block::DefinitionList(list) => {
-            collect_definition_list_link_hits(list, block_idx, width, base_x, ctx, hits, line_offset);
+            collect_definition_list_link_hits(
+                list,
+                block_idx,
+                width,
+                base_x,
+                ctx,
+                hits,
+                line_offset,
+            );
         }
         Block::Table(table) => {
             collect_table_link_hits(table, width, base_x, ctx, hits, line_offset);
@@ -160,12 +184,8 @@ fn collect_definition_list_link_hits(
     for item in &list.items {
         if !item.term.is_empty() {
             collect_inline_link_hits(&item.term, width as usize, base_x, *line_offset, hits);
-            *line_offset += measure_block_height(
-                &Block::Paragraph(item.term.clone()),
-                block_idx,
-                width,
-                ctx,
-            );
+            *line_offset +=
+                measure_block_height(&Block::Paragraph(item.term.clone()), block_idx, width, ctx);
         }
         for definition in &item.definitions {
             for child in definition {
@@ -206,12 +226,14 @@ fn collect_table_link_hits(
     let header_height = table_row_height(&table.headers, &widths, ctx.theme.table_header, ctx);
     collect_table_row_link_hits(
         &table.headers,
-        &widths,
-        &table.alignments,
-        ctx.theme.table_header,
-        ctx,
-        base_x,
-        *line_offset,
+        &TableRowLinkContext {
+            widths: &widths,
+            alignments: &table.alignments,
+            style: ctx.theme.table_header,
+            ctx,
+            base_x,
+            row_start_line: *line_offset,
+        },
         hits,
     );
     *line_offset += header_height;
@@ -224,12 +246,14 @@ fn collect_table_link_hits(
         let row_height = table_row_height(row, &widths, ctx.theme.table_cell, ctx);
         collect_table_row_link_hits(
             row,
-            &widths,
-            &table.alignments,
-            ctx.theme.table_cell,
-            ctx,
-            base_x,
-            *line_offset,
+            &TableRowLinkContext {
+                widths: &widths,
+                alignments: &table.alignments,
+                style: ctx.theme.table_cell,
+                ctx,
+                base_x,
+                row_start_line: *line_offset,
+            },
             hits,
         );
         *line_offset += row_height;
@@ -261,23 +285,18 @@ fn table_row_height(
 
 fn collect_table_row_link_hits(
     cells: &[Vec<Inline>],
-    widths: &[usize],
-    alignments: &[Alignment],
-    style: Style,
-    ctx: &RenderContext,
-    base_x: usize,
-    row_start_line: usize,
+    row: &TableRowLinkContext<'_>,
     hits: &mut Vec<LinkHit>,
 ) {
-    let max_height = table_row_height(cells, widths, style, ctx);
+    let max_height = table_row_height(cells, row.widths, row.style, row.ctx);
 
     for row_line in 0..max_height {
-        let line = row_start_line + row_line;
-        let mut col_x = base_x + 1;
-        for (i, width) in widths.iter().enumerate() {
+        let line = row.row_start_line + row_line;
+        let mut col_x = row.base_x + 1;
+        for (i, width) in row.widths.iter().enumerate() {
             let cell = cells.get(i);
             let wrapped = cell
-                .map(|c| wrap_cell_inlines(c, *width, style, ctx, row_start_line))
+                .map(|c| wrap_cell_inlines(c, *width, row.style, row.ctx, row.row_start_line))
                 .unwrap_or_else(|| vec![Line::from(" ")]);
             let line_content = wrapped
                 .get(row_line)
@@ -288,7 +307,7 @@ fn collect_table_row_link_hits(
                 .iter()
                 .map(|s| s.content.width())
                 .sum::<usize>();
-            let alignment = column_alignment(alignments, i);
+            let alignment = column_alignment(row.alignments, i);
             let (pad_left, _) = cell_padding(alignment, rendered_width, *width);
             let content_x = col_x + 1 + pad_left;
 
@@ -297,7 +316,7 @@ fn collect_table_row_link_hits(
                     cell_inlines,
                     *width,
                     content_x,
-                    row_start_line,
+                    row.row_start_line,
                     Some(line),
                     hits,
                 );
@@ -447,73 +466,79 @@ fn collect_inline_link_hits_filtered(
                 append_word_hits_filtered(
                     &text,
                     link_id,
-                    width,
-                    base_x,
-                    &mut line,
-                    &mut x,
-                    target_line,
-                    hits,
+                    &mut WordHitCursor {
+                        width,
+                        base_x,
+                        line: &mut line,
+                        x: &mut x,
+                        target_line,
+                        hits,
+                    },
                 );
             }
         }
     }
 }
 
-fn append_word_hits_filtered(
-    word: &str,
-    link_id: Option<LinkId>,
-    width: usize,
-    base_x: usize,
-    line: &mut usize,
-    x: &mut usize,
-    target_line: Option<usize>,
-    hits: &mut Vec<LinkHit>,
-) {
+fn append_word_hits_filtered(word: &str, link_id: Option<LinkId>, cursor: &mut WordHitCursor<'_>) {
     let word_width = word.width();
-    if word_width <= width {
-        append_fitting_word_filtered(word, link_id, width, base_x, line, x, target_line, hits);
+    if word_width <= cursor.width {
+        append_fitting_word_filtered(word, link_id, cursor);
         return;
     }
     for grapheme in word.graphemes(true) {
         let grapheme_width = grapheme.width();
-        if *x > 0 && *x + grapheme_width > width {
-            *line += 1;
-            *x = 0;
+        if *cursor.x > 0 && *cursor.x + grapheme_width > cursor.width {
+            *cursor.line += 1;
+            *cursor.x = 0;
         }
         if let Some(id) = link_id {
-            if target_line.is_none_or(|target| target == *line) {
-                push_link_hit(hits, id, *line, base_x + *x, grapheme_width);
+            if cursor
+                .target_line
+                .is_none_or(|target| target == *cursor.line)
+            {
+                push_link_hit(
+                    cursor.hits,
+                    id,
+                    *cursor.line,
+                    cursor.base_x + *cursor.x,
+                    grapheme_width,
+                );
             }
         }
-        *x += grapheme_width;
+        *cursor.x += grapheme_width;
     }
 }
 
 fn append_fitting_word_filtered(
     word: &str,
     link_id: Option<LinkId>,
-    width: usize,
-    base_x: usize,
-    line: &mut usize,
-    x: &mut usize,
-    target_line: Option<usize>,
-    hits: &mut Vec<LinkHit>,
+    cursor: &mut WordHitCursor<'_>,
 ) {
     let word_width = word.width();
-    let gap = usize::from(*x > 0);
-    if *x > 0 && *x + gap + word_width > width {
-        *line += 1;
-        *x = 0;
+    let gap = usize::from(*cursor.x > 0);
+    if *cursor.x > 0 && *cursor.x + gap + word_width > cursor.width {
+        *cursor.line += 1;
+        *cursor.x = 0;
     }
-    if *x > 0 {
-        *x += 1;
+    if *cursor.x > 0 {
+        *cursor.x += 1;
     }
     if let Some(id) = link_id {
-        if target_line.is_none_or(|target| target == *line) {
-            push_link_hit(hits, id, *line, base_x + *x, word_width);
+        if cursor
+            .target_line
+            .is_none_or(|target| target == *cursor.line)
+        {
+            push_link_hit(
+                cursor.hits,
+                id,
+                *cursor.line,
+                cursor.base_x + *cursor.x,
+                word_width,
+            );
         }
     }
-    *x += word_width;
+    *cursor.x += word_width;
 }
 
 fn push_link_hit(hits: &mut Vec<LinkHit>, id: LinkId, line: usize, x: usize, width: usize) {
@@ -728,16 +753,13 @@ fn definition_list_first_link_line(
             if inlines_contain_link(&item.term, link_id) {
                 return Some(line_offset);
             }
-            line_offset += measure_block_height(
-                &Block::Paragraph(item.term.clone()),
-                block_idx,
-                width,
-                ctx,
-            );
+            line_offset +=
+                measure_block_height(&Block::Paragraph(item.term.clone()), block_idx, width, ctx);
         }
         for definition in &item.definitions {
             for child in definition {
-                if let Some(local) = block_first_link_line(child, block_idx, inner_width, ctx, link_id)
+                if let Some(local) =
+                    block_first_link_line(child, block_idx, inner_width, ctx, link_id)
                 {
                     return Some(line_offset + local);
                 }

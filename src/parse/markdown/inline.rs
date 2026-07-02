@@ -131,9 +131,9 @@ impl InlineParser {
             .pop()
             .ok_or_else(|| syntax_error("unmatched subscript end"))?;
         match frame {
-            InlineFrame::Subscript(children) => {
-                self.current_target().push(ParsedInline::Subscript(children))
-            }
+            InlineFrame::Subscript(children) => self
+                .current_target()
+                .push(ParsedInline::Subscript(children)),
             _ => return Err(syntax_error("unmatched subscript end")),
         }
         Ok(())

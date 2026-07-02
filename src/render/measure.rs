@@ -4,12 +4,14 @@ use unicode_width::UnicodeWidthStr;
 
 use super::footnotes::measure_footnotes_height;
 
-use crate::domain::{Block, CodeBlock, DefinitionList, Document, Heading, Inline, List, MathBlock, Table};
+use crate::domain::{
+    Block, CodeBlock, DefinitionList, Document, Heading, Inline, List, MathBlock, Table,
+};
 
 use super::context::RenderContext;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
-use super::math::measure_math_height;
 use super::list_marker::list_marker_width_at;
+use super::math::measure_math_height;
 use super::table::{allocate_column_widths, wrap_cell_inlines};
 
 /// Total logical height of the whole document, including one-row gaps between
@@ -91,11 +93,7 @@ fn measure_math_block_height(math: &MathBlock, width: u16) -> usize {
     measure_math_height(&math.content, width)
 }
 
-fn measure_definition_list_height(
-    list: &DefinitionList,
-    width: u16,
-    ctx: &RenderContext,
-) -> usize {
+fn measure_definition_list_height(list: &DefinitionList, width: u16, ctx: &RenderContext) -> usize {
     let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
     let mut total = 0usize;
     for item in &list.items {

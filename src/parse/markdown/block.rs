@@ -256,12 +256,11 @@ impl<'a> ParserState<'a> {
                 current_term: None,
             }),
             Tag::DefinitionListTitle => {
-                self.stack
-                    .push(BlockFrame::Paragraph(InlineParser::new()));
+                self.stack.push(BlockFrame::Paragraph(InlineParser::new()));
             }
-            Tag::DefinitionListDefinition => self.stack.push(BlockFrame::DefinitionListDefinition {
-                blocks: Vec::new(),
-            }),
+            Tag::DefinitionListDefinition => self
+                .stack
+                .push(BlockFrame::DefinitionListDefinition { blocks: Vec::new() }),
             Tag::HtmlBlock => {}
         }
         Ok(())
@@ -297,19 +296,12 @@ impl<'a> ParserState<'a> {
                     } else {
                         let inlines = parser.into_inlines();
                         if let Some(link_id) = toc_marker_link_id(&inlines, &self.links) {
-                            self.links[link_id] = ParsedLink::new(
-                                "bmd:toc".into(),
-                                None,
-                                ParsedLinkKind::Toc,
-                            );
-                            self.finish_block(ParsedBlock::Paragraph(vec![
-                                ParsedInline::Link {
-                                    link_id,
-                                    children: vec![ParsedInline::Text(
-                                        "[table of contents]".into(),
-                                    )],
-                                },
-                            ]));
+                            self.links[link_id] =
+                                ParsedLink::new("bmd:toc".into(), None, ParsedLinkKind::Toc);
+                            self.finish_block(ParsedBlock::Paragraph(vec![ParsedInline::Link {
+                                link_id,
+                                children: vec![ParsedInline::Text("[table of contents]".into())],
+                            }]));
                         } else {
                             self.finish_block(ParsedBlock::Paragraph(inlines));
                         }
@@ -492,7 +484,11 @@ impl<'a> ParserState<'a> {
             }
             TagEnd::DefinitionList => {
                 let frame = self.pop_frame("definition list")?;
-                if let BlockFrame::DefinitionList { items, current_term } = frame {
+                if let BlockFrame::DefinitionList {
+                    items,
+                    current_term,
+                } = frame
+                {
                     let mut items = items;
                     if let Some(term) = current_term {
                         items.push(ParsedDefinitionItem {
@@ -500,9 +496,7 @@ impl<'a> ParserState<'a> {
                             definitions: Vec::new(),
                         });
                     }
-                    self.finish_block(ParsedBlock::DefinitionList(ParsedDefinitionList {
-                        items,
-                    }));
+                    self.finish_block(ParsedBlock::DefinitionList(ParsedDefinitionList { items }));
                 }
             }
             TagEnd::DefinitionListTitle => {
@@ -788,9 +782,8 @@ impl<'a> ParserState<'a> {
     }
 
     fn display_math(&mut self, content: String) {
-        self.blocks.push(ParsedBlock::MathBlock(ParsedMathBlock {
-            content,
-        }));
+        self.blocks
+            .push(ParsedBlock::MathBlock(ParsedMathBlock { content }));
     }
 
     fn finish_definition_list_definition(&mut self, blocks: Vec<ParsedBlock>) {

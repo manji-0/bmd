@@ -372,7 +372,9 @@ fn map_description_list(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(vec![ParsedBlock::DefinitionList(ParsedDefinitionList { items })])
+    Ok(vec![ParsedBlock::DefinitionList(ParsedDefinitionList {
+        items,
+    })])
 }
 
 fn map_delimited_block(
@@ -1094,8 +1096,8 @@ mod tests {
 
     #[test]
     fn parse_asciidoc_inline_and_block_stem() {
-        let dto = parse("= Doc\n\nInline stem:[x^2] here.\n\n[stem]\n++++\nx^2 + y^2\n++++\n")
-            .unwrap();
+        let dto =
+            parse("= Doc\n\nInline stem:[x^2] here.\n\n[stem]\n++++\nx^2 + y^2\n++++\n").unwrap();
         let doc = dto.into_domain().unwrap();
         let Block::Paragraph(inlines) = &doc.blocks[1] else {
             panic!("expected paragraph");
@@ -1120,11 +1122,10 @@ mod tests {
         };
         assert_eq!(doc.links.len(), 1);
         assert_eq!(doc.links[0].url.as_str(), "https://example.com");
-        let has_link = table
-            .rows
-            .iter()
-            .flatten()
-            .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+        let has_link = table.rows.iter().flatten().any(|cell| {
+            cell.iter()
+                .any(|inline| matches!(inline, Inline::Link(_, _)))
+        });
         assert!(has_link);
     }
 
@@ -1150,12 +1151,20 @@ mod tests {
 
     #[test]
     fn parse_asciidoc_video_and_audio_blocks() {
-        let dto = parse("= Doc\n\nvideo::/media/demo.mp4[]\n\naudio::/media/note.mp3[Chime]\n")
-            .unwrap();
+        let dto =
+            parse("= Doc\n\nvideo::/media/demo.mp4[]\n\naudio::/media/note.mp3[Chime]\n").unwrap();
         let doc = dto.into_domain().unwrap();
         assert_eq!(doc.links.len(), 2);
-        assert!(doc.links.iter().any(|link| link.url.as_str() == "/media/demo.mp4"));
-        assert!(doc.links.iter().any(|link| link.url.as_str() == "/media/note.mp3"));
+        assert!(
+            doc.links
+                .iter()
+                .any(|link| link.url.as_str() == "/media/demo.mp4")
+        );
+        assert!(
+            doc.links
+                .iter()
+                .any(|link| link.url.as_str() == "/media/note.mp3")
+        );
         let link_blocks: Vec<_> = doc
             .blocks
             .iter()

@@ -14,30 +14,27 @@ pub(crate) fn expand_tight_sub_sup_text(text: &str) -> Vec<ParsedInline> {
 }
 
 pub(crate) fn normalize_tight_sub_sup(inlines: Vec<ParsedInline>) -> Vec<ParsedInline> {
-    inlines
-        .into_iter()
-        .flat_map(normalize_inline)
-        .collect()
+    inlines.into_iter().flat_map(normalize_inline).collect()
 }
 
 fn normalize_inline(inline: ParsedInline) -> Vec<ParsedInline> {
     match inline {
         ParsedInline::Text(text) => expand_tight_sub_sup_text(&text),
-        ParsedInline::Strong(children) => vec![ParsedInline::Strong(normalize_tight_sub_sup(
-            children,
-        ))],
-        ParsedInline::Emphasis(children) => vec![ParsedInline::Emphasis(normalize_tight_sub_sup(
-            children,
-        ))],
+        ParsedInline::Strong(children) => {
+            vec![ParsedInline::Strong(normalize_tight_sub_sup(children))]
+        }
+        ParsedInline::Emphasis(children) => {
+            vec![ParsedInline::Emphasis(normalize_tight_sub_sup(children))]
+        }
         ParsedInline::Strikethrough(children) => vec![ParsedInline::Strikethrough(
             normalize_tight_sub_sup(children),
         )],
-        ParsedInline::Subscript(children) => vec![ParsedInline::Subscript(normalize_tight_sub_sup(
-            children,
-        ))],
-        ParsedInline::Superscript(children) => vec![ParsedInline::Superscript(
-            normalize_tight_sub_sup(children),
-        )],
+        ParsedInline::Subscript(children) => {
+            vec![ParsedInline::Subscript(normalize_tight_sub_sup(children))]
+        }
+        ParsedInline::Superscript(children) => {
+            vec![ParsedInline::Superscript(normalize_tight_sub_sup(children))]
+        }
         ParsedInline::Link { link_id, children } => vec![ParsedInline::Link {
             link_id,
             children: normalize_tight_sub_sup(children),

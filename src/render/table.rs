@@ -232,7 +232,11 @@ pub(crate) fn column_alignment(alignments: &[Alignment], column: usize) -> Align
     alignments.get(column).copied().unwrap_or(Alignment::None)
 }
 
-pub(crate) fn cell_padding(alignment: Alignment, content_width: usize, cell_width: usize) -> (usize, usize) {
+pub(crate) fn cell_padding(
+    alignment: Alignment,
+    content_width: usize,
+    cell_width: usize,
+) -> (usize, usize) {
     let pad_total = cell_width.saturating_sub(content_width);
     match alignment {
         Alignment::Right => (pad_total, 0),

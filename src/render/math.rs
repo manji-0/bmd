@@ -1,7 +1,7 @@
 //! LaTeX math rendering via term-maths.
 
 use ratatui::{buffer::Buffer, layout::Rect};
-use term_maths::{render, RenderedBlock};
+use term_maths::{RenderedBlock, render};
 
 use super::context::RenderContext;
 

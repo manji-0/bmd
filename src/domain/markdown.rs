@@ -298,7 +298,11 @@ impl Document {
                         footnotes,
                     )?;
                 }
-                Inline::Text(_) | Inline::Code(_) | Inline::Math(_) | Inline::HardBreak | Inline::SoftBreak => {}
+                Inline::Text(_)
+                | Inline::Code(_)
+                | Inline::Math(_)
+                | Inline::HardBreak
+                | Inline::SoftBreak => {}
             }
         }
         Ok(())

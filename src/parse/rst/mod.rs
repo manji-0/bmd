@@ -10,10 +10,10 @@ use parserst::{Block as RstBlock, Field, Inline as RstInline, ListKind};
 use tables::TableRegionMeta;
 
 use crate::parse::dto::{
-    ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList, ParsedDocument,
-    ParsedDocumentParts, ParsedFootnoteDefinition, ParsedFrontMatter, ParsedFrontMatterKind,
-    ParsedHeading, ParsedInline, ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem,
-    ParsedMathBlock, ParsedTable, ParsedAlignment,
+    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList,
+    ParsedDocument, ParsedDocumentParts, ParsedFootnoteDefinition, ParsedFrontMatter,
+    ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink, ParsedLinkKind, ParsedList,
+    ParsedListItem, ParsedMathBlock, ParsedTable,
 };
 use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
@@ -286,8 +286,7 @@ fn map_block(block: &RstBlock, state: &mut RestState) -> Result<Vec<ParsedBlock>
             items: items
                 .iter()
                 .map(|item| {
-                    let (inlines, checklist_id, checked) =
-                        parse_checklist_item_prefix(item, state);
+                    let (inlines, checklist_id, checked) = parse_checklist_item_prefix(item, state);
                     ParsedListItem {
                         checklist_id,
                         checked,
@@ -331,11 +330,7 @@ fn map_block(block: &RstBlock, state: &mut RestState) -> Result<Vec<ParsedBlock>
                                 row.iter().map(|cell| rst_inline_plain(cell)).collect();
                             !tables::is_alignment_separator_row(&cells)
                         })
-                        .map(|row| {
-                            row.iter()
-                                .map(|cell| map_inlines(cell, state))
-                                .collect()
-                        })
+                        .map(|row| row.iter().map(|cell| map_inlines(cell, state)).collect())
                         .collect()
                 },
                 alignments: meta.alignments,
@@ -442,7 +437,9 @@ fn map_directive(
         if body.is_empty() {
             return Ok(Vec::new());
         }
-        return Ok(vec![ParsedBlock::MathBlock(ParsedMathBlock { content: body })]);
+        return Ok(vec![ParsedBlock::MathBlock(ParsedMathBlock {
+            content: body,
+        })]);
     }
     if name.eq_ignore_ascii_case("image") {
         let url = argument.trim();
@@ -462,11 +459,10 @@ fn map_directive(
         }])]);
     }
     if name.eq_ignore_ascii_case("contents") {
-        let link_id = state.parts.push_link(ParsedLink::new(
-            "bmd:toc".into(),
-            None,
-            ParsedLinkKind::Toc,
-        ));
+        let link_id =
+            state
+                .parts
+                .push_link(ParsedLink::new("bmd:toc".into(), None, ParsedLinkKind::Toc));
         return Ok(vec![ParsedBlock::Paragraph(vec![ParsedInline::Link {
             link_id,
             children: vec![ParsedInline::Text("[table of contents]".into())],
@@ -558,7 +554,9 @@ fn map_field_list(fields: &[Field], state: &mut RestState) -> Result<Vec<ParsedB
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(vec![ParsedBlock::DefinitionList(ParsedDefinitionList { items })])
+    Ok(vec![ParsedBlock::DefinitionList(ParsedDefinitionList {
+        items,
+    })])
 }
 
 fn collect_verbatim(blocks: &[RstBlock]) -> String {
@@ -760,11 +758,10 @@ fn expand_image_substitutions_text(text: &str, state: &mut RestState) -> Vec<Par
         let name = &rest[..close];
         rest = &rest[close + 1..];
         if let Some(url) = state.image_substitutions.get(name) {
-            let link_id = state.parts.push_link(ParsedLink::new(
-                url.clone(),
-                None,
-                ParsedLinkKind::Image,
-            ));
+            let link_id =
+                state
+                    .parts
+                    .push_link(ParsedLink::new(url.clone(), None, ParsedLinkKind::Image));
             out.push(ParsedInline::Link {
                 link_id,
                 children: vec![ParsedInline::Text(name.to_string())],
@@ -881,10 +878,12 @@ fn is_transition_marker(text: &str) -> bool {
     let Some(marker) = text.chars().next() else {
         return false;
     };
-    if marker == '=' || !matches!(
-        marker,
-        '*' | '`' | ':' | '|' | '_' | '-' | '#' | '.' | '^' | '"' | '~' | '+' | '\''
-    ) {
+    if marker == '='
+        || !matches!(
+            marker,
+            '*' | '`' | ':' | '|' | '_' | '-' | '#' | '.' | '^' | '"' | '~' | '+' | '\''
+        )
+    {
         return false;
     }
     text.chars().all(|ch| ch == marker)
@@ -1056,7 +1055,10 @@ mod tests {
 
     #[test]
     fn parse_rest_nested_list_preserves_structure() {
-        let doc = parse("- One\n  - Nested\n- Two").unwrap().into_domain().unwrap();
+        let doc = parse("- One\n  - Nested\n- Two")
+            .unwrap()
+            .into_domain()
+            .unwrap();
         let Block::List(list) = &doc.blocks[0] else {
             panic!("expected list");
         };
@@ -1069,7 +1071,10 @@ mod tests {
 
     #[test]
     fn parse_rest_list_item_continuation() {
-        let doc = parse("- One\n\n  Continuation.\n\n- Two").unwrap().into_domain().unwrap();
+        let doc = parse("- One\n\n  Continuation.\n\n- Two")
+            .unwrap()
+            .into_domain()
+            .unwrap();
         let Block::List(list) = &doc.blocks[0] else {
             panic!("expected list");
         };
@@ -1083,7 +1088,10 @@ mod tests {
 
     #[test]
     fn parse_rest_horizontal_rule() {
-        let doc = parse("Paragraph.\n\n----\n\nMore.\n").unwrap().into_domain().unwrap();
+        let doc = parse("Paragraph.\n\n----\n\nMore.\n")
+            .unwrap()
+            .into_domain()
+            .unwrap();
         assert!(matches!(doc.blocks[0], Block::Paragraph(_)));
         assert!(matches!(doc.blocks[1], Block::Rule));
         assert!(matches!(doc.blocks[2], Block::Paragraph(_)));
@@ -1091,11 +1099,18 @@ mod tests {
 
     #[test]
     fn parse_rest_inline_math_role() {
-        let doc = parse("Text :math:`x^2` here.").unwrap().into_domain().unwrap();
+        let doc = parse("Text :math:`x^2` here.")
+            .unwrap()
+            .into_domain()
+            .unwrap();
         let Block::Paragraph(inlines) = &doc.blocks[0] else {
             panic!("expected paragraph");
         };
-        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Math(s) if s == "x^2")));
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::Math(s) if s == "x^2"))
+        );
     }
 
     #[test]
@@ -1107,11 +1122,10 @@ mod tests {
         };
         assert_eq!(doc.links.len(), 1);
         assert_eq!(doc.links[0].url.as_str(), "https://example.com");
-        let has_link = table
-            .rows
-            .iter()
-            .flatten()
-            .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+        let has_link = table.rows.iter().flatten().any(|cell| {
+            cell.iter()
+                .any(|inline| matches!(inline, Inline::Link(_, _)))
+        });
         assert!(has_link);
     }
 
@@ -1123,11 +1137,10 @@ mod tests {
             panic!("expected table, got {:?}", doc.blocks);
         };
         assert_eq!(doc.links.len(), 1);
-        let has_link = table
-            .rows
-            .iter()
-            .flatten()
-            .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+        let has_link = table.rows.iter().flatten().any(|cell| {
+            cell.iter()
+                .any(|inline| matches!(inline, Inline::Link(_, _)))
+        });
         assert!(has_link);
     }
 
@@ -1157,26 +1170,48 @@ mod tests {
         let Block::Paragraph(inlines) = &doc.blocks[0] else {
             panic!("expected paragraph");
         };
-        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Subscript(_))));
-        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Superscript(_))));
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::Subscript(_)))
+        );
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::Superscript(_)))
+        );
     }
 
     #[test]
     fn parse_rest_inline_math_role_at_document_start() {
-        let doc = parse(":math:`x^2` at start.").unwrap().into_domain().unwrap();
+        let doc = parse(":math:`x^2` at start.")
+            .unwrap()
+            .into_domain()
+            .unwrap();
         let Block::Paragraph(inlines) = &doc.blocks[0] else {
             panic!("expected paragraph, got {:?}", doc.blocks);
         };
-        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Math(s) if s == "x^2")));
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::Math(s) if s == "x^2"))
+        );
     }
 
     #[test]
     fn parse_rest_hard_line_break() {
-        let doc = parse("line one\\\nline two").unwrap().into_domain().unwrap();
+        let doc = parse("line one\\\nline two")
+            .unwrap()
+            .into_domain()
+            .unwrap();
         let Block::Paragraph(inlines) = &doc.blocks[0] else {
             panic!("expected paragraph");
         };
-        assert!(inlines.iter().any(|inline| matches!(inline, Inline::HardBreak)));
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::HardBreak))
+        );
     }
 
     #[test]
@@ -1204,7 +1239,10 @@ mod tests {
 
     #[test]
     fn parse_rest_checklist_items() {
-        let doc = parse("- [ ] Todo\n- [x] Done").unwrap().into_domain().unwrap();
+        let doc = parse("- [ ] Todo\n- [x] Done")
+            .unwrap()
+            .into_domain()
+            .unwrap();
         let Block::List(list) = &doc.blocks[0] else {
             panic!("expected list");
         };
@@ -1234,6 +1272,10 @@ mod tests {
         let Block::Paragraph(inlines) = &doc.blocks[0] else {
             panic!("expected paragraph");
         };
-        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Link(LinkId(0), _))));
+        assert!(
+            inlines
+                .iter()
+                .any(|inline| matches!(inline, Inline::Link(LinkId(0), _)))
+        );
     }
 }
