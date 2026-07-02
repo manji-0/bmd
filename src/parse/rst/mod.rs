@@ -230,6 +230,9 @@ fn map_block(block: &RstBlock, state: &mut RestState) -> Result<Vec<ParsedBlock>
                 anchor: Some(slugify_heading(&rst_inline_plain(inlines))),
             })]
         }
+        RstBlock::Paragraph(inlines) if paragraph_is_horizontal_rule(inlines) => {
+            vec![ParsedBlock::Rule]
+        }
         RstBlock::Paragraph(inlines) => vec![ParsedBlock::Paragraph(map_inlines(inlines, state))],
         RstBlock::CodeBlock(content) | RstBlock::LiteralBlock(content) => {
             vec![ParsedBlock::CodeBlock(ParsedCodeBlock {
@@ -403,9 +406,7 @@ fn map_field_list(fields: &[Field], state: &mut RestState) -> Result<Vec<ParsedB
     let items = fields
         .iter()
         .map(|field| {
-            let mut term = vec![ParsedInline::Strong(vec![ParsedInline::Text(
-                field.name.clone(),
-            )])];
+            let mut term = vec![ParsedInline::Text(field.name.clone())];
             if !field.argument.is_empty() {
                 term.push(ParsedInline::Text(format!(" {}", field.argument)));
             }
@@ -515,6 +516,32 @@ fn read_footnote_reference(text: &str, open: usize) -> Option<(String, usize)> {
     Some((label, after + 1))
 }
 
+fn paragraph_is_horizontal_rule(inlines: &[RstInline]) -> bool {
+    if inlines.len() != 1 {
+        return false;
+    }
+    let RstInline::Text(text) = &inlines[0] else {
+        return false;
+    };
+    is_transition_marker(text.trim())
+}
+
+fn is_transition_marker(text: &str) -> bool {
+    if text.len() < 4 {
+        return false;
+    }
+    let Some(marker) = text.chars().next() else {
+        return false;
+    };
+    if marker == '=' || !matches!(
+        marker,
+        '*' | '`' | ':' | '|' | '_' | '-' | '#' | '.' | '^' | '"' | '~' | '+' | '\''
+    ) {
+        return false;
+    }
+    text.chars().all(|ch| ch == marker)
+}
+
 fn rst_inline_plain(inlines: &[RstInline]) -> String {
     inlines
         .iter()
@@ -593,7 +620,7 @@ mod tests {
         assert_eq!(list.items.len(), 1);
         assert!(matches!(
             &list.items[0].term[0],
-            ParsedInline::Strong(children) if children == &[ParsedInline::Text("Author".into())]
+            ParsedInline::Text(t) if t == "Author"
         ));
         let ParsedBlock::Paragraph(inlines) = &list.items[0].definitions[0][0] else {
             panic!("expected definition paragraph");
@@ -675,7 +702,7 @@ mod tests {
         assert_eq!(list.items.len(), 2);
         assert!(matches!(
             &list.items[0].term[0],
-            ParsedInline::Strong(children) if children == &[ParsedInline::Text("Author".into())]
+            ParsedInline::Text(t) if t == "Author"
         ));
     }
 
@@ -704,5 +731,13 @@ mod tests {
             panic!("expected continuation paragraph");
         };
         assert!(matches!(&inlines[0], Inline::Text(t) if t == "Continuation."));
+    }
+
+    #[test]
+    fn parse_rest_horizontal_rule() {
+        let doc = parse("Paragraph.\n\n----\n\nMore.\n").unwrap().into_domain().unwrap();
+        assert!(matches!(doc.blocks[0], Block::Paragraph(_)));
+        assert!(matches!(doc.blocks[1], Block::Rule));
+        assert!(matches!(doc.blocks[2], Block::Paragraph(_)));
     }
 }
