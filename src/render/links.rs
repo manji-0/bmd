@@ -5,7 +5,7 @@ use ratatui::text::Line;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::{Block, Document, Inline, LinkId, List};
+use crate::domain::{Block, DefinitionList, Document, Inline, LinkId, List};
 
 use super::context::RenderContext;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
@@ -97,6 +97,9 @@ fn collect_block_link_hits(
         Block::List(list) => {
             collect_list_link_hits(list, block_idx, width, base_x, ctx, hits, line_offset);
         }
+        Block::DefinitionList(list) => {
+            collect_definition_list_link_hits(list, block_idx, width, base_x, ctx, hits, line_offset);
+        }
         Block::Table(_) | Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {
             *line_offset += measure_block_height(block, block_idx, width, ctx);
         }
@@ -132,6 +135,43 @@ fn collect_list_link_hits(
                 hits,
                 line_offset,
             );
+        }
+    }
+}
+
+fn collect_definition_list_link_hits(
+    list: &DefinitionList,
+    block_idx: usize,
+    width: u16,
+    base_x: usize,
+    ctx: &RenderContext,
+    hits: &mut Vec<LinkHit>,
+    line_offset: &mut usize,
+) {
+    let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+    let content_x = base_x + 2;
+    for item in &list.items {
+        if !item.term.is_empty() {
+            collect_inline_link_hits(&item.term, width as usize, base_x, *line_offset, hits);
+            *line_offset += measure_block_height(
+                &Block::Paragraph(item.term.clone()),
+                block_idx,
+                width,
+                ctx,
+            );
+        }
+        for definition in &item.definitions {
+            for child in definition {
+                collect_block_link_hits(
+                    child,
+                    block_idx,
+                    inner_width,
+                    content_x,
+                    ctx,
+                    hits,
+                    line_offset,
+                );
+            }
         }
     }
 }
@@ -407,6 +447,9 @@ fn block_first_link_line(
             None
         }
         Block::List(list) => list_first_link_line(list, block_idx, width, ctx, link_id),
+        Block::DefinitionList(list) => {
+            definition_list_first_link_line(list, block_idx, width, ctx, link_id)
+        }
         Block::Table(table) => {
             for cell in table
                 .headers
@@ -442,6 +485,40 @@ fn list_first_link_line(
             item_line += measure_block_height(child, block_idx, item_width, ctx);
         }
         line_offset += item_line.max(1);
+    }
+    None
+}
+
+fn definition_list_first_link_line(
+    list: &DefinitionList,
+    block_idx: usize,
+    width: u16,
+    ctx: &RenderContext,
+    link_id: LinkId,
+) -> Option<usize> {
+    let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+    let mut line_offset = 0usize;
+    for item in &list.items {
+        if !item.term.is_empty() {
+            if inlines_contain_link(&item.term, link_id) {
+                return Some(line_offset);
+            }
+            line_offset += measure_block_height(
+                &Block::Paragraph(item.term.clone()),
+                block_idx,
+                width,
+                ctx,
+            );
+        }
+        for definition in &item.definitions {
+            for child in definition {
+                if let Some(local) = block_first_link_line(child, block_idx, inner_width, ctx, link_id)
+                {
+                    return Some(line_offset + local);
+                }
+                line_offset += measure_block_height(child, block_idx, inner_width, ctx);
+            }
+        }
     }
     None
 }

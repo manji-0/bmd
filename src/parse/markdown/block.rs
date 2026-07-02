@@ -5,9 +5,10 @@ use pulldown_cmark::{Alignment as CmarkAlignment, Event, MetadataBlockKind, Pars
 use std::collections::HashMap;
 
 use crate::parse::dto::{
-    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedFootnoteDefinition,
-    ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink,
-    ParsedLinkKind, ParsedList, ParsedListItem, ParsedMathBlock, ParsedMermaidDiagram, ParsedTable,
+    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList,
+    ParsedDocument, ParsedFootnoteDefinition, ParsedFrontMatter, ParsedFrontMatterKind,
+    ParsedHeading, ParsedInline, ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem,
+    ParsedMathBlock, ParsedMermaidDiagram, ParsedTable,
 };
 use crate::parse::error::ParseError;
 
@@ -79,6 +80,13 @@ enum BlockFrame {
     MetadataBlock {
         kind: ParsedFrontMatterKind,
         content: String,
+    },
+    DefinitionList {
+        items: Vec<ParsedDefinitionItem>,
+        current_term: Option<Vec<ParsedInline>>,
+    },
+    DefinitionListDefinition {
+        blocks: Vec<ParsedBlock>,
     },
 }
 
@@ -241,12 +249,18 @@ impl<'a> ParserState<'a> {
                     content: String::new(),
                 });
             }
-            Tag::DefinitionList
-            | Tag::DefinitionListTitle
-            | Tag::DefinitionListDefinition
-            | Tag::HtmlBlock
-            | Tag::Superscript
-            | Tag::Subscript => {}
+            Tag::DefinitionList => self.stack.push(BlockFrame::DefinitionList {
+                items: Vec::new(),
+                current_term: None,
+            }),
+            Tag::DefinitionListTitle => {
+                self.stack
+                    .push(BlockFrame::Paragraph(InlineParser::new()));
+            }
+            Tag::DefinitionListDefinition => self.stack.push(BlockFrame::DefinitionListDefinition {
+                blocks: Vec::new(),
+            }),
+            Tag::HtmlBlock | Tag::Superscript | Tag::Subscript => {}
         }
         Ok(())
     }
@@ -451,12 +465,38 @@ impl<'a> ParserState<'a> {
                     }
                 }
             }
-            TagEnd::DefinitionList
-            | TagEnd::DefinitionListTitle
-            | TagEnd::DefinitionListDefinition
-            | TagEnd::HtmlBlock
-            | TagEnd::Superscript
-            | TagEnd::Subscript => {}
+            TagEnd::DefinitionList => {
+                let frame = self.pop_frame("definition list")?;
+                if let BlockFrame::DefinitionList { items, current_term } = frame {
+                    let mut items = items;
+                    if let Some(term) = current_term {
+                        items.push(ParsedDefinitionItem {
+                            term,
+                            definitions: Vec::new(),
+                        });
+                    }
+                    self.finish_block(ParsedBlock::DefinitionList(ParsedDefinitionList {
+                        items,
+                    }));
+                }
+            }
+            TagEnd::DefinitionListTitle => {
+                let frame = self.pop_frame("definition list title")?;
+                if let BlockFrame::Paragraph(parser) = frame {
+                    if let Some(BlockFrame::DefinitionList { current_term, .. }) =
+                        self.stack.last_mut()
+                    {
+                        *current_term = Some(parser.into_inlines());
+                    }
+                }
+            }
+            TagEnd::DefinitionListDefinition => {
+                let frame = self.pop_frame("definition list definition")?;
+                if let BlockFrame::DefinitionListDefinition { blocks } = frame {
+                    self.finish_definition_list_definition(blocks);
+                }
+            }
+            TagEnd::HtmlBlock | TagEnd::Superscript | TagEnd::Subscript => {}
         }
         Ok(())
     }
@@ -592,6 +632,14 @@ impl<'a> ParserState<'a> {
     }
 
     fn push_inline_to_list_item(&mut self, inline: ParsedInline) {
+        if let Some(BlockFrame::DefinitionListDefinition { blocks }) = self.stack.last_mut() {
+            if let Some(ParsedBlock::Paragraph(inlines)) = blocks.last_mut() {
+                inlines.push(inline);
+            } else {
+                blocks.push(ParsedBlock::Paragraph(vec![inline]));
+            }
+            return;
+        }
         if let Some(BlockFrame::ListItem { blocks, .. }) = self.stack.last_mut() {
             if let Some(ParsedBlock::Paragraph(inlines)) = blocks.last_mut() {
                 inlines.push(inline);
@@ -644,6 +692,7 @@ impl<'a> ParserState<'a> {
                 BlockFrame::ListItem { blocks, .. } => blocks.push(block),
                 BlockFrame::List { current_item, .. } => current_item.push(block),
                 BlockFrame::FootnoteDefinition { blocks, .. } => blocks.push(block),
+                BlockFrame::DefinitionListDefinition { blocks } => blocks.push(block),
                 _ => self.blocks.push(block),
             }
         } else {
@@ -717,6 +766,29 @@ impl<'a> ParserState<'a> {
         self.blocks.push(ParsedBlock::MathBlock(ParsedMathBlock {
             content,
         }));
+    }
+
+    fn finish_definition_list_definition(&mut self, blocks: Vec<ParsedBlock>) {
+        let Some(BlockFrame::DefinitionList {
+            items,
+            current_term,
+        }) = self.stack.last_mut()
+        else {
+            return;
+        };
+        if let Some(term) = current_term.take() {
+            items.push(ParsedDefinitionItem {
+                term,
+                definitions: vec![blocks],
+            });
+        } else if let Some(last) = items.last_mut() {
+            last.definitions.push(blocks);
+        } else {
+            items.push(ParsedDefinitionItem {
+                term: Vec::new(),
+                definitions: vec![blocks],
+            });
+        }
     }
 }
 

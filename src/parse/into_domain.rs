@@ -1,15 +1,16 @@
 //! DTO -> domain conversion with validation at the boundary.
 
 use crate::domain::{
-    Alignment, Block, ChecklistId, CodeBlock, Document, FootnoteDefinition, FootnoteId,
-    FrontMatter, FrontMatterKind, Heading, HeadingLevel, Inline, Link, LinkId, LinkUrl, List,
-    ListItem, MathBlock, MermaidDiagram, Table,
+    Alignment, Block, ChecklistId, CodeBlock, DefinitionItem, DefinitionList, Document,
+    FootnoteDefinition, FootnoteId, FrontMatter, FrontMatterKind, Heading, HeadingLevel, Inline,
+    Link, LinkId, LinkUrl, List, ListItem, MathBlock, MermaidDiagram, Table,
 };
 
 use super::dto::{
-    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedFootnoteDefinition,
-    ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink, ParsedList,
-    ParsedListItem, ParsedMathBlock, ParsedTable,
+    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList,
+    ParsedDocument, ParsedFootnoteDefinition, ParsedFrontMatter, ParsedFrontMatterKind,
+    ParsedHeading, ParsedInline, ParsedLink, ParsedList, ParsedListItem, ParsedMathBlock,
+    ParsedTable,
 };
 use crate::parse::normalize_anchor_slug;
 
@@ -98,6 +99,7 @@ fn convert_block(owned: ParsedBlock) -> Result<Block, IntoDomainError> {
         ParsedBlock::MathBlock(math) => Ok(Block::MathBlock(convert_math_block(math))),
         ParsedBlock::BlockQuote(blocks) => Ok(Block::BlockQuote(convert_blocks(blocks)?)),
         ParsedBlock::List(list) => Ok(Block::List(convert_list(list)?)),
+        ParsedBlock::DefinitionList(list) => Ok(Block::DefinitionList(convert_definition_list(list)?)),
         ParsedBlock::Table(table) => Ok(Block::Table(convert_table(table)?)),
         ParsedBlock::Rule => Ok(Block::Rule),
     }
@@ -146,6 +148,27 @@ fn convert_list(list: ParsedList) -> Result<List, IntoDomainError> {
             .items
             .into_iter()
             .map(convert_list_item)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn convert_definition_list(list: ParsedDefinitionList) -> Result<DefinitionList, IntoDomainError> {
+    Ok(DefinitionList {
+        items: list
+            .items
+            .into_iter()
+            .map(convert_definition_item)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn convert_definition_item(item: ParsedDefinitionItem) -> Result<DefinitionItem, IntoDomainError> {
+    Ok(DefinitionItem {
+        term: convert_inlines(item.term)?,
+        definitions: item
+            .definitions
+            .into_iter()
+            .map(convert_blocks)
             .collect::<Result<Vec<_>, _>>()?,
     })
 }

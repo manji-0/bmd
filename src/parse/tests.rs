@@ -567,3 +567,21 @@ fn parse_display_math() {
     };
     assert_eq!(math.content.trim(), "\\frac{a}{b}");
 }
+
+#[test]
+fn parse_definition_list() {
+    let doc = parse(
+        "apple\n:   red fruit\n\norange\n:   orange fruit\n",
+    )
+    .unwrap();
+    let Block::DefinitionList(list) = &doc.blocks[0] else {
+        panic!("expected definition list");
+    };
+    assert_eq!(list.items.len(), 2);
+    assert!(matches!(&list.items[0].term[0], Inline::Text(t) if t == "apple"));
+    assert_eq!(list.items[0].definitions.len(), 1);
+    let Block::Paragraph(inlines) = &list.items[0].definitions[0][0] else {
+        panic!("expected definition paragraph");
+    };
+    assert!(matches!(&inlines[0], Inline::Text(t) if t == "red fruit"));
+}

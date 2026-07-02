@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use parserst::{Block as RstBlock, Field, Inline as RstInline, ListKind};
 
 use crate::parse::dto::{
-    ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedDocumentParts, ParsedFootnoteDefinition,
-    ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink,
-    ParsedLinkKind, ParsedList, ParsedListItem, ParsedMathBlock, ParsedTable,
+    ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList, ParsedDocument,
+    ParsedDocumentParts, ParsedFootnoteDefinition, ParsedFrontMatter, ParsedFrontMatterKind,
+    ParsedHeading, ParsedInline, ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem,
+    ParsedMathBlock, ParsedTable,
 };
 use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
@@ -342,19 +343,27 @@ fn map_admonition(
 }
 
 fn map_field_list(fields: &[Field], state: &mut RestState) -> Result<Vec<ParsedBlock>, ParseError> {
-    let mut out = Vec::new();
-    for field in fields {
-        let mut inlines = vec![
-            ParsedInline::Strong(vec![ParsedInline::Text(field.name.clone())]),
-            ParsedInline::Text(": ".into()),
-        ];
-        if !field.argument.is_empty() {
-            inlines.push(ParsedInline::Text(field.argument.clone()));
-        }
-        out.push(ParsedBlock::Paragraph(inlines));
-        out.extend(map_blocks(&field.body, state)?);
-    }
-    Ok(out)
+    let items = fields
+        .iter()
+        .map(|field| {
+            let mut term = vec![ParsedInline::Strong(vec![ParsedInline::Text(
+                field.name.clone(),
+            )])];
+            if !field.argument.is_empty() {
+                term.push(ParsedInline::Text(format!(" {}", field.argument)));
+            }
+            let body = map_blocks(&field.body, state)?;
+            Ok(ParsedDefinitionItem {
+                term,
+                definitions: if body.is_empty() {
+                    vec![Vec::new()]
+                } else {
+                    vec![body]
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(vec![ParsedBlock::DefinitionList(ParsedDefinitionList { items })])
 }
 
 fn collect_verbatim(blocks: &[RstBlock]) -> String {
@@ -521,7 +530,18 @@ mod tests {
     #[test]
     fn parse_rest_field_list_maps_term_and_body() {
         let dto = parse("Title\n=====\n\n:Author: Jane Doe\n\nBody paragraph.\n").unwrap();
-        assert!(matches!(dto.blocks[1], ParsedBlock::Paragraph(_)));
+        let ParsedBlock::DefinitionList(list) = &dto.blocks[1] else {
+            panic!("expected definition list, got {:?}", dto.blocks[1]);
+        };
+        assert_eq!(list.items.len(), 1);
+        assert!(matches!(
+            &list.items[0].term[0],
+            ParsedInline::Strong(children) if children == &[ParsedInline::Text("Author".into())]
+        ));
+        let ParsedBlock::Paragraph(inlines) = &list.items[0].definitions[0][0] else {
+            panic!("expected definition paragraph");
+        };
+        assert!(matches!(&inlines[0], ParsedInline::Text(t) if t == "Jane Doe"));
     }
 
     #[test]
@@ -587,5 +607,18 @@ mod tests {
             panic!("expected math block, got {:?}", dto.blocks);
         };
         assert!(math.content.contains("x^2"));
+    }
+
+    #[test]
+    fn parse_rest_field_list_as_definition_list() {
+        let dto = parse("Intro.\n\n:Author: Jane Doe\n:License: MIT\n\nBody.\n").unwrap();
+        let ParsedBlock::DefinitionList(list) = &dto.blocks[1] else {
+            panic!("expected definition list, got {:?}", dto.blocks);
+        };
+        assert_eq!(list.items.len(), 2);
+        assert!(matches!(
+            &list.items[0].term[0],
+            ParsedInline::Strong(children) if children == &[ParsedInline::Text("Author".into())]
+        ));
     }
 }

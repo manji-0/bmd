@@ -99,6 +99,16 @@ impl Document {
                     }
                 }
             }
+            Block::DefinitionList(list) => {
+                for item in &list.items {
+                    Self::validate_inlines_links(&item.term, block_idx, link_count)?;
+                    for definition in &item.definitions {
+                        for child in definition {
+                            Self::validate_block_links(child, block_idx, link_count)?;
+                        }
+                    }
+                }
+            }
             Block::Table(table) => {
                 for cell in &table.headers {
                     Self::validate_inlines_links(cell, block_idx, link_count)?;
@@ -206,6 +216,28 @@ impl Document {
                     }
                 }
             }
+            Block::DefinitionList(list) => {
+                for item in &list.items {
+                    Self::validate_inlines_footnotes(
+                        &item.term,
+                        block_idx,
+                        footnote_count,
+                        referenced,
+                        footnotes,
+                    )?;
+                    for definition in &item.definitions {
+                        for child in definition {
+                            Self::validate_block_footnotes(
+                                child,
+                                block_idx,
+                                footnote_count,
+                                referenced,
+                                footnotes,
+                            )?;
+                        }
+                    }
+                }
+            }
             Block::Table(table) => {
                 for cell in &table.headers {
                     Self::validate_inlines_footnotes(
@@ -300,6 +332,7 @@ pub enum Block {
     MathBlock(MathBlock),
     BlockQuote(Vec<Block>),
     List(List),
+    DefinitionList(DefinitionList),
     Table(Table),
     Rule,
 }
@@ -413,6 +446,18 @@ impl ListItem {
             content,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DefinitionList {
+    pub items: Vec<DefinitionItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DefinitionItem {
+    pub term: Vec<Inline>,
+    /// Each entry is the block content of one definition (`<dd>`).
+    pub definitions: Vec<Vec<Block>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

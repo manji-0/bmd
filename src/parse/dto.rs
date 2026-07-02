@@ -60,8 +60,20 @@ pub enum ParsedBlock {
     MathBlock(ParsedMathBlock),
     BlockQuote(Vec<ParsedBlock>),
     List(ParsedList),
+    DefinitionList(ParsedDefinitionList),
     Table(ParsedTable),
     Rule,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedDefinitionList {
+    pub items: Vec<ParsedDefinitionItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedDefinitionItem {
+    pub term: Vec<ParsedInline>,
+    pub definitions: Vec<Vec<ParsedBlock>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

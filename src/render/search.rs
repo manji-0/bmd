@@ -5,7 +5,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::list_marker::list_marker_width_at;
 
-use crate::domain::{Block, CodeBlock, Document, Inline, List, SearchMatch, Table};
+use crate::domain::{Block, CodeBlock, DefinitionList, Document, Inline, List, SearchMatch, Table};
 
 use super::context::RenderContext;
 use super::footnotes::footnote_searchable_lines;
@@ -118,6 +118,7 @@ fn block_searchable_lines(block: &Block, width: u16, ctx: &RenderContext) -> Vec
             lines
         }
         Block::List(list) => list_searchable_lines(list, width, ctx),
+        Block::DefinitionList(list) => definition_list_searchable_lines(list, width, ctx),
         Block::Table(table) => table_searchable_lines(table, width, ctx),
         Block::Rule => Vec::new(),
     }
@@ -152,6 +153,33 @@ fn list_searchable_lines(list: &List, width: u16, ctx: &RenderContext) -> Vec<St
         }
         for child in &item.content {
             lines.extend(block_searchable_lines(child, inner_width, ctx));
+        }
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+fn definition_list_searchable_lines(
+    list: &DefinitionList,
+    width: u16,
+    ctx: &RenderContext,
+) -> Vec<String> {
+    let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+    let mut lines = Vec::new();
+    for item in &list.items {
+        if !item.term.is_empty() {
+            lines.extend(
+                inlines_to_wrapped_lines(&item.term, ctx, ctx.theme.text, 0, width as usize)
+                    .into_iter()
+                    .map(|(_, line)| line_plain_text(&line)),
+            );
+        }
+        for definition in &item.definitions {
+            for child in definition {
+                lines.extend(block_searchable_lines(child, inner_width, ctx));
+            }
         }
     }
     if lines.is_empty() {

@@ -7,10 +7,10 @@ use acdc_parser::{
 };
 
 use crate::parse::dto::{
-    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDocument, ParsedDocumentParts,
-    ParsedFootnoteDefinition, ParsedFrontMatter, ParsedFrontMatterKind, ParsedHeading,
-    ParsedInline, ParsedLink, ParsedLinkKind, ParsedList, ParsedListItem, ParsedMathBlock,
-    ParsedTable,
+    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList,
+    ParsedDocument, ParsedDocumentParts, ParsedFootnoteDefinition, ParsedFrontMatter,
+    ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink, ParsedLinkKind, ParsedList,
+    ParsedListItem, ParsedMathBlock, ParsedTable,
 };
 use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
@@ -356,19 +356,23 @@ fn map_description_list(
     list: &acdc_parser::DescriptionList<'_>,
     state: &mut AsciiDocState<'_>,
 ) -> Result<Vec<ParsedBlock>, ParseError> {
-    let mut out = Vec::new();
-    for item in &list.items {
-        let mut inlines = map_inlines(&item.term, state);
-        if !inlines.is_empty() {
-            inlines.push(ParsedInline::Text(": ".into()));
-        }
-        inlines.extend(map_inlines(&item.principal_text, state));
-        if !inlines.is_empty() {
-            out.push(ParsedBlock::Paragraph(inlines));
-        }
-        out.extend(map_blocks(&item.description, state)?);
-    }
-    Ok(out)
+    let items = list
+        .items
+        .iter()
+        .map(|item| {
+            let mut definition = Vec::new();
+            let principal = map_inlines(&item.principal_text, state);
+            if !principal.is_empty() {
+                definition.push(ParsedBlock::Paragraph(principal));
+            }
+            definition.extend(map_blocks(&item.description, state)?);
+            Ok(ParsedDefinitionItem {
+                term: map_inlines(&item.term, state),
+                definitions: vec![definition],
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(vec![ParsedBlock::DefinitionList(ParsedDefinitionList { items })])
 }
 
 fn map_delimited_block(
@@ -960,12 +964,15 @@ mod tests {
     #[test]
     fn parse_asciidoc_description_list_orders_term_before_colon() {
         let dto = parse("= Doc\n\nname:: value\n").unwrap();
-        let ParsedBlock::Paragraph(inlines) = &dto.blocks[1] else {
-            panic!("expected description paragraph, got {:?}", dto.blocks);
+        let ParsedBlock::DefinitionList(list) = &dto.blocks[1] else {
+            panic!("expected description list, got {:?}", dto.blocks);
         };
-        assert!(matches!(&inlines[0], ParsedInline::Text(t) if t == "name"));
-        assert!(matches!(&inlines[1], ParsedInline::Text(t) if t == ": "));
-        assert!(matches!(&inlines[2], ParsedInline::Text(t) if t == "value"));
+        assert_eq!(list.items.len(), 1);
+        assert!(matches!(&list.items[0].term[0], ParsedInline::Text(t) if t == "name"));
+        let ParsedBlock::Paragraph(inlines) = &list.items[0].definitions[0][0] else {
+            panic!("expected principal paragraph");
+        };
+        assert!(matches!(&inlines[0], ParsedInline::Text(t) if t == "value"));
     }
 
     #[test]

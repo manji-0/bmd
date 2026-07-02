@@ -4,7 +4,7 @@ use super::list_marker::{list_marker_label, list_marker_width_at};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Paragraph, Widget},
 };
@@ -17,7 +17,7 @@ use super::math::render_math_block;
 use super::measure::measure_block_height;
 use super::table::render_table;
 
-use crate::domain::{Block, CodeBlock, Heading, Inline, List, MathBlock};
+use crate::domain::{Block, CodeBlock, DefinitionList, Heading, Inline, List, MathBlock};
 
 pub(crate) fn render_block(
     block: &Block,
@@ -41,6 +41,9 @@ pub(crate) fn render_block(
             render_blockquote(blocks, area, buf, skip_rows, ctx, line_offset)
         }
         Block::List(list) => render_list(list, area, buf, skip_rows, ctx, line_offset),
+        Block::DefinitionList(list) => {
+            render_definition_list(list, area, buf, skip_rows, ctx, line_offset)
+        }
         Block::Table(table) => render_table(table, area, buf, skip_rows, ctx, line_offset),
         Block::Rule => render_rule(area, buf),
     }
@@ -268,6 +271,90 @@ fn render_blockquote(
         line_offset_inner += height;
         if y >= max_y {
             break;
+        }
+    }
+}
+
+fn render_definition_list(
+    list: &DefinitionList,
+    area: Rect,
+    buf: &mut Buffer,
+    skip_rows: usize,
+    ctx: &RenderContext,
+    line_offset: usize,
+) {
+    const INDENT: u16 = 2;
+    let inner_width = (area.width as usize).saturating_sub(INDENT as usize).max(1) as u16;
+    let mut y = area.y;
+    let mut line_offset_inner = 0usize;
+    let scroll = skip_rows;
+    let max_y = area.y + area.height;
+    let term_style = ctx.theme.text.add_modifier(Modifier::BOLD);
+
+    for item in &list.items {
+        if !item.term.is_empty() {
+            let rows = inlines_to_wrapped_lines(
+                &item.term,
+                ctx,
+                term_style,
+                line_offset + line_offset_inner,
+                area.width as usize,
+            );
+            let term_height = rows.len().max(1);
+            if line_offset_inner + term_height > scroll {
+                let term_skip = scroll.saturating_sub(line_offset_inner);
+                let term_area = Rect {
+                    x: area.x,
+                    y,
+                    width: area.width,
+                    height: area.height.saturating_sub(y.saturating_sub(area.y)),
+                };
+                render_offset_lines(&rows, term_area, buf, term_skip);
+                let rendered = term_height
+                    .saturating_sub(term_skip)
+                    .min((max_y.saturating_sub(y)) as usize);
+                y += rendered as u16;
+            }
+            line_offset_inner += term_height;
+            if y >= max_y {
+                return;
+            }
+        }
+
+        for definition in &item.definitions {
+            for block in definition {
+                let height = measure_block_height(block, usize::MAX, inner_width, ctx);
+                if line_offset_inner + height <= scroll {
+                    line_offset_inner += height;
+                    continue;
+                }
+                let block_skip = scroll.saturating_sub(line_offset_inner);
+                let remaining = (max_y - y) as usize;
+                let render_height = height.saturating_sub(block_skip).min(remaining);
+                if render_height == 0 {
+                    return;
+                }
+                let block_area = Rect {
+                    x: area.x + INDENT,
+                    y,
+                    width: inner_width,
+                    height: render_height as u16,
+                };
+                render_block(
+                    block,
+                    usize::MAX,
+                    block_area,
+                    buf,
+                    block_skip,
+                    ctx,
+                    line_offset + line_offset_inner,
+                );
+                y += render_height as u16;
+                line_offset_inner += height;
+                if y >= max_y {
+                    return;
+                }
+            }
         }
     }
 }

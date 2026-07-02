@@ -61,6 +61,25 @@ fn collect_block_checklist_hits(
                 );
             }
         }
+        Block::DefinitionList(list) => {
+            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            for item in &list.items {
+                for definition in &item.definitions {
+                    for child in definition {
+                        collect_block_checklist_hits(
+                            child,
+                            block_idx,
+                            inner_width,
+                            base_x + 2,
+                            ctx,
+                            hits,
+                            line_offset,
+                        );
+                    }
+                }
+            }
+            *line_offset += measure_block_height(block, block_idx, width, ctx);
+        }
         _ => {
             *line_offset += measure_block_height(block, block_idx, width, ctx);
         }
@@ -137,6 +156,15 @@ fn find_checklist_item_in_block(block: &Block, id: ChecklistId) -> Option<&ListI
         Block::BlockQuote(blocks) => blocks
             .iter()
             .find_map(|child| find_checklist_item_in_block(child, id)),
+        Block::DefinitionList(list) => list.items.iter().find_map(|item| {
+            item.definitions
+                .iter()
+                .find_map(|definition| {
+                    definition
+                        .iter()
+                        .find_map(|child| find_checklist_item_in_block(child, id))
+                })
+        }),
         _ => None,
     }
 }
