@@ -40,10 +40,15 @@ struct RestState {
     front_matter: Option<ParsedFrontMatter>,
     table_regions: Vec<TableRegionMeta>,
     table_region_index: usize,
+    image_substitutions: HashMap<String, String>,
 }
 
 impl RestState {
-    fn new(front_matter: Option<ParsedFrontMatter>, table_regions: Vec<TableRegionMeta>) -> Self {
+    fn new(
+        front_matter: Option<ParsedFrontMatter>,
+        table_regions: Vec<TableRegionMeta>,
+        image_substitutions: HashMap<String, String>,
+    ) -> Self {
         Self {
             parts: ParsedDocumentParts::default(),
             footnotes: Vec::new(),
@@ -52,6 +57,7 @@ impl RestState {
             front_matter,
             table_regions,
             table_region_index: 0,
+            image_substitutions,
         }
     }
 
@@ -107,8 +113,9 @@ pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
         .map_err(|error| ParseError::syntax(MarkupFormat::Rest, error.to_string()))?;
     let (front_matter, body_start) = extract_leading_front_matter(&blocks);
     let table_regions = tables::find_table_regions(content);
+    let image_substitutions = extract_image_substitutions(content);
     let enhanced = lists::enhance_blocks(content, &blocks[body_start..]);
-    let mut state = RestState::new(front_matter, table_regions);
+    let mut state = RestState::new(front_matter, table_regions, image_substitutions);
     let parsed_blocks = map_enhanced_blocks(&enhanced, &mut state)?;
     Ok(state.into_document(parsed_blocks))
 }
@@ -366,6 +373,12 @@ fn map_directive(
     content: &[RstBlock],
     state: &mut RestState,
 ) -> Result<Vec<ParsedBlock>, ParseError> {
+    if let Some(substitution) = parse_misparsed_image_substitution(name, argument) {
+        state
+            .image_substitutions
+            .insert(substitution.0, substitution.1);
+        return Ok(Vec::new());
+    }
     if is_code_directive(name) {
         let language = if argument.is_empty() {
             None
@@ -520,7 +533,16 @@ fn expand_rst_text(text: &str, state: &mut RestState) -> Vec<ParsedInline> {
         }
         for inline in expand_footnote_refs(segment, state) {
             match inline {
-                ParsedInline::Text(value) => out.extend(expand_strikethrough(&value)),
+                ParsedInline::Text(value) => {
+                    for part in expand_strikethrough(&value) {
+                        match part {
+                            ParsedInline::Text(text) => {
+                                out.extend(expand_image_substitutions_text(&text, state));
+                            }
+                            other => out.push(other),
+                        }
+                    }
+                }
                 other => out.push(other),
             }
         }
@@ -593,6 +615,81 @@ fn parse_inline_role_prefix(inline: &ParsedInline) -> Option<(String, InlineRole
         return Some((before.to_string(), InlineRole::Strike));
     }
     None
+}
+
+fn extract_image_substitutions(content: &str) -> HashMap<String, String> {
+    let mut substitutions = HashMap::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed.strip_prefix(".. ") else {
+            continue;
+        };
+        if let Some((name, url)) = parse_image_substitution_directive(rest) {
+            substitutions.insert(name, url);
+        }
+    }
+    substitutions
+}
+
+fn parse_image_substitution_directive(rest: &str) -> Option<(String, String)> {
+    let rest = rest.strip_prefix('|')?;
+    let (name, after) = rest.split_once('|')?;
+    let after = after.trim_start();
+    if !after.starts_with("image::") {
+        return None;
+    }
+    let url = after.strip_prefix("image::")?.trim();
+    if name.is_empty() || url.is_empty() {
+        return None;
+    }
+    Some((name.to_string(), url.to_string()))
+}
+
+fn parse_misparsed_image_substitution(name: &str, argument: &str) -> Option<(String, String)> {
+    let rest = name.strip_prefix('|')?;
+    let (subst_name, suffix) = rest.split_once('|')?;
+    if !suffix.trim().eq_ignore_ascii_case("image") {
+        return None;
+    }
+    let url = argument.trim();
+    if subst_name.is_empty() || url.is_empty() {
+        return None;
+    }
+    Some((subst_name.to_string(), url.to_string()))
+}
+
+fn expand_image_substitutions_text(text: &str, state: &mut RestState) -> Vec<ParsedInline> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('|') {
+        if open > 0 {
+            out.push(ParsedInline::Text(rest[..open].to_string()));
+        }
+        rest = &rest[open + 1..];
+        let Some(close) = rest.find('|') else {
+            out.push(ParsedInline::Text(format!("|{rest}")));
+            break;
+        };
+        let name = &rest[..close];
+        rest = &rest[close + 1..];
+        if let Some(url) = state.image_substitutions.get(name) {
+            let link_id = state.parts.push_link(ParsedLink::new(
+                url.clone(),
+                None,
+                ParsedLinkKind::Image,
+            ));
+            out.push(ParsedInline::Link {
+                link_id,
+                children: vec![ParsedInline::Text(name.to_string())],
+            });
+        } else {
+            out.push(ParsedInline::Text(format!("|{name}|")));
+        }
+    }
+    if !rest.is_empty() {
+        out.push(ParsedInline::Text(rest.to_string()));
+    }
+    out
 }
 
 fn expand_footnote_refs(text: &str, state: &mut RestState) -> Vec<ParsedInline> {
@@ -730,7 +827,7 @@ fn mermaid_link_label(source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Alignment, Block, Inline, LinkKind};
+    use crate::domain::{Alignment, Block, Inline, LinkId, LinkKind};
 
     #[test]
     fn parse_rest_heading_and_emphasis() {
@@ -956,5 +1053,28 @@ mod tests {
         assert!(!list.items[0].checked);
         assert!(list.items[1].checklist_id.is_some());
         assert!(list.items[1].checked);
+    }
+
+    #[test]
+    fn parse_rest_grid_table_column_alignments() {
+        let source = "+-------+--------+\n| Left  | Right  |\n+=======+=======:+\n| A     |      B |\n+-------+--------+\n";
+        let doc = parse(source).unwrap().into_domain().unwrap();
+        let Block::Table(table) = &doc.blocks[0] else {
+            panic!("expected table");
+        };
+        assert_eq!(table.alignments, vec![Alignment::Left, Alignment::Right]);
+    }
+
+    #[test]
+    fn parse_rest_image_substitution_inline() {
+        let source = ".. |logo| image:: /img/logo.png\n\nSee |logo| here.\n";
+        let doc = parse(source).unwrap().into_domain().unwrap();
+        assert_eq!(doc.links.len(), 1);
+        assert_eq!(doc.links[0].kind, LinkKind::Image);
+        assert_eq!(doc.links[0].url.as_str(), "/img/logo.png");
+        let Block::Paragraph(inlines) = &doc.blocks[0] else {
+            panic!("expected paragraph");
+        };
+        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Link(LinkId(0), _))));
     }
 }

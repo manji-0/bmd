@@ -191,4 +191,29 @@ mod tests {
             assert_eq!(table.alignments.last().copied(), Some(Alignment::Right));
         }
     }
+
+    #[test]
+    fn parity_grid_table_column_alignments() {
+        let rest = domain(
+            MarkupFormat::Rest,
+            "+-------+--------+\n| Left  | Right  |\n+=======+=======:+\n| A     |      B |\n+-------+--------+\n",
+        );
+        let Block::Table(table) = &rest.blocks[0] else {
+            panic!("expected table");
+        };
+        assert_eq!(table.alignments, vec![Alignment::Left, Alignment::Right]);
+    }
+
+    #[test]
+    fn parity_block_image_link() {
+        let markdown = domain(MarkupFormat::Markdown, "![logo](/img/logo.png)");
+        let asciidoc = domain(MarkupFormat::AsciiDoc, "image::/img/logo.png[]");
+        let rest = domain(MarkupFormat::Rest, ".. image:: /img/logo.png\n");
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            assert_eq!(doc.links.len(), 1);
+            assert_eq!(doc.links[0].kind, crate::domain::LinkKind::Image);
+            assert_eq!(doc.links[0].url.as_str(), "/img/logo.png");
+        }
+    }
 }

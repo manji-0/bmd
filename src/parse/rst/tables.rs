@@ -42,7 +42,7 @@ fn is_grid_border(line: &str) -> bool {
         && trimmed.starts_with('+')
         && trimmed
             .chars()
-            .all(|c| c == '+' || c == '-' || c == '=' || c == ' ')
+            .all(|c| c == '+' || c == '-' || c == '=' || c == ' ' || c == ':')
 }
 
 fn is_alignment_row(line: &str) -> bool {
@@ -64,7 +64,7 @@ fn split_table_row(line: &str) -> Vec<String> {
 
 fn parse_alignment_cell(cell: &str) -> ParsedAlignment {
     let trimmed = cell.trim();
-    if !trimmed.chars().any(|c| c == '-') {
+    if !trimmed.chars().any(|c| c == '-' || c == '=') {
         return ParsedAlignment::None;
     }
     let left = trimmed.starts_with(':');
@@ -123,33 +123,59 @@ fn parse_simple_table_region(lines: &[&str], start: usize) -> Option<(TableRegio
     Some((TableRegionMeta { alignments }, index))
 }
 
+fn parse_grid_separator_alignments(line: &str) -> Vec<ParsedAlignment> {
+    line.split('+')
+        .filter(|part| !part.trim().is_empty())
+        .map(parse_alignment_cell)
+        .collect()
+}
+
+fn is_grid_header_separator(line: &str) -> bool {
+    is_grid_border(line) && line.contains('=')
+}
+
 fn parse_grid_table_region(lines: &[&str], start: usize) -> Option<(TableRegionMeta, usize)> {
-    let columns = lines[start]
-        .char_indices()
-        .filter_map(|(index, ch)| (ch == '+').then_some(index))
+    let column_count = lines[start]
+        .split('+')
+        .filter(|part| !part.trim().is_empty())
         .count()
-        .saturating_sub(1)
         .max(1);
+    let mut alignments = vec![ParsedAlignment::Left; column_count];
     let mut index = start + 1;
+    let mut end = start + 1;
+
     while index < lines.len() {
+        if lines[index].trim().is_empty() {
+            end = index + 1;
+            break;
+        }
+        if is_grid_header_separator(lines[index]) {
+            let parsed = parse_grid_separator_alignments(lines[index]);
+            if !parsed.is_empty() {
+                alignments = parsed;
+                while alignments.len() < column_count {
+                    alignments.push(ParsedAlignment::Left);
+                }
+                alignments.truncate(column_count);
+            }
+        }
         if is_grid_border(lines[index]) {
+            end = index + 1;
             index += 1;
-            if index >= lines.len() || !is_grid_border(lines[index]) {
+            if index < lines.len()
+                && is_grid_border(lines[index])
+                && !lines[index].contains('|')
+            {
+                end = index + 1;
                 break;
             }
-        } else if lines[index].trim().is_empty() {
-            index += 1;
-            break;
-        } else {
-            index += 1;
+            continue;
         }
+        index += 1;
+        end = index;
     }
-    Some((
-        TableRegionMeta {
-            alignments: vec![ParsedAlignment::Left; columns],
-        },
-        index,
-    ))
+
+    Some((TableRegionMeta { alignments }, end))
 }
 
 pub(crate) fn is_alignment_separator_row(cells: &[String]) -> bool {
@@ -170,6 +196,14 @@ mod tests {
     #[test]
     fn rest_table_region_reads_column_alignments() {
         let source = "=====  =====\nLeft   Right\n=====  =====\nA      B\n-----  ------:\nC       D\n=====  =====\n";
+        let regions = find_table_regions(source);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].alignments, vec![ParsedAlignment::Left, ParsedAlignment::Right]);
+    }
+
+    #[test]
+    fn rest_grid_table_region_reads_column_alignments() {
+        let source = "+-------+--------+\n| Left  | Right  |\n+=======+=======:+\n| A     |      B |\n+-------+--------+\n";
         let regions = find_table_regions(source);
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].alignments, vec![ParsedAlignment::Left, ParsedAlignment::Right]);
