@@ -205,6 +205,13 @@ fn map_enhanced_block(
     match block {
         EnhancedBlock::Plain(rst_block) => map_block(rst_block, state),
         EnhancedBlock::RichList(list) => Ok(vec![ParsedBlock::List(map_rich_list(list, state)?)]),
+        EnhancedBlock::BlockQuote(blocks) => {
+            let mut inner = Vec::new();
+            for block in blocks {
+                inner.extend(map_block(block, state)?);
+            }
+            Ok(vec![ParsedBlock::BlockQuote(inner)])
+        }
     }
 }
 
@@ -597,7 +604,16 @@ fn expand_rst_text(text: &str, state: &mut RestState) -> Vec<ParsedInline> {
                     for part in expand_strikethrough(&value) {
                         match part {
                             ParsedInline::Text(text) => {
-                                out.extend(expand_image_substitutions_text(&text, state));
+                                for subpart in
+                                    crate::parse::subsup::expand_tight_sub_sup_text(&text)
+                                {
+                                    match subpart {
+                                        ParsedInline::Text(t) => {
+                                            out.extend(expand_image_substitutions_text(&t, state));
+                                        }
+                                        other => out.push(other),
+                                    }
+                                }
                             }
                             other => out.push(other),
                         }
@@ -1102,6 +1118,36 @@ mod tests {
             .flatten()
             .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
         assert!(has_link);
+    }
+
+    #[test]
+    fn parse_rest_indented_blockquote() {
+        let doc = parse("Intro.\n\n    quoted text\n")
+            .unwrap()
+            .into_domain()
+            .unwrap();
+        let quote = doc
+            .blocks
+            .iter()
+            .find(|block| matches!(block, Block::BlockQuote(_)))
+            .expect("expected blockquote");
+        let Block::BlockQuote(children) = quote else {
+            unreachable!();
+        };
+        let Block::Paragraph(inlines) = &children[0] else {
+            panic!("expected quoted paragraph");
+        };
+        assert!(matches!(&inlines[0], Inline::Text(t) if t == "quoted text"));
+    }
+
+    #[test]
+    fn parse_rest_tight_subscript_and_superscript() {
+        let doc = parse("H~2~O and x^2^y").unwrap().into_domain().unwrap();
+        let Block::Paragraph(inlines) = &doc.blocks[0] else {
+            panic!("expected paragraph");
+        };
+        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Subscript(_))));
+        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Superscript(_))));
     }
 
     #[test]

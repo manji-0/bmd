@@ -24,6 +24,7 @@ pub(crate) enum RichBody {
 pub(crate) enum EnhancedBlock {
     Plain(RstBlock),
     RichList(RichList),
+    BlockQuote(Vec<RstBlock>),
 }
 
 /// Rewrite parserst list blocks using source-aware indentation parsing.
@@ -51,6 +52,13 @@ pub(crate) fn enhance_blocks(content: &str, blocks: &[RstBlock]) -> Vec<Enhanced
             out.push(EnhancedBlock::RichList(coalesce_parserst_lists(
                 &blocks[start..index],
             )));
+        } else if is_blockquote_paragraph(&blocks[index]) {
+            let mut quote_blocks = Vec::new();
+            while index < blocks.len() && is_blockquote_paragraph(&blocks[index]) {
+                quote_blocks.push(normalize_blockquote_block(&blocks[index]));
+                index += 1;
+            }
+            out.push(EnhancedBlock::BlockQuote(quote_blocks));
         } else {
             out.push(EnhancedBlock::Plain(blocks[index].clone()));
             index += 1;
@@ -414,14 +422,32 @@ fn is_list_segment_block(block: &RstBlock) -> bool {
 }
 
 fn paragraph_is_indented(inlines: &[RstInline]) -> bool {
-    let plain = inlines
+    paragraph_plain(inlines).starts_with("  ")
+}
+
+fn is_blockquote_paragraph(block: &RstBlock) -> bool {
+    matches!(block, RstBlock::Paragraph(inlines) if paragraph_is_indented(inlines))
+}
+
+fn paragraph_plain(inlines: &[RstInline]) -> String {
+    inlines
         .iter()
         .map(|inline| match inline {
-            RstInline::Text(text) => text.as_str(),
-            _ => "",
+            RstInline::Text(text) => text.clone(),
+            RstInline::Code(code) => code.clone(),
+            RstInline::Em(children) | RstInline::Strong(children) => paragraph_plain(children),
+            RstInline::Link { text, .. } => paragraph_plain(text),
         })
-        .collect::<String>();
-    plain.starts_with("  ")
+        .collect()
+}
+
+fn normalize_blockquote_block(block: &RstBlock) -> RstBlock {
+    let RstBlock::Paragraph(inlines) = block else {
+        return block.clone();
+    };
+    let plain = paragraph_plain(inlines);
+    let trimmed = plain.trim_start();
+    RstBlock::Paragraph(parse_rst_inlines(trimmed))
 }
 
 fn coalesce_parserst_lists(blocks: &[RstBlock]) -> RichList {
@@ -516,6 +542,23 @@ mod tests {
         assert!(matches!(
             &list.items[0].body[0],
             RichBody::Block(RstBlock::LiteralBlock(content)) if content == "code"
+        ));
+    }
+
+    #[test]
+    fn rest_enhance_blocks_groups_indented_paragraphs_as_blockquote() {
+        let blocks = parse_rst("Intro.\n\n    quoted text\n").unwrap();
+        let enhanced = enhance_blocks("Intro.\n\n    quoted text\n", &blocks);
+        assert_eq!(enhanced.len(), 2);
+        assert!(matches!(enhanced[0], EnhancedBlock::Plain(_)));
+        let EnhancedBlock::BlockQuote(quote_blocks) = &enhanced[1] else {
+            panic!("expected blockquote, got {:?}", enhanced[1]);
+        };
+        assert_eq!(quote_blocks.len(), 1);
+        assert!(matches!(
+            &quote_blocks[0],
+            RstBlock::Paragraph(inlines)
+                if inlines.iter().any(|inline| matches!(inline, RstInline::Text(t) if t == "quoted text"))
         ));
     }
 }

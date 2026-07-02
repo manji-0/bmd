@@ -9,6 +9,7 @@ mod markdown;
 mod parity;
 mod rst;
 mod slug;
+mod subsup;
 
 #[cfg(test)]
 mod tests;

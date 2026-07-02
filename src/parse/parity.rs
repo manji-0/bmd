@@ -301,8 +301,9 @@ mod tests {
     fn parity_inline_subscript_and_superscript() {
         let markdown = domain(MarkupFormat::Markdown, "H~2~O and x^2^y");
         let asciidoc = domain(MarkupFormat::AsciiDoc, "= Doc\n\nH~2~O and x^2^y");
+        let rest = domain(MarkupFormat::Rest, "H~2~O and x^2^y");
 
-        for doc in [&markdown, &asciidoc] {
+        for doc in [&markdown, &asciidoc, &rest] {
             let block = doc
                 .blocks
                 .iter()
@@ -344,7 +345,7 @@ mod tests {
     fn parity_blockquote() {
         let markdown = domain(MarkupFormat::Markdown, "> quoted text");
         let asciidoc = domain(MarkupFormat::AsciiDoc, "____\nquoted text\n____");
-        let rest = domain(MarkupFormat::Rest, ".. note::\n\n   quoted text\n");
+        let rest = domain(MarkupFormat::Rest, "Intro.\n\n    quoted text\n");
 
         for doc in [&markdown, &asciidoc, &rest] {
             let quote = doc
