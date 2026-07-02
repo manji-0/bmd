@@ -320,7 +320,13 @@ fn map_block(block: &RstBlock, state: &mut RestState) -> Result<Vec<ParsedBlock>
             content,
         } => map_directive(name, argument, content, state)?,
         RstBlock::Comment(nested) => map_comment(nested, state)?,
-        RstBlock::FieldList { fields } => map_field_list(fields, state)?,
+        RstBlock::FieldList { fields } => {
+            if let Some(blocks) = try_map_inline_role_field_list(fields, state) {
+                blocks
+            } else {
+                map_field_list(fields, state)?
+            }
+        }
     })
 }
 
@@ -459,6 +465,40 @@ fn map_admonition(
         )])]),
     );
     Ok(vec![ParsedBlock::BlockQuote(inner)])
+}
+
+fn try_map_inline_role_field_list(
+    fields: &[Field],
+    state: &mut RestState,
+) -> Option<Vec<ParsedBlock>> {
+    if fields.len() != 1 || !fields[0].argument.is_empty() {
+        return None;
+    }
+    let field = &fields[0];
+    let role = inline_role_from_field_name(&field.name)?;
+    let RstBlock::Paragraph(inlines) = field.body.first()? else {
+        return None;
+    };
+    let (first, rest) = inlines.split_first()?;
+    let RstInline::Code(content) = first else {
+        return None;
+    };
+    let mut out = vec![match role {
+        InlineRole::Math => ParsedInline::Math(content.clone()),
+        InlineRole::Strike => {
+            ParsedInline::Strikethrough(vec![ParsedInline::Text(content.clone())])
+        }
+    }];
+    out.extend(map_inlines(rest, state));
+    Some(vec![ParsedBlock::Paragraph(out)])
+}
+
+fn inline_role_from_field_name(name: &str) -> Option<InlineRole> {
+    match name {
+        "math" | "m" => Some(InlineRole::Math),
+        "strike" => Some(InlineRole::Strike),
+        _ => None,
+    }
 }
 
 fn map_field_list(fields: &[Field], state: &mut RestState) -> Result<Vec<ParsedBlock>, ParseError> {
@@ -1007,6 +1047,15 @@ mod tests {
         let doc = parse("Text :math:`x^2` here.").unwrap().into_domain().unwrap();
         let Block::Paragraph(inlines) = &doc.blocks[0] else {
             panic!("expected paragraph");
+        };
+        assert!(inlines.iter().any(|inline| matches!(inline, Inline::Math(s) if s == "x^2")));
+    }
+
+    #[test]
+    fn parse_rest_inline_math_role_at_document_start() {
+        let doc = parse(":math:`x^2` at start.").unwrap().into_domain().unwrap();
+        let Block::Paragraph(inlines) = &doc.blocks[0] else {
+            panic!("expected paragraph, got {:?}", doc.blocks);
         };
         assert!(inlines.iter().any(|inline| matches!(inline, Inline::Math(s) if s == "x^2")));
     }

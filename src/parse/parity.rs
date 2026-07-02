@@ -216,4 +216,56 @@ mod tests {
             assert_eq!(doc.links[0].url.as_str(), "/img/logo.png");
         }
     }
+
+    #[test]
+    fn parity_table_inline_link() {
+        let cases = [
+            (
+                MarkupFormat::Markdown,
+                "| A | B |\n|---|---|\n| [link](https://example.com) | text |",
+            ),
+            (
+                MarkupFormat::AsciiDoc,
+                "|===\n|A |B\n\n|https://example.com[link] |text\n|===\n",
+            ),
+        ];
+
+        for (format, source) in cases {
+            let doc = domain(format, source);
+            assert_eq!(doc.links.len(), 1, "{format:?} links");
+            assert_eq!(doc.links[0].url.as_str(), "https://example.com", "{format:?} url");
+            let block = doc
+                .blocks
+                .iter()
+                .find(|block| matches!(block, Block::Table(_)))
+                .unwrap_or_else(|| panic!("{format:?} expected table in {:?}", doc.blocks));
+            let Block::Table(table) = block else {
+                unreachable!();
+            };
+            let has_link = table
+                .rows
+                .iter()
+                .flatten()
+                .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+            assert!(has_link, "{format:?} expected link inline in table cell");
+        }
+    }
+
+    #[test]
+    fn parity_inline_math_in_paragraph() {
+        let markdown = domain(MarkupFormat::Markdown, "$x^2$ inline.");
+        let asciidoc = domain(MarkupFormat::AsciiDoc, "stem:[x^2] inline.");
+        let rest = domain(MarkupFormat::Rest, ":math:`x^2` inline.");
+
+        for doc in [&markdown, &asciidoc, &rest] {
+            let Block::Paragraph(inlines) = &doc.blocks[0] else {
+                panic!("expected paragraph, got {:?}", doc.blocks);
+            };
+            assert!(
+                inlines
+                    .iter()
+                    .any(|inline| matches!(inline, Inline::Math(content) if content.contains("x^2")))
+            );
+        }
+    }
 }

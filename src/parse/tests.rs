@@ -35,6 +35,21 @@ fn parse_table() {
 }
 
 #[test]
+fn parse_table_inline_link() {
+    let doc = parse("| A | B |\n|---|---|\n| [link](https://example.com) | text |").unwrap();
+    let Block::Table(table) = &doc.blocks[0] else {
+        panic!("expected table, got {:?}", doc.blocks);
+    };
+    assert_eq!(doc.links.len(), 1);
+    let has_link = table
+        .rows
+        .iter()
+        .flatten()
+        .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+    assert!(has_link);
+}
+
+#[test]
 fn parse_link_collects_url() {
     let doc = parse("[text](https://example.com)").unwrap();
     assert_eq!(doc.links.len(), 1);

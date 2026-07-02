@@ -1110,4 +1110,57 @@ mod tests {
         };
         assert!(math.content.contains("x^2"));
     }
+
+    #[test]
+    fn parse_asciidoc_table_inline_link() {
+        let dto = parse("|===\n|A |B\n\n|https://example.com[link] |text\n|===\n").unwrap();
+        let doc = dto.into_domain().unwrap();
+        let Block::Table(table) = &doc.blocks[0] else {
+            panic!("expected table, got {:?}", doc.blocks);
+        };
+        assert_eq!(doc.links.len(), 1);
+        assert_eq!(doc.links[0].url.as_str(), "https://example.com");
+        let has_link = table
+            .rows
+            .iter()
+            .flatten()
+            .any(|cell| cell.iter().any(|inline| matches!(inline, Inline::Link(_, _))));
+        assert!(has_link);
+    }
+
+    #[test]
+    fn parse_asciidoc_table_of_contents_macro() {
+        let dto = parse("= Doc\n\n== Section\n\nContent.\n\ntoc::[]\n").unwrap();
+        let doc = dto.into_domain().unwrap();
+        let Block::List(list) = doc
+            .blocks
+            .iter()
+            .find(|block| matches!(block, Block::List(_)))
+            .expect("expected TOC list")
+        else {
+            panic!("expected list block");
+        };
+        assert!(!list.items.is_empty());
+        assert!(
+            list.items
+                .iter()
+                .any(|item| matches!(&item.content[0], Block::Paragraph(inlines) if inlines.iter().any(|inline| matches!(inline, Inline::Link(_, _)))))
+        );
+    }
+
+    #[test]
+    fn parse_asciidoc_video_and_audio_blocks() {
+        let dto = parse("= Doc\n\nvideo::/media/demo.mp4[]\n\naudio::/media/note.mp3[Chime]\n")
+            .unwrap();
+        let doc = dto.into_domain().unwrap();
+        assert_eq!(doc.links.len(), 2);
+        assert!(doc.links.iter().any(|link| link.url.as_str() == "/media/demo.mp4"));
+        assert!(doc.links.iter().any(|link| link.url.as_str() == "/media/note.mp3"));
+        let link_blocks: Vec<_> = doc
+            .blocks
+            .iter()
+            .filter(|block| matches!(block, Block::Paragraph(inlines) if inlines.iter().any(|inline| matches!(inline, Inline::Link(_, _)))))
+            .collect();
+        assert_eq!(link_blocks.len(), 2);
+    }
 }
