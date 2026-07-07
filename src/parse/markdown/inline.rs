@@ -1,5 +1,6 @@
 //! Inline content accumulation.
 
+use crate::parse::autolink;
 use crate::parse::dto::{ParsedInline, ParsedLink, ParsedLinkKind};
 
 use super::syntax_error;
@@ -213,7 +214,7 @@ impl InlineParser {
         Ok(())
     }
 
-    pub(crate) fn into_inlines(mut self) -> Vec<ParsedInline> {
+    pub(crate) fn into_inlines(mut self, links: &mut Vec<ParsedLink>) -> Vec<ParsedInline> {
         while let Some(frame) = self.stack.pop() {
             let children = match frame {
                 InlineFrame::Strong(c) => vec![ParsedInline::Strong(c)],
@@ -232,7 +233,8 @@ impl InlineParser {
             };
             self.current_target().extend(children);
         }
-        normalize_inlines(self.output)
+        let inlines = normalize_inlines(self.output);
+        autolink::apply_autolinks(inlines, links)
     }
 }
 

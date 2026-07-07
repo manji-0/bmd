@@ -294,7 +294,7 @@ impl<'a> ParserState<'a> {
                             }]));
                         }
                     } else {
-                        let inlines = parser.into_inlines();
+                        let inlines = parser.into_inlines(&mut self.links);
                         if let Some(link_id) = toc_marker_link_id(&inlines, &self.links) {
                             self.links[link_id] =
                                 ParsedLink::new("bmd:toc".into(), None, ParsedLinkKind::Toc);
@@ -311,9 +311,10 @@ impl<'a> ParserState<'a> {
             TagEnd::Heading(level) => {
                 let frame = self.pop_frame("heading")?;
                 if let BlockFrame::Heading { parser, anchor } = frame {
+                    let content = parser.into_inlines(&mut self.links);
                     self.finish_block(ParsedBlock::Heading(ParsedHeading {
                         level: heading_level_to_u8(level),
-                        content: parser.into_inlines(),
+                        content,
                         anchor,
                     }));
                 }
@@ -433,7 +434,7 @@ impl<'a> ParserState<'a> {
                             return Err(syntax_error("table cell without parent row or head"));
                         }
                     };
-                    cells.push(parser.into_inlines());
+                    cells.push(parser.into_inlines(&mut self.links));
                 }
             }
             TagEnd::Emphasis => self.with_inline_parser(|p| {
@@ -504,7 +505,7 @@ impl<'a> ParserState<'a> {
                     && let Some(BlockFrame::DefinitionList { current_term, .. }) =
                         self.stack.last_mut()
                 {
-                    *current_term = Some(parser.into_inlines());
+                    *current_term = Some(parser.into_inlines(&mut self.links));
                 }
             }
             TagEnd::DefinitionListDefinition => {
@@ -608,7 +609,9 @@ impl<'a> ParserState<'a> {
         if let Some(parser) = self.inline_parser() {
             parser.push_text(text);
         } else {
-            self.push_inline_to_list_item(ParsedInline::Text(text));
+            for inline in crate::parse::autolink::split_text_autolinks(&text, &mut self.links) {
+                self.push_inline_to_list_item(inline);
+            }
         }
     }
 

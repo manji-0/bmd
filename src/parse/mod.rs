@@ -1,6 +1,7 @@
 //! Markup parsing: format-specific parsers -> DTO -> domain.
 
 mod asciidoc;
+mod autolink;
 mod dto;
 mod error;
 mod format;

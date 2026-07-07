@@ -57,6 +57,48 @@ fn parse_link_collects_url() {
 }
 
 #[test]
+fn parse_standalone_url_becomes_link() {
+    let doc = parse("https://github.com").unwrap();
+    assert_eq!(doc.links.len(), 1);
+    assert_eq!(doc.links[0].kind, LinkKind::Web);
+    assert_eq!(doc.links[0].url.as_str(), "https://github.com");
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(matches!(inlines[0], Inline::Link(LinkId(0), _)));
+}
+
+#[test]
+fn parse_standalone_url_in_sentence_becomes_link() {
+    let doc = parse("スタンドアロン URL も自動リンク化されます: https://github.com").unwrap();
+    assert_eq!(doc.links.len(), 1);
+    assert_eq!(doc.links[0].url.as_str(), "https://github.com");
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert_eq!(inlines.len(), 2);
+    assert!(matches!(&inlines[0], Inline::Text(t) if t.ends_with(": ")));
+    assert!(matches!(inlines[1], Inline::Link(LinkId(0), _)));
+}
+
+#[test]
+fn parse_standalone_url_not_applied_inside_code_span() {
+    let doc = parse("`https://github.com`").unwrap();
+    assert!(doc.links.is_empty());
+    let Block::Paragraph(inlines) = &doc.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(matches!(&inlines[0], Inline::Code(c) if c == "https://github.com"));
+}
+
+#[test]
+fn parse_standalone_url_in_table_cell_becomes_link() {
+    let doc = parse("| site |\n|------|\n| https://github.com |").unwrap();
+    assert_eq!(doc.links.len(), 1);
+    assert_eq!(doc.links[0].url.as_str(), "https://github.com");
+}
+
+#[test]
 fn parse_anchor_link_classified() {
     let doc = parse("[section](#bottom-section)").unwrap();
     assert_eq!(doc.links.len(), 1);
