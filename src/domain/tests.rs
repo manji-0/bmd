@@ -1,7 +1,8 @@
 use super::{
-    Alignment, Block, CodeBlock, Document, DocumentError, Heading, HeadingLevel, Inline, Link,
-    LinkId, LinkKind, LinkUrl, LinkUrlError, NormalSearch, SearchDirection, SearchMatch,
-    SearchQuery, SearchQueryError, Table, TerminalSize, TerminalSizeError, UiMode, ViewState,
+    Alignment, Block, Callout, CalloutKind, CodeBlock, Document, DocumentError, Heading,
+    HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl, LinkUrlError, NormalSearch,
+    SearchDirection, SearchMatch, SearchQuery, SearchQueryError, Table, TerminalSize,
+    TerminalSizeError, UiMode, ViewState,
 };
 
 #[test]
@@ -154,6 +155,30 @@ fn table_frame_width_fills_terminal_when_content_overflows() {
 
     let widths = table.allocate_column_widths(80);
     assert!(Table::table_frame_width(&widths) < 80);
+}
+
+#[test]
+fn callout_frame_width_shrinks_to_content() {
+    let callout = Callout {
+        kind: CalloutKind::Note,
+        title: None,
+        body: vec![Block::Paragraph(vec![Inline::Text("short".into())])],
+    };
+    assert!(callout.frame_width(80) < 80);
+    assert_eq!(callout.frame_width(80), callout.ideal_inner_width() + 2);
+}
+
+#[test]
+fn callout_frame_width_fills_terminal_when_content_overflows() {
+    let callout = Callout {
+        kind: CalloutKind::Warning,
+        title: Some("長いインラインタイトル".into()),
+        body: vec![Block::Paragraph(vec![Inline::Text(
+            "とても長い本文がターミナル幅を超える場合はフル幅を使う".into(),
+        )])],
+    };
+    assert_eq!(callout.frame_width(24), 24);
+    assert!(callout.frame_width(120) < 120);
 }
 
 #[test]

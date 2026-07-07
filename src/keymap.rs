@@ -52,10 +52,7 @@ impl KeySpec {
     pub fn parse(raw: &str) -> Result<Self, AppError> {
         let mut modifiers = KeyModifiers::empty();
         let mut rest = raw.trim();
-        loop {
-            let Some((head, tail)) = rest.split_once('-') else {
-                break;
-            };
+        while let Some((head, tail)) = rest.split_once('-') {
             if !is_modifier_token(head) {
                 break;
             }

@@ -2,6 +2,7 @@
 
 use crate::domain::{Block, ChecklistId, Document, List, ListItem};
 
+use super::callout::callout_inner_width;
 use super::context::RenderContext;
 use super::list_marker::list_marker_width_at;
 use super::measure::measure_block_height;
@@ -64,7 +65,7 @@ fn collect_block_checklist_hits(
         Block::Callout(callout) => {
             *line_offset += 1;
             let inner_x = base_x + 1;
-            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            let inner_width = callout_inner_width(callout, width);
             for child in &callout.body {
                 collect_block_checklist_hits(
                     child,

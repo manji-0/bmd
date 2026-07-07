@@ -8,6 +8,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::domain::{Alignment, Block, DefinitionList, Document, Inline, LinkId, List, Table};
 
+use super::callout::callout_inner_width;
 use super::context::RenderContext;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
 use super::list_marker::list_marker_width_at;
@@ -117,7 +118,7 @@ fn collect_block_link_hits(
         Block::Callout(callout) => {
             *line_offset += 1;
             let inner_x = base_x + 1;
-            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            let inner_width = callout_inner_width(callout, width);
             for child in &callout.body {
                 collect_block_link_hits(
                     child,
@@ -723,7 +724,7 @@ fn block_first_link_line(
             None
         }
         Block::Callout(callout) => {
-            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            let inner_width = callout_inner_width(callout, width);
             let mut inner_offset = 1usize;
             for child in &callout.body {
                 if let Some(local) =

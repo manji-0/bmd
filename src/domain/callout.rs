@@ -1,5 +1,7 @@
 //! GFM / Obsidian-style alert callouts.
 
+use unicode_width::UnicodeWidthStr;
+
 use super::markdown::Block;
 
 /// Kind of alert callout (GitHub alert syntax).
@@ -45,5 +47,30 @@ impl Callout {
             Some(title) => format!("{} · {title}", self.kind.label_upper()),
             None => self.kind.label_upper().to_string(),
         }
+    }
+
+    /// Ideal inner width (between vertical borders) from unwrapped content.
+    pub fn ideal_inner_width(&self) -> usize {
+        let header_width = self.header_label().width();
+        let body_width = self
+            .body
+            .iter()
+            .map(Block::ideal_content_width)
+            .max()
+            .unwrap_or(0);
+        header_width.max(body_width).max(1)
+    }
+
+    /// Inner width capped to fit within `total_width` terminal columns.
+    pub fn allocate_inner_width(&self, total_width: usize) -> usize {
+        let available = total_width.saturating_sub(2).max(1);
+        let ideal = self.ideal_inner_width();
+        if ideal <= available { ideal } else { available }
+    }
+
+    /// Rendered callout frame width in terminal columns.
+    pub fn frame_width(&self, total_width: usize) -> usize {
+        let frame = self.allocate_inner_width(total_width).saturating_add(2);
+        frame.min(total_width.max(3)).max(3)
     }
 }

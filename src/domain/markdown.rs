@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use unicode_width::UnicodeWidthStr;
 
 use super::callout::Callout;
+use super::checklist::ChecklistStyle;
 use super::front_matter::FrontMatter;
 use super::link::{DocumentError, Link, LinkId, LinkKind};
 use super::mermaid_render::mermaid_diagram_index;
@@ -359,6 +360,88 @@ pub enum Block {
     Rule,
 }
 
+impl Block {
+    /// Natural unwrapped width in terminal columns.
+    pub fn ideal_content_width(&self) -> usize {
+        match self {
+            Block::Paragraph(inlines) => Inline::text_width(inlines),
+            Block::Heading(h) => h.level.prefix().width() + Inline::text_width(&h.content),
+            Block::CodeBlock(cb) => {
+                let label = cb
+                    .language
+                    .as_ref()
+                    .map(|l| format!(" {l} "))
+                    .unwrap_or_else(|| " code ".to_string());
+                let label_w = label.width();
+                let code_w = cb
+                    .content
+                    .lines()
+                    .map(UnicodeWidthStr::width)
+                    .max()
+                    .unwrap_or(0);
+                label_w.max(code_w)
+            }
+            Block::MathBlock(math) => math
+                .content
+                .lines()
+                .map(UnicodeWidthStr::width)
+                .max()
+                .unwrap_or(1),
+            Block::BlockQuote(blocks) => blocks
+                .iter()
+                .map(Self::ideal_content_width)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(2),
+            Block::Callout(callout) => callout.frame_width(usize::MAX),
+            Block::List(list) => list_ideal_content_width(list),
+            Block::DefinitionList(list) => {
+                let mut max_w = 0usize;
+                for item in &list.items {
+                    if !item.term.is_empty() {
+                        max_w = max_w.max(Inline::text_width(&item.term));
+                    }
+                    for definition in &item.definitions {
+                        for block in definition {
+                            max_w = max_w.max(2 + Self::ideal_content_width(block));
+                        }
+                    }
+                }
+                max_w
+            }
+            Block::Table(table) => {
+                Table::table_frame_width(&table.allocate_column_widths(usize::MAX))
+            }
+            Block::Rule => 3,
+        }
+    }
+}
+
+fn list_ideal_content_width(list: &List) -> usize {
+    let checklist_marker = ChecklistStyle::Unicode.marker_width();
+    list.items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let marker_w = if item.checklist_id.is_some() {
+                checklist_marker
+            } else if list.ordered {
+                format!("{}. ", i + 1).width()
+            } else {
+                2
+            };
+            let content_w = item
+                .content
+                .iter()
+                .map(Block::ideal_content_width)
+                .max()
+                .unwrap_or(0);
+            marker_w + content_w
+        })
+        .max()
+        .unwrap_or(0)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum HeadingLevel {
     H1,
@@ -537,7 +620,10 @@ impl Table {
             let total_desire: usize = desire.iter().sum();
             if total_desire > 0 {
                 for i in 0..col_count {
-                    widths[i] += (extra * desire[i]) / total_desire;
+                    widths[i] += extra
+                        .saturating_mul(desire[i])
+                        .checked_div(total_desire)
+                        .unwrap_or(0);
                 }
                 let assigned: usize = widths.iter().sum();
                 let mut remainder = available.saturating_sub(assigned);

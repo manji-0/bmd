@@ -7,6 +7,7 @@ use super::list_marker::list_marker_width_at;
 
 use crate::domain::{Block, CodeBlock, DefinitionList, Document, Inline, List, SearchMatch, Table};
 
+use super::callout::callout_inner_width;
 use super::context::RenderContext;
 use super::footnotes::footnote_searchable_lines;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
@@ -118,7 +119,7 @@ fn block_searchable_lines(block: &Block, width: u16, ctx: &RenderContext) -> Vec
             lines
         }
         Block::Callout(callout) => {
-            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            let inner_width = callout_inner_width(callout, width);
             let mut lines = vec![callout.header_label()];
             for child in &callout.body {
                 lines.extend(block_searchable_lines(child, inner_width, ctx));

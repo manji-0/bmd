@@ -10,11 +10,19 @@ use super::context::RenderContext;
 use super::measure::measure_block_height;
 use super::theme::CalloutStyles;
 
+pub(crate) fn callout_inner_width(callout: &Callout, total_width: u16) -> u16 {
+    callout.allocate_inner_width(total_width as usize).max(1) as u16
+}
+
+pub(crate) fn callout_frame_width(callout: &Callout, total_width: u16) -> u16 {
+    callout.frame_width(total_width as usize) as u16
+}
+
 pub(crate) fn measure_callout_height(callout: &Callout, width: u16, ctx: &RenderContext) -> usize {
     if width < 3 {
         return 0;
     }
-    let inner_width = width.saturating_sub(2).max(1);
+    let inner_width = callout_inner_width(callout, width);
     let body_height: usize = callout
         .body
         .iter()
@@ -36,13 +44,13 @@ pub(crate) fn render_callout(
     }
 
     let styles = ctx.theme.callout_styles(callout.kind);
-    let width = area.width as usize;
+    let width = callout_frame_width(callout, area.width) as usize;
     let total_height = measure_callout_height(callout, area.width, ctx);
     if skip_rows >= total_height {
         return;
     }
 
-    let inner_width = area.width.saturating_sub(2).max(1);
+    let inner_width = width.saturating_sub(2).max(1) as u16;
     let mut logical_row = 0usize;
     let mut y = area.y;
 
