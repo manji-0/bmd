@@ -8,6 +8,7 @@ use crate::domain::{
     Block, CodeBlock, DefinitionList, Document, Heading, Inline, List, MathBlock, Table,
 };
 
+use super::callout::measure_callout_height;
 use super::context::RenderContext;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
 use super::list_marker::list_marker_width_at;
@@ -56,6 +57,7 @@ pub fn measure_block_height(
         Block::CodeBlock(cb) => measure_code_block_height(cb, width),
         Block::MathBlock(math) => measure_math_block_height(math, width),
         Block::BlockQuote(blocks) => measure_blockquote_height(blocks, width, ctx),
+        Block::Callout(callout) => measure_callout_height(callout, width, ctx),
         Block::List(list) => measure_list_height(list, width, ctx),
         Block::DefinitionList(list) => measure_definition_list_height(list, width, ctx),
         Block::Table(table) => measure_table_height(table, width, ctx),

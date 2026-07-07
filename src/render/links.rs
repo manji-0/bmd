@@ -114,6 +114,23 @@ fn collect_block_link_hits(
                 );
             }
         }
+        Block::Callout(callout) => {
+            *line_offset += 1;
+            let inner_x = base_x + 1;
+            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            for child in &callout.body {
+                collect_block_link_hits(
+                    child,
+                    block_idx,
+                    inner_width,
+                    inner_x,
+                    ctx,
+                    hits,
+                    line_offset,
+                );
+            }
+            *line_offset += 1;
+        }
         Block::List(list) => {
             collect_list_link_hits(list, block_idx, width, base_x, ctx, hits, line_offset);
         }
@@ -698,6 +715,19 @@ fn block_first_link_line(
             let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
             let mut inner_offset = 0usize;
             for child in blocks {
+                if let Some(local) =
+                    block_first_link_line(child, block_idx, inner_width, ctx, link_id)
+                {
+                    return Some(inner_offset + local);
+                }
+                inner_offset += measure_block_height(child, block_idx, inner_width, ctx);
+            }
+            None
+        }
+        Block::Callout(callout) => {
+            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            let mut inner_offset = 1usize;
+            for child in &callout.body {
                 if let Some(local) =
                     block_first_link_line(child, block_idx, inner_width, ctx, link_id)
                 {

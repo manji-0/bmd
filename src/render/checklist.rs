@@ -61,6 +61,23 @@ fn collect_block_checklist_hits(
                 );
             }
         }
+        Block::Callout(callout) => {
+            *line_offset += 1;
+            let inner_x = base_x + 1;
+            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            for child in &callout.body {
+                collect_block_checklist_hits(
+                    child,
+                    block_idx,
+                    inner_width,
+                    inner_x,
+                    ctx,
+                    hits,
+                    line_offset,
+                );
+            }
+            *line_offset += 1;
+        }
         Block::DefinitionList(list) => {
             let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
             for item in &list.items {
@@ -154,6 +171,10 @@ fn find_checklist_item_in_block(block: &Block, id: ChecklistId) -> Option<&ListI
     match block {
         Block::List(list) => find_checklist_item_in_list(list, id),
         Block::BlockQuote(blocks) => blocks
+            .iter()
+            .find_map(|child| find_checklist_item_in_block(child, id)),
+        Block::Callout(callout) => callout
+            .body
             .iter()
             .find_map(|child| find_checklist_item_in_block(child, id)),
         Block::DefinitionList(list) => list.items.iter().find_map(|item| {

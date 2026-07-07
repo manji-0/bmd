@@ -2,7 +2,7 @@
 
 use pulldown_cmark::BlockQuoteKind;
 
-use crate::parse::dto::{ParsedBlock, ParsedInline};
+use crate::parse::dto::{ParsedBlock, ParsedCallout, ParsedCalloutKind, ParsedInline};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CalloutKind {
@@ -36,13 +36,13 @@ impl CalloutKind {
         }
     }
 
-    fn label(self) -> &'static str {
+    fn to_parsed(self) -> ParsedCalloutKind {
         match self {
-            Self::Note => "note",
-            Self::Tip => "tip",
-            Self::Important => "important",
-            Self::Warning => "warning",
-            Self::Caution => "caution",
+            Self::Note => ParsedCalloutKind::Note,
+            Self::Tip => ParsedCalloutKind::Tip,
+            Self::Important => ParsedCalloutKind::Important,
+            Self::Warning => ParsedCalloutKind::Warning,
+            Self::Caution => ParsedCalloutKind::Caution,
         }
     }
 }
@@ -53,27 +53,19 @@ pub(crate) fn normalize_blockquote(
     blocks: Vec<ParsedBlock>,
 ) -> ParsedBlock {
     if let Some(kind) = gfm_kind {
-        return prepend_label(CalloutKind::from_gfm(kind), None, blocks);
+        return ParsedBlock::Callout(ParsedCallout {
+            kind: CalloutKind::from_gfm(kind).to_parsed(),
+            title: None,
+            body: blocks,
+        });
     }
     if let Some((kind, title, rest)) = split_callout(&blocks) {
-        return prepend_label(kind, title, rest);
+        return ParsedBlock::Callout(ParsedCallout {
+            kind: kind.to_parsed(),
+            title,
+            body: rest,
+        });
     }
-    ParsedBlock::BlockQuote(blocks)
-}
-
-fn prepend_label(
-    kind: CalloutKind,
-    title: Option<String>,
-    mut blocks: Vec<ParsedBlock>,
-) -> ParsedBlock {
-    let label = match title {
-        Some(title) if !title.is_empty() => format!("{}: {title}", kind.label()),
-        _ => format!("{}:", kind.label()),
-    };
-    blocks.insert(
-        0,
-        ParsedBlock::Paragraph(vec![ParsedInline::Strong(vec![ParsedInline::Text(label)])]),
-    );
     ParsedBlock::BlockQuote(blocks)
 }
 
@@ -132,15 +124,11 @@ mod tests {
                 "Be careful.".into(),
             )])],
         );
-        let ParsedBlock::BlockQuote(inner) = block else {
-            panic!("expected blockquote");
+        let ParsedBlock::Callout(callout) = block else {
+            panic!("expected callout");
         };
-        assert_eq!(inner.len(), 2);
-        assert!(matches!(
-            inner[0],
-            ParsedBlock::Paragraph(ref inlines)
-                if matches!(inlines[0], ParsedInline::Strong(_))
-        ));
+        assert_eq!(callout.kind, ParsedCalloutKind::Warning);
+        assert_eq!(callout.body.len(), 1);
     }
 
     #[test]
@@ -151,19 +139,11 @@ mod tests {
                 "[!INFO] Extra context".into(),
             )])],
         );
-        let ParsedBlock::BlockQuote(inner) = block else {
-            panic!("expected blockquote");
+        let ParsedBlock::Callout(callout) = block else {
+            panic!("expected callout");
         };
-        let ParsedBlock::Paragraph(label) = &inner[0] else {
-            panic!("expected label");
-        };
-        let ParsedInline::Strong(text) = &label[0] else {
-            panic!("expected strong");
-        };
-        assert!(matches!(
-            &text[0],
-            ParsedInline::Text(t) if t == "note: Extra context"
-        ));
+        assert_eq!(callout.kind, ParsedCalloutKind::Note);
+        assert_eq!(callout.title.as_deref(), Some("Extra context"));
     }
 
     #[test]

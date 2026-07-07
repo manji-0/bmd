@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use unicode_width::UnicodeWidthStr;
 
+use super::callout::Callout;
 use super::front_matter::FrontMatter;
 use super::link::{DocumentError, Link, LinkId, LinkKind};
 use super::mermaid_render::mermaid_diagram_index;
@@ -89,6 +90,11 @@ impl Document {
             Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
             Block::BlockQuote(blocks) => {
                 for child in blocks {
+                    Self::validate_block_links(child, block_idx, link_count)?;
+                }
+            }
+            Block::Callout(callout) => {
+                for child in &callout.body {
                     Self::validate_block_links(child, block_idx, link_count)?;
                 }
             }
@@ -194,6 +200,17 @@ impl Document {
             Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
             Block::BlockQuote(blocks) => {
                 for child in blocks {
+                    Self::validate_block_footnotes(
+                        child,
+                        block_idx,
+                        footnote_count,
+                        referenced,
+                        footnotes,
+                    )?;
+                }
+            }
+            Block::Callout(callout) => {
+                for child in &callout.body {
                     Self::validate_block_footnotes(
                         child,
                         block_idx,
@@ -335,6 +352,7 @@ pub enum Block {
     CodeBlock(CodeBlock),
     MathBlock(MathBlock),
     BlockQuote(Vec<Block>),
+    Callout(Callout),
     List(List),
     DefinitionList(DefinitionList),
     Table(Table),

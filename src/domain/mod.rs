@@ -7,6 +7,7 @@
 //! - `LinkJumpStack` stores priors fixed at link jumps; live current state stays outside.
 //! - `MermaidRenderSession` and `ImageRenderSession` track per-link preview phases.
 
+mod callout;
 mod checklist;
 mod document_generation;
 mod document_link;
@@ -27,6 +28,7 @@ mod view;
 #[cfg(test)]
 mod tests;
 
+pub use callout::{Callout, CalloutKind};
 pub use checklist::{ChecklistId, ChecklistState, ChecklistStyle};
 pub use document_generation::DocumentGeneration;
 pub use document_link::{

@@ -1,16 +1,16 @@
 //! DTO -> domain conversion with validation at the boundary.
 
 use crate::domain::{
-    Alignment, Block, ChecklistId, CodeBlock, DefinitionItem, DefinitionList, Document,
+    Alignment, Block, Callout, ChecklistId, CodeBlock, DefinitionItem, DefinitionList, Document,
     FootnoteDefinition, FootnoteId, FrontMatter, FrontMatterKind, Heading, HeadingLevel, Inline,
     Link, LinkId, LinkUrl, List, ListItem, MathBlock, MermaidDiagram, Table,
 };
 
 use super::dto::{
-    ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList,
-    ParsedDocument, ParsedFootnoteDefinition, ParsedFrontMatter, ParsedFrontMatterKind,
-    ParsedHeading, ParsedInline, ParsedLink, ParsedList, ParsedListItem, ParsedMathBlock,
-    ParsedTable,
+    ParsedAlignment, ParsedBlock, ParsedCallout, ParsedCodeBlock, ParsedDefinitionItem,
+    ParsedDefinitionList, ParsedDocument, ParsedFootnoteDefinition, ParsedFrontMatter,
+    ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink, ParsedList, ParsedListItem,
+    ParsedMathBlock, ParsedTable,
 };
 use crate::parse::normalize_anchor_slug;
 
@@ -98,6 +98,7 @@ fn convert_block(owned: ParsedBlock) -> Result<Block, IntoDomainError> {
         ParsedBlock::CodeBlock(code) => Ok(Block::CodeBlock(convert_code_block(code))),
         ParsedBlock::MathBlock(math) => Ok(Block::MathBlock(convert_math_block(math))),
         ParsedBlock::BlockQuote(blocks) => Ok(Block::BlockQuote(convert_blocks(blocks)?)),
+        ParsedBlock::Callout(callout) => Ok(Block::Callout(convert_callout(callout)?)),
         ParsedBlock::List(list) => Ok(Block::List(convert_list(list)?)),
         ParsedBlock::DefinitionList(list) => {
             Ok(Block::DefinitionList(convert_definition_list(list)?))
@@ -109,6 +110,14 @@ fn convert_block(owned: ParsedBlock) -> Result<Block, IntoDomainError> {
 
 fn convert_blocks(blocks: Vec<ParsedBlock>) -> Result<Vec<Block>, IntoDomainError> {
     blocks.into_iter().map(convert_block).collect()
+}
+
+fn convert_callout(callout: ParsedCallout) -> Result<Callout, IntoDomainError> {
+    Ok(Callout {
+        kind: callout.kind.to_domain(),
+        title: callout.title,
+        body: convert_blocks(callout.body)?,
+    })
 }
 
 fn convert_heading(heading: ParsedHeading) -> Result<Heading, IntoDomainError> {

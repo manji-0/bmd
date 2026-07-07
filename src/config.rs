@@ -139,54 +139,44 @@ impl ThemeSection {
             Some(name) => Theme::from_preset(name)?,
             None => Theme::from_preset(DEFAULT_PRESET)?,
         };
-        self.apply_overrides(&base)
+        self.apply_overrides(base)
     }
 
-    fn apply_overrides(self, base: &Theme) -> Result<Theme, AppError> {
-        Ok(Theme {
-            text: override_style(base.text, self.text)?,
-            h1: override_style(base.h1, self.h1)?,
-            h1_prefix: override_style(base.h1_prefix, self.h1_prefix)?,
-            h2: override_style(base.h2, self.h2)?,
-            h2_prefix: override_style(base.h2_prefix, self.h2_prefix)?,
-            h3: override_style(base.h3, self.h3)?,
-            h3_prefix: override_style(base.h3_prefix, self.h3_prefix)?,
-            h4: override_style(base.h4, self.h4)?,
-            h4_prefix: override_style(base.h4_prefix, self.h4_prefix)?,
-            h5: override_style(base.h5, self.h5)?,
-            h5_prefix: override_style(base.h5_prefix, self.h5_prefix)?,
-            h6: override_style(base.h6, self.h6)?,
-            h6_prefix: override_style(base.h6_prefix, self.h6_prefix)?,
-            code_inline: override_style(base.code_inline, self.code_inline)?,
-            code_block: override_style(base.code_block, self.code_block)?,
-            code_block_language: override_style(
-                base.code_block_language,
-                self.code_block_language,
-            )?,
-            blockquote: override_style(base.blockquote, self.blockquote)?,
-            list_marker: override_style(base.list_marker, self.list_marker)?,
-            link: override_style(base.link, self.link)?,
-            link_selected: override_style(base.link_selected, self.link_selected)?,
-            image_link: override_style(base.image_link, self.image_link)?,
-            image_link_selected: override_style(
-                base.image_link_selected,
-                self.image_link_selected,
-            )?,
-            rule: override_style(base.rule, self.rule)?,
-            table_header: override_style(base.table_header, self.table_header)?,
-            table_cell: override_style(base.table_cell, self.table_cell)?,
-            table_border: override_style(base.table_border, self.table_border)?,
-            mermaid_placeholder: override_style(
-                base.mermaid_placeholder,
-                self.mermaid_placeholder,
-            )?,
-            math: base.math,
-            search_match: override_style(base.search_match, self.search_match)?,
-            search_match_selected: override_style(
-                base.search_match_selected,
-                self.search_match_selected,
-            )?,
-        })
+    fn apply_overrides(self, mut base: Theme) -> Result<Theme, AppError> {
+        base.text = override_style(base.text, self.text)?;
+        base.h1 = override_style(base.h1, self.h1)?;
+        base.h1_prefix = override_style(base.h1_prefix, self.h1_prefix)?;
+        base.h2 = override_style(base.h2, self.h2)?;
+        base.h2_prefix = override_style(base.h2_prefix, self.h2_prefix)?;
+        base.h3 = override_style(base.h3, self.h3)?;
+        base.h3_prefix = override_style(base.h3_prefix, self.h3_prefix)?;
+        base.h4 = override_style(base.h4, self.h4)?;
+        base.h4_prefix = override_style(base.h4_prefix, self.h4_prefix)?;
+        base.h5 = override_style(base.h5, self.h5)?;
+        base.h5_prefix = override_style(base.h5_prefix, self.h5_prefix)?;
+        base.h6 = override_style(base.h6, self.h6)?;
+        base.h6_prefix = override_style(base.h6_prefix, self.h6_prefix)?;
+        base.code_inline = override_style(base.code_inline, self.code_inline)?;
+        base.code_block = override_style(base.code_block, self.code_block)?;
+        base.code_block_language =
+            override_style(base.code_block_language, self.code_block_language)?;
+        base.blockquote = override_style(base.blockquote, self.blockquote)?;
+        base.list_marker = override_style(base.list_marker, self.list_marker)?;
+        base.link = override_style(base.link, self.link)?;
+        base.link_selected = override_style(base.link_selected, self.link_selected)?;
+        base.image_link = override_style(base.image_link, self.image_link)?;
+        base.image_link_selected =
+            override_style(base.image_link_selected, self.image_link_selected)?;
+        base.rule = override_style(base.rule, self.rule)?;
+        base.table_header = override_style(base.table_header, self.table_header)?;
+        base.table_cell = override_style(base.table_cell, self.table_cell)?;
+        base.table_border = override_style(base.table_border, self.table_border)?;
+        base.mermaid_placeholder =
+            override_style(base.mermaid_placeholder, self.mermaid_placeholder)?;
+        base.search_match = override_style(base.search_match, self.search_match)?;
+        base.search_match_selected =
+            override_style(base.search_match_selected, self.search_match_selected)?;
+        Ok(base)
     }
 }
 

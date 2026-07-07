@@ -142,15 +142,12 @@ fn parse_blockquote() {
 #[test]
 fn parse_markdown_callout_note() {
     let doc = parse("> [!NOTE]\n> Remember this.\n").unwrap();
-    let Block::BlockQuote(children) = &doc.blocks[0] else {
-        panic!("expected blockquote");
+    let Block::Callout(callout) = &doc.blocks[0] else {
+        panic!("expected callout, got {:?}", doc.blocks[0]);
     };
-    assert_eq!(children.len(), 2);
-    let Block::Paragraph(label) = &children[0] else {
-        panic!("expected callout label");
-    };
-    assert!(matches!(label[0], Inline::Strong(_)));
-    let Block::Paragraph(body) = &children[1] else {
+    assert_eq!(callout.kind, crate::domain::CalloutKind::Note);
+    assert_eq!(callout.body.len(), 1);
+    let Block::Paragraph(body) = &callout.body[0] else {
         panic!("expected callout body");
     };
     assert!(matches!(&body[0], Inline::Text(t) if t == "Remember this."));
@@ -159,36 +156,21 @@ fn parse_markdown_callout_note() {
 #[test]
 fn parse_markdown_obsidian_callout_with_inline_title() {
     let doc = parse("> [!INFO] Extra context\n").unwrap();
-    let Block::BlockQuote(children) = &doc.blocks[0] else {
-        panic!("expected blockquote");
+    let Block::Callout(callout) = &doc.blocks[0] else {
+        panic!("expected callout");
     };
-    let Block::Paragraph(label) = &children[0] else {
-        panic!("expected callout label");
-    };
-    let Inline::Strong(inlines) = &label[0] else {
-        panic!("expected strong label");
-    };
-    assert!(matches!(
-        &inlines[0],
-        Inline::Text(t) if t == "note: Extra context"
-    ));
+    assert_eq!(callout.kind, crate::domain::CalloutKind::Note);
+    assert_eq!(callout.title.as_deref(), Some("Extra context"));
 }
 
 #[test]
 fn parse_markdown_callout_multiline_body() {
     let doc = parse("> [!WARNING]\n> Be careful.\n> Always verify.\n").unwrap();
-    let Block::BlockQuote(children) = &doc.blocks[0] else {
-        panic!("expected blockquote");
+    let Block::Callout(callout) = &doc.blocks[0] else {
+        panic!("expected callout");
     };
-    assert_eq!(children.len(), 2);
-    let Block::Paragraph(label) = &children[0] else {
-        panic!("expected callout label");
-    };
-    let Inline::Strong(inlines) = &label[0] else {
-        panic!("expected strong label");
-    };
-    assert!(matches!(&inlines[0], Inline::Text(t) if t == "warning:"));
-    let Block::Paragraph(body) = &children[1] else {
+    assert_eq!(callout.kind, crate::domain::CalloutKind::Warning);
+    let Block::Paragraph(body) = &callout.body[0] else {
         panic!("expected callout body");
     };
     assert!(

@@ -113,6 +113,7 @@ impl RestState {
 pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
     let blocks = parserst::parse(content)
         .map_err(|error| ParseError::syntax(MarkupFormat::Rest, error.to_string()))?;
+    let blocks = normalize_rst_blocks(blocks);
     let (front_matter, body_start) = extract_leading_front_matter(&blocks);
     let table_regions = tables::find_table_regions(content);
     let image_substitutions = extract_image_substitutions(content);
@@ -258,6 +259,94 @@ fn map_blocks(blocks: &[RstBlock], state: &mut RestState) -> Result<Vec<ParsedBl
         out.extend(map_block(block, state)?);
     }
     Ok(out)
+}
+
+/// parserst leaves 3-space-indented directive bodies as sibling blocks; merge them back in.
+fn normalize_rst_blocks(blocks: Vec<RstBlock>) -> Vec<RstBlock> {
+    let blocks = blocks
+        .into_iter()
+        .map(normalize_rst_block)
+        .collect::<Vec<_>>();
+    merge_sibling_directive_bodies(blocks)
+}
+
+fn normalize_rst_block(block: RstBlock) -> RstBlock {
+    match block {
+        RstBlock::Quote(nested) => RstBlock::Quote(normalize_rst_blocks(nested)),
+        RstBlock::Directive {
+            name,
+            argument,
+            content,
+        } => RstBlock::Directive {
+            name,
+            argument,
+            content: normalize_rst_blocks(content),
+        },
+        RstBlock::Comment(nested) => RstBlock::Comment(normalize_rst_blocks(nested)),
+        other => other,
+    }
+}
+
+fn merge_sibling_directive_bodies(blocks: Vec<RstBlock>) -> Vec<RstBlock> {
+    let mut out = Vec::with_capacity(blocks.len());
+    let mut index = 0;
+    while index < blocks.len() {
+        if let RstBlock::Directive {
+            name,
+            argument,
+            content,
+        } = &blocks[index]
+        {
+            if content.is_empty() {
+                let (body, trailing) = trailing_directive_body_blocks(&blocks, index + 1);
+                if !body.is_empty() {
+                    out.push(RstBlock::Directive {
+                        name: name.clone(),
+                        argument: argument.clone(),
+                        content: normalize_directive_body_blocks(body),
+                    });
+                    index += 1 + trailing;
+                    continue;
+                }
+            }
+        }
+        out.push(blocks[index].clone());
+        index += 1;
+    }
+    out
+}
+
+fn trailing_directive_body_blocks(blocks: &[RstBlock], start: usize) -> (&[RstBlock], usize) {
+    let mut end = start;
+    while end < blocks.len() && is_directive_body_block(&blocks[end]) {
+        end += 1;
+    }
+    (&blocks[start..end], end.saturating_sub(start))
+}
+
+fn is_directive_body_block(block: &RstBlock) -> bool {
+    match block {
+        RstBlock::Paragraph(inlines) => paragraph_is_indented_directive_body(inlines),
+        RstBlock::CodeBlock(_) | RstBlock::LiteralBlock(_) => true,
+        _ => false,
+    }
+}
+
+fn paragraph_is_indented_directive_body(inlines: &[RstInline]) -> bool {
+    let plain = rst_inline_plain(inlines);
+    plain.starts_with("   ") || plain.starts_with('\t')
+}
+
+fn normalize_directive_body_blocks(blocks: &[RstBlock]) -> Vec<RstBlock> {
+    blocks
+        .iter()
+        .map(|block| match block {
+            RstBlock::Paragraph(inlines) => RstBlock::Paragraph(vec![RstInline::Text(
+                dedent_verbatim(&rst_inline_plain(inlines)),
+            )]),
+            other => other.clone(),
+        })
+        .collect()
 }
 
 fn map_block(block: &RstBlock, state: &mut RestState) -> Result<Vec<ParsedBlock>, ParseError> {
@@ -569,7 +658,31 @@ fn collect_verbatim(blocks: &[RstBlock]) -> String {
             _ => {}
         }
     }
-    lines.join("\n")
+    dedent_verbatim(&lines.join("\n"))
+}
+
+fn dedent_verbatim(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    let min_indent = lines
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.len() - line.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    lines
+        .iter()
+        .map(|line| {
+            if line.trim().is_empty() {
+                String::new()
+            } else {
+                line.chars().skip(min_indent).collect()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn map_inlines(inlines: &[RstInline], state: &mut RestState) -> Vec<ParsedInline> {
@@ -929,15 +1042,31 @@ mod tests {
     #[test]
     fn parse_rest_mermaid_directive() {
         let dto = parse(".. mermaid::\n\n   graph TD; A-->B;\n").unwrap();
+        assert_eq!(dto.mermaid_diagrams[0].source.trim(), "graph TD; A-->B;");
         let doc = dto.into_domain().unwrap();
         assert_eq!(doc.links.len(), 1);
         assert_eq!(doc.links[0].kind, LinkKind::Mermaid);
     }
 
     #[test]
-    fn parse_rest_admonition_as_blockquote() {
+    fn parse_rest_mermaid_multiline_directive() {
+        let source = ".. mermaid::\n\n   graph TD\n       A[Markdown] --> B{parse}\n       B --> C[render]\n";
+        let dto = parse(source).unwrap();
+        assert!(dto.mermaid_diagrams[0].source.contains("graph TD"));
+        assert!(dto.mermaid_diagrams[0].source.contains("A[Markdown]"));
+    }
+
+    #[test]
+    fn parse_rest_admonition_includes_body() {
         let dto = parse(".. note::\n\n   Remember this.\n").unwrap();
-        assert!(matches!(dto.blocks[0], ParsedBlock::BlockQuote(_)));
+        let ParsedBlock::BlockQuote(children) = &dto.blocks[0] else {
+            panic!("expected blockquote");
+        };
+        assert_eq!(children.len(), 2);
+        let ParsedBlock::Paragraph(inlines) = &children[1] else {
+            panic!("expected body paragraph");
+        };
+        assert!(matches!(&inlines[0], ParsedInline::Text(t) if t == "Remember this."));
     }
 
     #[test]

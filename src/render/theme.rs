@@ -2,6 +2,7 @@
 
 use ratatui::style::{Color, Modifier, Style};
 
+use crate::domain::CalloutKind;
 use crate::error::AppError;
 
 /// Canonical name of the preset used when config does not select one.
@@ -21,9 +22,18 @@ pub const PRESET_NAMES: &[&str] = &[
     "cursor-midnight",
 ];
 
+/// Styles for a boxed callout panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CalloutStyles {
+    pub border: Style,
+    pub title: Style,
+    pub body: Style,
+}
+
 /// Visual theme.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Theme {
+    preset: &'static str,
     pub text: Style,
     pub h1: Style,
     pub h1_prefix: Style,
@@ -71,7 +81,12 @@ impl Theme {
                 PRESET_NAMES.join(", ")
             )));
         };
-        Ok(builtin_preset(canonical).build())
+        Ok(builtin_preset(canonical).build(canonical))
+    }
+
+    /// Styles for a boxed GFM callout of the given kind.
+    pub fn callout_styles(&self, kind: CalloutKind) -> CalloutStyles {
+        callout_styles_for(self.preset, kind)
     }
 }
 
@@ -401,10 +416,11 @@ struct Palette {
 }
 
 impl Palette {
-    fn build(self) -> Theme {
+    fn build(self, preset: &'static str) -> Theme {
         let bold = Modifier::BOLD;
         let underline = Modifier::UNDERLINED;
         Theme {
+            preset,
             text: fg(self.text),
             h1: fg(self.heading).add_modifier(bold).add_modifier(underline),
             h1_prefix: fg(self.heading_prefix).add_modifier(bold),
@@ -454,6 +470,83 @@ fn fg(color: Color) -> Style {
 
 fn rgb(r: u8, g: u8, b: u8) -> Color {
     Color::Rgb(r, g, b)
+}
+
+fn callout_styles_for(preset: &str, kind: CalloutKind) -> CalloutStyles {
+    let light = matches!(preset, "light" | "solarized-light");
+    let (border, bg, title_fg, body_fg) = match (light, kind) {
+        (false, CalloutKind::Note) => (
+            rgb(31, 111, 235),
+            rgb(16, 22, 38),
+            rgb(121, 184, 255),
+            rgb(201, 209, 217),
+        ),
+        (false, CalloutKind::Tip) => (
+            rgb(35, 134, 54),
+            rgb(16, 28, 22),
+            rgb(126, 231, 135),
+            rgb(201, 209, 217),
+        ),
+        (false, CalloutKind::Important) => (
+            rgb(130, 80, 223),
+            rgb(24, 18, 38),
+            rgb(210, 168, 255),
+            rgb(201, 209, 217),
+        ),
+        (false, CalloutKind::Warning) => (
+            rgb(154, 103, 0),
+            rgb(30, 26, 16),
+            rgb(242, 204, 96),
+            rgb(201, 209, 217),
+        ),
+        (false, CalloutKind::Caution) => (
+            rgb(207, 34, 46),
+            rgb(34, 18, 20),
+            rgb(255, 129, 130),
+            rgb(201, 209, 217),
+        ),
+        (true, CalloutKind::Note) => (
+            rgb(9, 105, 218),
+            rgb(234, 242, 255),
+            rgb(9, 105, 218),
+            rgb(31, 35, 40),
+        ),
+        (true, CalloutKind::Tip) => (
+            rgb(26, 127, 55),
+            rgb(234, 248, 238),
+            rgb(26, 127, 55),
+            rgb(31, 35, 40),
+        ),
+        (true, CalloutKind::Important) => (
+            rgb(130, 80, 223),
+            rgb(244, 238, 255),
+            rgb(130, 80, 223),
+            rgb(31, 35, 40),
+        ),
+        (true, CalloutKind::Warning) => (
+            rgb(154, 103, 0),
+            rgb(255, 248, 225),
+            rgb(154, 103, 0),
+            rgb(31, 35, 40),
+        ),
+        (true, CalloutKind::Caution) => (
+            rgb(207, 34, 46),
+            rgb(255, 236, 236),
+            rgb(207, 34, 46),
+            rgb(31, 35, 40),
+        ),
+    };
+    let border = Style::default().fg(border).bg(bg);
+    let title = Style::default()
+        .fg(title_fg)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
+    let body = Style::default().fg(body_fg).bg(bg);
+    CalloutStyles {
+        border,
+        title,
+        body,
+    }
 }
 
 #[cfg(test)]

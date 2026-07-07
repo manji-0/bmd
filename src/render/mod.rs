@@ -2,6 +2,7 @@
 
 mod blocks;
 mod cache;
+mod callout;
 pub(crate) mod checklist;
 mod context;
 mod footnotes;

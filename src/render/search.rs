@@ -117,6 +117,14 @@ fn block_searchable_lines(block: &Block, width: u16, ctx: &RenderContext) -> Vec
             lines.push(String::new());
             lines
         }
+        Block::Callout(callout) => {
+            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            let mut lines = vec![callout.header_label()];
+            for child in &callout.body {
+                lines.extend(block_searchable_lines(child, inner_width, ctx));
+            }
+            lines
+        }
         Block::List(list) => list_searchable_lines(list, width, ctx),
         Block::DefinitionList(list) => definition_list_searchable_lines(list, width, ctx),
         Block::Table(table) => table_searchable_lines(table, width, ctx),

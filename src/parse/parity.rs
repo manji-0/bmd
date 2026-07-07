@@ -42,6 +42,7 @@ mod tests {
                 Block::CodeBlock(_) => "code",
                 Block::MathBlock(_) => "math",
                 Block::BlockQuote(_) => "quote",
+                Block::Callout(_) => "callout",
                 Block::List(_) => "list",
                 Block::DefinitionList(_) => "definition_list",
                 Block::Table(_) => "table",

@@ -11,6 +11,7 @@ use ratatui::{
 use syntect::{easy::HighlightLines, util::LinesWithEndings};
 use unicode_width::UnicodeWidthStr;
 
+use super::callout::render_callout;
 use super::context::RenderContext;
 use super::inline::{heading_styles, highlight_line, inlines_to_wrapped_lines, syntect_span};
 use super::math::render_math_block;
@@ -38,6 +39,7 @@ pub(crate) fn render_block(
         Block::BlockQuote(blocks) => {
             render_blockquote(blocks, area, buf, skip_rows, ctx, line_offset)
         }
+        Block::Callout(callout) => render_callout(callout, area, buf, skip_rows, ctx, line_offset),
         Block::List(list) => render_list(list, area, buf, skip_rows, ctx, line_offset),
         Block::DefinitionList(list) => {
             render_definition_list(list, area, buf, skip_rows, ctx, line_offset)

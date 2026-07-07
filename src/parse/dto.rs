@@ -59,10 +59,39 @@ pub enum ParsedBlock {
     CodeBlock(ParsedCodeBlock),
     MathBlock(ParsedMathBlock),
     BlockQuote(Vec<ParsedBlock>),
+    Callout(ParsedCallout),
     List(ParsedList),
     DefinitionList(ParsedDefinitionList),
     Table(ParsedTable),
     Rule,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedCallout {
+    pub kind: ParsedCalloutKind,
+    pub title: Option<String>,
+    pub body: Vec<ParsedBlock>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParsedCalloutKind {
+    Note,
+    Tip,
+    Important,
+    Warning,
+    Caution,
+}
+
+impl ParsedCalloutKind {
+    pub fn to_domain(self) -> crate::domain::CalloutKind {
+        match self {
+            Self::Note => crate::domain::CalloutKind::Note,
+            Self::Tip => crate::domain::CalloutKind::Tip,
+            Self::Important => crate::domain::CalloutKind::Important,
+            Self::Warning => crate::domain::CalloutKind::Warning,
+            Self::Caution => crate::domain::CalloutKind::Caution,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
