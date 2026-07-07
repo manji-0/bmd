@@ -22,6 +22,7 @@ Open/close    o opens links and previews   O closes what o opened (preview overl
 Search        / forward   ? backward   n/p/N next/prev match   Esc clear
 Preview       Ctrl+pinch or +/- zoom   0 reset zoom   o/Esc close   click outside to close
 Tasks         click checkbox   x toggle at top line
+Selection     drag to select (auto-copy on release)   y copy again
 Other         h help   H close help   q/Ctrl-c quit";
 
 pub(crate) fn format_status_bar(

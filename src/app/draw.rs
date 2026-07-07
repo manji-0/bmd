@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::domain::{PreviewLoadStatus, SearchDirection, UiMode};
 use crate::error::AppError;
-use crate::render::{CachedMarkdownView, RenderContext};
+use crate::render::{CachedMarkdownView, RenderContext, paint_selection_overlay};
 
 use super::App;
 use super::layout::split_layout;
@@ -46,6 +46,16 @@ impl App {
                 scroll: self.scroll_visual,
             };
             f.render_widget(widget, areas.main);
+
+            if let Some(selection) = self.text_selection.filter(|s| !s.is_empty()) {
+                paint_selection_overlay(
+                    f.buffer_mut(),
+                    areas.main,
+                    self.scroll_visual,
+                    selection,
+                    self.theme.text_selection,
+                );
+            }
 
             if let Some(link_id) = self.view_state.mode().preview_link() {
                 self.draw_floating_preview(f, full_area, link_id);

@@ -44,6 +44,9 @@ pub enum AppError {
     #[error("failed to open link: {0}")]
     OpenLink(String),
 
+    #[error("clipboard error: {0}")]
+    Clipboard(String),
+
     #[error("unsupported input: {0}")]
     UnsupportedInput(String),
 }

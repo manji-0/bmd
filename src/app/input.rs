@@ -170,7 +170,10 @@ impl App {
             Command::PreviewZoomOut => self.adjust_preview_zoom(1.0 / PREVIEW_ZOOM_STEP),
             Command::PreviewZoomReset => self.reset_preview_zoom(),
             Command::NavBack => self.nav_back(),
-            Command::NavReset => self.nav_reset(),
+            Command::NavReset => {
+                self.clear_text_selection();
+                self.nav_reset();
+            }
             Command::StartSearchForward => self.start_search(SearchDirection::Forward),
             Command::StartSearchBackward => self.start_search(SearchDirection::Backward),
             Command::SearchConfirm => self.confirm_search(),
@@ -180,6 +183,8 @@ impl App {
             Command::ToggleHelp => self.help_visible = true,
             Command::CloseHelp => self.help_visible = false,
             Command::ToggleChecklist => self.toggle_checklist_at_viewport(),
+            Command::CopySelection => self.copy_text_selection()?,
+            Command::ClearSelection => self.clear_text_selection(),
             Command::Quit => self.should_quit = true,
         }
         Ok(())

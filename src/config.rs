@@ -313,6 +313,8 @@ pub fn command_from_name(name: &str) -> Option<Command> {
         "toggle_help" => Some(Command::ToggleHelp),
         "close_help" => Some(Command::CloseHelp),
         "toggle_checklist" => Some(Command::ToggleChecklist),
+        "copy_selection" => Some(Command::CopySelection),
+        "clear_selection" => Some(Command::ClearSelection),
         "quit" => Some(Command::Quit),
         "close_preview" => Some(Command::ClosePreview),
         "preview_zoom_in" => Some(Command::PreviewZoomIn),

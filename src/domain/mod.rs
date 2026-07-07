@@ -23,6 +23,7 @@ mod nav_stack;
 mod navigation;
 mod navigation_limits;
 mod preview_load;
+mod text_selection;
 mod view;
 
 #[cfg(test)]
@@ -70,6 +71,7 @@ pub use navigation_limits::{
 pub use preview_load::{
     PreviewLoadCompletionApplied, PreviewLoadPhase, PreviewLoadStatus, PreviewLoadTask,
 };
+pub use text_selection::{TextPoint, TextSelection};
 pub use view::{
     Scroll, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, TerminalSize,
     TerminalSizeError, ViewState,

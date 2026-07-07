@@ -35,6 +35,8 @@ pub enum Command {
     ToggleHelp,
     CloseHelp,
     ToggleChecklist,
+    CopySelection,
+    ClearSelection,
     NavBack,
     NavReset,
     Quit,
@@ -400,6 +402,7 @@ fn default_normal_bindings() -> Vec<(KeySpec, Command)> {
         k("h", Command::ToggleHelp),
         k("H", Command::CloseHelp),
         k("x", Command::ToggleChecklist),
+        k("y", Command::CopySelection),
         k("q", Command::Quit),
         k("C-c", Command::Quit),
     ]

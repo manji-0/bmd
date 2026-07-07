@@ -135,6 +135,8 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `q` / `Ctrl-c` | Quit (`Esc` clears search when active; else resets anchor or document stack) |
 | Left click on link | Open link / preview |
 | Left click on checkbox | Toggle task-list item (normal mode) |
+| Drag | Select text (copied to clipboard on release) |
+| `y` | Copy current text selection |
 
 ### Search input mode
 

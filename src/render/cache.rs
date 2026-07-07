@@ -93,6 +93,10 @@ impl DocumentRenderCache {
         self.total_height
     }
 
+    pub(crate) fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
     /// Copy the visible viewport starting at fractional `scroll` into `buf`.
     pub fn blit(&self, scroll: f32, area: Rect, buf: &mut Buffer) {
         if area.width == 0 || area.height == 0 {

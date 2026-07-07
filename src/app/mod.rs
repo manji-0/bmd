@@ -29,7 +29,9 @@ use ratatui::{Terminal, backend::Backend};
 use ratatui_image::picker::Picker;
 
 use crate::config::Config;
-use crate::domain::{ChecklistState, ChecklistStyle, Document, NavStack, TerminalSize, ViewState};
+use crate::domain::{
+    ChecklistState, ChecklistStyle, Document, NavStack, TerminalSize, TextSelection, ViewState,
+};
 use crate::error::AppError;
 use crate::keymap::Keymap;
 use crate::render::{
@@ -100,6 +102,10 @@ pub struct App {
     preview_zoom: f32,
     /// Selected heading index within the TOC preview.
     toc_selected_index: usize,
+    /// Mouse-selected text range in document logical coordinates.
+    text_selection: Option<TextSelection>,
+    /// In-progress mouse drag for text selection.
+    selection_drag: Option<checklist::SelectionDrag>,
     last_prefetch_viewport: Option<PrefetchViewportKey>,
     document_revision: u64,
     heading_cache: HeadingOffsetCache,
@@ -199,6 +205,8 @@ impl App {
             preview_render_cache: PreviewRenderCache::default(),
             preview_zoom: 1.0,
             toc_selected_index: 0,
+            text_selection: None,
+            selection_drag: None,
             last_prefetch_viewport: None,
             document_revision: 0,
             heading_cache: HeadingOffsetCache::default(),

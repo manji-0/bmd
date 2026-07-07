@@ -64,6 +64,7 @@ pub struct Theme {
     pub math: Style,
     pub search_match: Style,
     pub search_match_selected: Style,
+    pub text_selection: Style,
 }
 
 impl Default for Theme {
@@ -454,6 +455,7 @@ impl Palette {
                 .bg(self.search_selected_bg)
                 .add_modifier(bold)
                 .add_modifier(underline),
+            text_selection: fg(self.text).bg(self.search_match_bg),
             rule: fg(self.rule),
             table_header: fg(self.table_header).add_modifier(bold),
             table_cell: Style::default(),
