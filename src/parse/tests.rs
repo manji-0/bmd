@@ -180,6 +180,16 @@ fn parse_markdown_callout_multiline_body() {
 }
 
 #[test]
+fn gfm_tip_callout_with_inline_title_preserves_body() {
+    let doc = parse("> [!TIP] ヒント\n> Obsidian body.\n").unwrap();
+    let Block::Callout(callout) = &doc.blocks[0] else {
+        panic!("expected callout: {:?}", doc.blocks[0]);
+    };
+    assert_eq!(callout.title.as_deref(), Some("ヒント"));
+    assert_eq!(callout.body.len(), 1);
+}
+
+#[test]
 fn parse_unordered_list() {
     let doc = parse("- alpha\n- beta").unwrap();
     assert_eq!(doc.blocks.len(), 1);

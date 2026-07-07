@@ -75,8 +75,31 @@ fn split_callout(
     let ParsedBlock::Paragraph(inlines) = blocks.first()? else {
         return None;
     };
-    let (kind, title) = parse_callout_marker(&ParsedInline::plain_text(inlines))?;
-    Some((kind, title, blocks[1..].to_vec()))
+
+    let (marker_inlines, body_from_first) = match split_at_first_line_break(inlines) {
+        Some((marker, body)) => (marker, body),
+        None => (inlines.clone(), Vec::new()),
+    };
+    let (kind, title) = parse_callout_marker(&ParsedInline::plain_text(&marker_inlines))?;
+
+    let mut body = blocks[1..].to_vec();
+    if !body_from_first.is_empty() {
+        body.insert(0, ParsedBlock::Paragraph(body_from_first));
+    }
+
+    Some((kind, title, body))
+}
+
+/// Split a paragraph at the first line break (GFM blockquote continuations become `SoftBreak`).
+fn split_at_first_line_break(
+    inlines: &[ParsedInline],
+) -> Option<(Vec<ParsedInline>, Vec<ParsedInline>)> {
+    let break_idx = inlines
+        .iter()
+        .position(|inline| matches!(inline, ParsedInline::SoftBreak | ParsedInline::HardBreak))?;
+    let marker = inlines[..break_idx].to_vec();
+    let body = inlines[break_idx + 1..].to_vec();
+    Some((marker, body))
 }
 
 fn parse_callout_marker(text: &str) -> Option<(CalloutKind, Option<String>)> {
@@ -96,6 +119,24 @@ fn parse_callout_marker(text: &str) -> Option<(CalloutKind, Option<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn split_callout_respects_soft_break_between_title_and_body() {
+        let block = normalize_blockquote(
+            None,
+            vec![ParsedBlock::Paragraph(vec![
+                ParsedInline::Text("[!TIP] ヒント".into()),
+                ParsedInline::SoftBreak,
+                ParsedInline::Text("Obsidian body.".into()),
+            ])],
+        );
+        let ParsedBlock::Callout(callout) = block else {
+            panic!("expected callout");
+        };
+        assert_eq!(callout.kind, ParsedCalloutKind::Tip);
+        assert_eq!(callout.title.as_deref(), Some("ヒント"));
+        assert_eq!(callout.body.len(), 1);
+    }
 
     #[test]
     fn parse_callout_marker_with_title() {
