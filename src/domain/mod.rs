@@ -20,6 +20,7 @@ mod markdown;
 mod mermaid_render;
 mod mode;
 mod nav_stack;
+mod nav_target;
 mod navigation;
 mod navigation_limits;
 mod preview_load;
@@ -59,6 +60,7 @@ pub use mermaid_render::{
 };
 pub use mode::{NormalSearch, UiMode};
 pub use nav_stack::{AnchorStackEmpty, FixedScrollPrior, NavStack};
+pub use nav_target::NavTarget;
 pub use navigation::{
     AnchorIdle, NavBackPlan, NavLayer, NavResetPlan, plan_back, plan_document_back,
     plan_document_reset, plan_reset,

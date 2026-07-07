@@ -242,3 +242,32 @@ fn footnote_marker_label(document: &Document, footnote_id: FootnoteId) -> String
 fn footnote_marker_width(document: &Document, footnote_id: FootnoteId) -> usize {
     footnote_marker_label(document, footnote_id).width()
 }
+
+/// First logical line offset of a footnote definition in the bottom section.
+pub fn find_footnote_definition_line_offset(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext,
+    footnote_id: FootnoteId,
+) -> Option<usize> {
+    if width == 0 || document.footnote_order.is_empty() {
+        return None;
+    }
+    let body_height: usize = document
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(idx, block)| {
+            let gap = if idx == 0 { 0 } else { 1 };
+            super::measure::measure_block_height(block, idx, width, ctx) + gap
+        })
+        .sum();
+    let mut line = body_height.saturating_add(1);
+    for &id in &document.footnote_order {
+        if id == footnote_id {
+            return Some(line);
+        }
+        line += measure_footnote_entry_height(document, id, width, ctx);
+    }
+    None
+}

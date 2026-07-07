@@ -89,6 +89,10 @@ fn trailing_status(
         parts.push(format!("link #{}", id.0));
     }
 
+    if let Some(id) = view_state.selected_footnote() {
+        parts.push(format!("footnote #{}", id.0));
+    }
+
     if doc_stack_depth > 0 {
         parts.push(format!("doc+{doc_stack_depth}"));
     }

@@ -6,7 +6,9 @@ use ratatui::text::Line;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::{Alignment, Block, DefinitionList, Document, Inline, LinkId, List, Table};
+use crate::domain::{
+    Alignment, Block, DefinitionList, Document, FootnoteId, Inline, LinkId, List, NavTarget, Table,
+};
 
 use super::callout::callout_inner_width;
 use super::context::RenderContext;
@@ -18,6 +20,14 @@ use super::table::{allocate_column_widths, cell_padding, column_alignment, wrap_
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LinkHit {
     pub id: LinkId,
+    pub line: usize,
+    pub x: usize,
+    pub width: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FootnoteHit {
+    pub id: FootnoteId,
     pub line: usize,
     pub x: usize,
     pub width: usize,
@@ -54,6 +64,60 @@ pub fn collect_link_hits(document: &Document, width: u16, ctx: &RenderContext) -
         line_offset += gap;
     }
     hits
+}
+
+/// Collect screen positions of footnote reference markers in document order.
+pub fn collect_footnote_hits(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext,
+) -> Vec<FootnoteHit> {
+    if width == 0 || document.footnote_order.is_empty() {
+        return Vec::new();
+    }
+    let mut hits = Vec::new();
+    let mut line_offset = 0usize;
+    for (block_idx, block) in document.blocks.iter().enumerate() {
+        let gap = if block_idx == 0 { 0 } else { 1 };
+        collect_block_footnote_hits(block, block_idx, width, 0, ctx, &mut hits, &mut line_offset);
+        line_offset += gap;
+    }
+    hits
+}
+
+/// Navigation targets whose first marker falls within the visible scroll viewport.
+pub fn collect_visible_nav_targets(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext,
+    scroll: usize,
+    visible_lines: usize,
+) -> Vec<NavTarget> {
+    if width == 0 || visible_lines == 0 {
+        return Vec::new();
+    }
+    let viewport_end = scroll.saturating_add(visible_lines);
+    let mut ordered: Vec<(usize, usize, NavTarget)> = Vec::new();
+
+    for hit in collect_link_hits(document, width, ctx) {
+        ordered.push((hit.line, hit.x, NavTarget::Link(hit.id)));
+    }
+    for hit in collect_footnote_hits(document, width, ctx) {
+        ordered.push((hit.line, hit.x, NavTarget::Footnote(hit.id)));
+    }
+    ordered.sort_by_key(|(line, x, _)| (*line, *x));
+
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (line, _, target) in ordered {
+        if line < scroll || line >= viewport_end {
+            continue;
+        }
+        if seen.insert(target) {
+            out.push(target);
+        }
+    }
+    out
 }
 
 /// Find a link whose rendered text contains the click, if any.
@@ -148,6 +212,91 @@ fn collect_block_link_hits(
         }
         Block::Table(table) => {
             collect_table_link_hits(table, width, base_x, ctx, hits, line_offset);
+        }
+        Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {
+            *line_offset += measure_block_height(block, block_idx, width, ctx);
+        }
+    }
+}
+
+fn collect_block_footnote_hits(
+    block: &Block,
+    block_idx: usize,
+    width: u16,
+    base_x: usize,
+    ctx: &RenderContext,
+    hits: &mut Vec<FootnoteHit>,
+    line_offset: &mut usize,
+) {
+    match block {
+        Block::Heading(heading) => {
+            let prefix_width = heading.level.prefix().width();
+            let content_width = if (width as usize) > prefix_width + 1 {
+                (width as usize).saturating_sub(prefix_width)
+            } else {
+                width as usize
+            };
+            collect_inline_footnote_hits(
+                &heading.content,
+                content_width.max(1),
+                base_x + prefix_width,
+                *line_offset,
+                hits,
+            );
+            *line_offset += measure_block_height(block, block_idx, width, ctx);
+        }
+        Block::Paragraph(inlines) => {
+            collect_inline_footnote_hits(inlines, width as usize, base_x, *line_offset, hits);
+            *line_offset += measure_block_height(block, block_idx, width, ctx);
+        }
+        Block::BlockQuote(blocks) => {
+            let quote_x = base_x + 2;
+            let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+            for child in blocks {
+                collect_block_footnote_hits(
+                    child,
+                    block_idx,
+                    inner_width,
+                    quote_x,
+                    ctx,
+                    hits,
+                    line_offset,
+                );
+            }
+        }
+        Block::Callout(callout) => {
+            *line_offset += 1;
+            let inner_x = base_x + 1;
+            let inner_width = callout_inner_width(callout, width);
+            for child in &callout.body {
+                collect_block_footnote_hits(
+                    child,
+                    block_idx,
+                    inner_width,
+                    inner_x,
+                    ctx,
+                    hits,
+                    line_offset,
+                );
+            }
+            *line_offset += 1;
+        }
+        Block::List(list) => {
+            collect_list_footnote_hits(list, block_idx, width, base_x, ctx, hits, line_offset);
+        }
+        Block::DefinitionList(list) => {
+            collect_definition_list_footnote_hits(
+                list,
+                block_idx,
+                width,
+                base_x,
+                ctx,
+                hits,
+                line_offset,
+            );
+        }
+        Block::Table(table) => {
+            collect_table_footnote_hits(table, width, base_x, ctx, hits, line_offset);
         }
         Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {
             *line_offset += measure_block_height(block, block_idx, width, ctx);
@@ -281,6 +430,127 @@ fn collect_table_link_hits(
     *line_offset += 1;
 }
 
+fn collect_list_footnote_hits(
+    list: &List,
+    block_idx: usize,
+    width: u16,
+    base_x: usize,
+    ctx: &RenderContext,
+    hits: &mut Vec<FootnoteHit>,
+    line_offset: &mut usize,
+) {
+    for (item_idx, item) in list.items.iter().enumerate() {
+        let marker_width = list_marker_width_at(list, item_idx, item, ctx.checklist_state);
+        let inner_width = (width as usize).saturating_sub(marker_width).max(1) as u16;
+        let content_x = base_x + marker_width;
+
+        if item.content.is_empty() {
+            *line_offset += 1;
+            continue;
+        }
+
+        for child in &item.content {
+            collect_block_footnote_hits(
+                child,
+                block_idx,
+                inner_width,
+                content_x,
+                ctx,
+                hits,
+                line_offset,
+            );
+        }
+    }
+}
+
+fn collect_definition_list_footnote_hits(
+    list: &DefinitionList,
+    block_idx: usize,
+    width: u16,
+    base_x: usize,
+    ctx: &RenderContext,
+    hits: &mut Vec<FootnoteHit>,
+    line_offset: &mut usize,
+) {
+    let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
+    let content_x = base_x + 2;
+    for item in &list.items {
+        if !item.term.is_empty() {
+            collect_inline_footnote_hits(&item.term, width as usize, base_x, *line_offset, hits);
+            *line_offset +=
+                measure_block_height(&Block::Paragraph(item.term.clone()), block_idx, width, ctx);
+        }
+        for definition in &item.definitions {
+            for child in definition {
+                collect_block_footnote_hits(
+                    child,
+                    block_idx,
+                    inner_width,
+                    content_x,
+                    ctx,
+                    hits,
+                    line_offset,
+                );
+            }
+        }
+    }
+}
+
+fn collect_table_footnote_hits(
+    table: &Table,
+    width: u16,
+    base_x: usize,
+    ctx: &RenderContext,
+    hits: &mut Vec<FootnoteHit>,
+    line_offset: &mut usize,
+) {
+    let col_count = table.column_count();
+    if col_count == 0 || width < 3 {
+        *line_offset += 1;
+        return;
+    }
+
+    let widths = allocate_column_widths(table, width as usize);
+
+    *line_offset += 1;
+
+    let header_height = table_row_height(&table.headers, &widths, ctx.theme.table_header, ctx);
+    collect_table_row_footnote_hits(
+        &table.headers,
+        &TableRowLinkContext {
+            widths: &widths,
+            alignments: &table.alignments,
+            style: ctx.theme.table_header,
+            ctx,
+            base_x,
+            row_start_line: *line_offset,
+        },
+        hits,
+    );
+    *line_offset += header_height;
+
+    *line_offset += 1;
+
+    for row in &table.rows {
+        let row_height = table_row_height(row, &widths, ctx.theme.table_cell, ctx);
+        collect_table_row_footnote_hits(
+            row,
+            &TableRowLinkContext {
+                widths: &widths,
+                alignments: &table.alignments,
+                style: ctx.theme.table_cell,
+                ctx,
+                base_x,
+                row_start_line: *line_offset,
+            },
+            hits,
+        );
+        *line_offset += row_height;
+    }
+
+    *line_offset += 1;
+}
+
 fn table_row_height(
     cells: &[Vec<Inline>],
     widths: &[usize],
@@ -331,6 +601,50 @@ fn collect_table_row_link_hits(
 
             if let Some(cell_inlines) = cell {
                 collect_inline_link_hits_filtered(
+                    cell_inlines,
+                    *width,
+                    content_x,
+                    row.row_start_line,
+                    Some(line),
+                    hits,
+                );
+            }
+
+            col_x += 1 + width + 1 + 1;
+        }
+    }
+}
+
+fn collect_table_row_footnote_hits(
+    cells: &[Vec<Inline>],
+    row: &TableRowLinkContext<'_>,
+    hits: &mut Vec<FootnoteHit>,
+) {
+    let max_height = table_row_height(cells, row.widths, row.style, row.ctx);
+
+    for row_line in 0..max_height {
+        let line = row.row_start_line + row_line;
+        let mut col_x = row.base_x + 1;
+        for (i, width) in row.widths.iter().enumerate() {
+            let cell = cells.get(i);
+            let wrapped = cell
+                .map(|c| wrap_cell_inlines(c, *width, row.style, row.ctx, row.row_start_line))
+                .unwrap_or_else(|| vec![Line::from(" ")]);
+            let line_content = wrapped
+                .get(row_line)
+                .cloned()
+                .unwrap_or_else(|| Line::from(" "));
+            let rendered_width = line_content
+                .spans
+                .iter()
+                .map(|s| s.content.width())
+                .sum::<usize>();
+            let alignment = column_alignment(row.alignments, i);
+            let (pad_left, _) = cell_padding(alignment, rendered_width, *width);
+            let content_x = col_x + 1 + pad_left;
+
+            if let Some(cell_inlines) = cell {
+                collect_inline_footnote_hits_filtered(
                     cell_inlines,
                     *width,
                     content_x,
@@ -426,6 +740,7 @@ enum FlatPiece {
     Word {
         text: String,
         link_id: Option<LinkId>,
+        footnote_id: Option<FootnoteId>,
     },
     Space {
         link_id: Option<LinkId>,
@@ -480,7 +795,11 @@ fn collect_inline_link_hits_filtered(
                 }
                 x += 1;
             }
-            FlatPiece::Word { text, link_id } => {
+            FlatPiece::Word {
+                text,
+                link_id,
+                footnote_id: _,
+            } => {
                 append_word_hits_filtered(
                     &text,
                     link_id,
@@ -564,6 +883,155 @@ fn push_link_hit(hits: &mut Vec<LinkHit>, id: LinkId, line: usize, x: usize, wid
     hits.push(LinkHit { id, line, x, width });
 }
 
+struct FootnoteWordHitCursor<'a> {
+    width: usize,
+    base_x: usize,
+    line: &'a mut usize,
+    x: &'a mut usize,
+    target_line: Option<usize>,
+    hits: &'a mut Vec<FootnoteHit>,
+}
+
+fn collect_inline_footnote_hits(
+    inlines: &[Inline],
+    width: usize,
+    base_x: usize,
+    start_line: usize,
+    hits: &mut Vec<FootnoteHit>,
+) {
+    collect_inline_footnote_hits_filtered(inlines, width, base_x, start_line, None, hits);
+}
+
+fn collect_inline_footnote_hits_filtered(
+    inlines: &[Inline],
+    width: usize,
+    base_x: usize,
+    start_line: usize,
+    target_line: Option<usize>,
+    hits: &mut Vec<FootnoteHit>,
+) {
+    if width == 0 {
+        return;
+    }
+    let pieces = flatten_inline_pieces(inlines, None);
+    let mut line = start_line;
+    let mut x = 0usize;
+
+    for piece in pieces {
+        match piece {
+            FlatPiece::Break => {
+                line += 1;
+                x = 0;
+            }
+            FlatPiece::Space { .. } => {
+                if x == 0 {
+                    continue;
+                }
+                if x + 1 > width {
+                    line += 1;
+                    x = 0;
+                } else {
+                    x += 1;
+                }
+            }
+            FlatPiece::Word {
+                text,
+                link_id: _,
+                footnote_id,
+            } => {
+                append_footnote_word_hits_filtered(
+                    &text,
+                    footnote_id,
+                    &mut FootnoteWordHitCursor {
+                        width,
+                        base_x,
+                        line: &mut line,
+                        x: &mut x,
+                        target_line,
+                        hits,
+                    },
+                );
+            }
+        }
+    }
+}
+
+fn append_footnote_word_hits_filtered(
+    word: &str,
+    footnote_id: Option<FootnoteId>,
+    cursor: &mut FootnoteWordHitCursor<'_>,
+) {
+    let word_width = word.width();
+    if word_width <= cursor.width {
+        append_fitting_footnote_word_filtered(word, footnote_id, cursor);
+        return;
+    }
+    for grapheme in word.graphemes(true) {
+        let grapheme_width = grapheme.width();
+        if *cursor.x > 0 && *cursor.x + grapheme_width > cursor.width {
+            *cursor.line += 1;
+            *cursor.x = 0;
+        }
+        if let Some(id) = footnote_id
+            && cursor
+                .target_line
+                .is_none_or(|target| target == *cursor.line)
+        {
+            push_footnote_hit(
+                cursor.hits,
+                id,
+                *cursor.line,
+                cursor.base_x + *cursor.x,
+                grapheme_width,
+            );
+        }
+        *cursor.x += grapheme_width;
+    }
+}
+
+fn append_fitting_footnote_word_filtered(
+    word: &str,
+    footnote_id: Option<FootnoteId>,
+    cursor: &mut FootnoteWordHitCursor<'_>,
+) {
+    let word_width = word.width();
+    let gap = usize::from(*cursor.x > 0);
+    if *cursor.x > 0 && *cursor.x + gap + word_width > cursor.width {
+        *cursor.line += 1;
+        *cursor.x = 0;
+    }
+    if *cursor.x > 0 {
+        *cursor.x += 1;
+    }
+    if let Some(id) = footnote_id
+        && cursor
+            .target_line
+            .is_none_or(|target| target == *cursor.line)
+    {
+        push_footnote_hit(
+            cursor.hits,
+            id,
+            *cursor.line,
+            cursor.base_x + *cursor.x,
+            word_width,
+        );
+    }
+    *cursor.x += word_width;
+}
+
+fn push_footnote_hit(
+    hits: &mut Vec<FootnoteHit>,
+    id: FootnoteId,
+    line: usize,
+    x: usize,
+    width: usize,
+) {
+    if width == 0 {
+        return;
+    }
+    hits.push(FootnoteHit { id, line, x, width });
+}
+
 fn flatten_inline_pieces(inlines: &[Inline], active_link: Option<LinkId>) -> Vec<FlatPiece> {
     let mut out = Vec::new();
     flatten_inline_pieces_inner(inlines, active_link, &mut out);
@@ -587,6 +1055,7 @@ fn flatten_inline_pieces_inner(
                     out.push(FlatPiece::Word {
                         text: word.to_string(),
                         link_id: None,
+                        footnote_id: None,
                     });
                     first = false;
                 }
@@ -601,10 +1070,11 @@ fn flatten_inline_pieces_inner(
             Inline::Link(id, children) => {
                 flatten_inline_pieces_inner(children, Some(*id), out);
             }
-            Inline::FootnoteReference(_, display) => {
+            Inline::FootnoteReference(id, display) => {
                 out.push(FlatPiece::Word {
                     text: format!("[{display}]"),
                     link_id: None,
+                    footnote_id: Some(*id),
                 });
             }
             Inline::Math(latex) => flatten_text_pieces(latex, active_link, out),
@@ -636,6 +1106,7 @@ fn flatten_text_pieces(text: &str, link_id: Option<LinkId>, out: &mut Vec<FlatPi
             out.push(FlatPiece::Word {
                 text: word,
                 link_id,
+                footnote_id: None,
             });
         }
     }
@@ -825,4 +1296,17 @@ fn inlines_contain_link(inlines: &[Inline], link_id: LinkId) -> bool {
         | Inline::SoftBreak
         | Inline::FootnoteReference(_, _) => false,
     })
+}
+
+/// First logical line offset where `footnote_id` reference marker appears.
+pub fn find_footnote_ref_line_offset(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext,
+    footnote_id: FootnoteId,
+) -> Option<usize> {
+    collect_footnote_hits(document, width, ctx)
+        .into_iter()
+        .find(|hit| hit.id == footnote_id)
+        .map(|hit| hit.line)
 }

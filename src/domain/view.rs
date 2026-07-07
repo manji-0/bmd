@@ -1,7 +1,9 @@
 //! View, scroll, and search state with typed transitions.
 
 use super::link::LinkId;
+use super::markdown::FootnoteId;
 use super::mode::{NormalSearch, UiMode};
+use super::nav_target::NavTarget;
 
 /// Terminal dimensions with the invariant that neither dimension is zero.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,7 +113,7 @@ impl SearchMatch {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewState {
     scroll: Scroll,
-    selected_link: Option<LinkId>,
+    selected_nav: Option<NavTarget>,
     terminal_size: TerminalSize,
     mode: UiMode,
     normal_search: NormalSearch,
@@ -121,7 +123,7 @@ impl ViewState {
     pub fn new(terminal_size: TerminalSize) -> Self {
         Self {
             scroll: Scroll::new(),
-            selected_link: None,
+            selected_nav: None,
             terminal_size,
             mode: UiMode::normal(),
             normal_search: NormalSearch::inactive(),
@@ -134,7 +136,7 @@ impl ViewState {
             scroll: Scroll {
                 offset: scroll_offset.min(max_scroll),
             },
-            selected_link: None,
+            selected_nav: None,
             terminal_size: self.terminal_size,
             mode: UiMode::normal(),
             normal_search: NormalSearch::inactive(),
@@ -438,10 +440,22 @@ impl ViewState {
 
     /// Select the next link within `visible`, wrapping at the ends.
     pub fn select_next_link_in(self, visible: &[LinkId]) -> Self {
+        let targets: Vec<NavTarget> = visible.iter().map(|&id| NavTarget::Link(id)).collect();
+        self.select_next_nav_in(&targets)
+    }
+
+    /// Select the previous link within `visible`, wrapping at the ends.
+    pub fn select_prev_link_in(self, visible: &[LinkId]) -> Self {
+        let targets: Vec<NavTarget> = visible.iter().map(|&id| NavTarget::Link(id)).collect();
+        self.select_prev_nav_in(&targets)
+    }
+
+    /// Select the next navigation target within `visible`, wrapping at the ends.
+    pub fn select_next_nav_in(self, visible: &[NavTarget]) -> Self {
         if visible.is_empty() {
             return self;
         }
-        let next = match self.selected_link {
+        let next = match self.selected_nav {
             None => visible[0],
             Some(current) => visible
                 .iter()
@@ -450,17 +464,17 @@ impl ViewState {
                 .unwrap_or(visible[0]),
         };
         Self {
-            selected_link: Some(next),
+            selected_nav: Some(next),
             ..self
         }
     }
 
-    /// Select the previous link within `visible`, wrapping at the ends.
-    pub fn select_prev_link_in(self, visible: &[LinkId]) -> Self {
+    /// Select the previous navigation target within `visible`, wrapping at the ends.
+    pub fn select_prev_nav_in(self, visible: &[NavTarget]) -> Self {
         if visible.is_empty() {
             return self;
         }
-        let prev = match self.selected_link {
+        let prev = match self.selected_nav {
             None => *visible.last().expect("visible is non-empty"),
             Some(current) => visible
                 .iter()
@@ -475,21 +489,28 @@ impl ViewState {
                 .unwrap_or(*visible.last().expect("visible is non-empty")),
         };
         Self {
-            selected_link: Some(prev),
+            selected_nav: Some(prev),
             ..self
         }
     }
 
     pub fn clear_link_selection(self) -> Self {
         Self {
-            selected_link: None,
+            selected_nav: None,
             ..self
         }
     }
 
     pub fn with_selected_link(self, id: LinkId) -> Self {
         Self {
-            selected_link: Some(id),
+            selected_nav: Some(NavTarget::Link(id)),
+            ..self
+        }
+    }
+
+    pub fn with_selected_footnote(self, id: FootnoteId) -> Self {
+        Self {
+            selected_nav: Some(NavTarget::Footnote(id)),
             ..self
         }
     }
@@ -499,7 +520,15 @@ impl ViewState {
     }
 
     pub fn selected_link(&self) -> Option<LinkId> {
-        self.selected_link
+        self.selected_nav.and_then(NavTarget::link_id)
+    }
+
+    pub fn selected_footnote(&self) -> Option<FootnoteId> {
+        self.selected_nav.and_then(NavTarget::footnote_id)
+    }
+
+    pub fn selected_nav(&self) -> Option<NavTarget> {
+        self.selected_nav
     }
 
     pub fn terminal_size(&self) -> TerminalSize {

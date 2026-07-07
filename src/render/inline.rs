@@ -511,11 +511,18 @@ fn inlines_to_segments(
                 };
                 inlines_to_segments(children, ctx, style, out);
             }
-            Inline::FootnoteReference(_, display) => out.push(Segment {
-                text: format!("[{display}]"),
-                style: footnote_marker_style(ctx),
-                force_break_after: false,
-            }),
+            Inline::FootnoteReference(id, display) => {
+                let style = if ctx.selected_footnote == Some(*id) {
+                    ctx.theme.link_selected
+                } else {
+                    footnote_marker_style(ctx)
+                };
+                out.push(Segment {
+                    text: format!("[{display}]"),
+                    style,
+                    force_break_after: false,
+                });
+            }
             Inline::Math(latex) => {
                 let rendered = render_latex(latex);
                 if rendered.is_empty() {

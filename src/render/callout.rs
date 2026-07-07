@@ -69,6 +69,7 @@ pub(crate) fn render_callout(
         rendered: ctx.rendered,
         links: ctx.links,
         selected_link: ctx.selected_link,
+        selected_footnote: ctx.selected_footnote,
         search_query: ctx.search_query.clone(),
         selected_search_match: ctx.selected_search_match,
         selected_match_line_offset: ctx.selected_match_line_offset,

@@ -6,14 +6,16 @@ use super::measure::measure_code_block_height;
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
 use super::{
     DocumentRenderCache, MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme,
-    checklist, collect_heading_offsets, collect_visible_links, find_heading_line_by_anchor,
-    find_search_matches, measure_block_height, measure_document_height, next_heading_line,
-    prev_heading_line, slugify_heading,
+    checklist, collect_footnote_hits, collect_heading_offsets, collect_visible_links,
+    collect_visible_nav_targets, find_footnote_definition_line_offset,
+    find_footnote_ref_line_offset, find_heading_line_by_anchor, find_search_matches,
+    measure_block_height, measure_document_height, next_heading_line, prev_heading_line,
+    slugify_heading,
 };
 use crate::domain::{
-    Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, Heading, HeadingLevel,
-    Inline, Link, LinkId, LinkKind, LinkUrl, List, ListItem, SearchDirection, SearchMatch, Table,
-    TerminalSize, ViewState,
+    Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, FootnoteDefinition,
+    FootnoteId, Heading, HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl, List, ListItem,
+    NavTarget, SearchDirection, SearchMatch, Table, TerminalSize, ViewState,
 };
 use crate::parse::parse;
 use ratatui::Terminal;
@@ -46,6 +48,7 @@ fn test_render_context() -> RenderContext<'static> {
         rendered,
         links,
         selected_link: None,
+        selected_footnote: None,
         search_query: None,
         selected_search_match: None,
         selected_match_line_offset: None,
@@ -824,6 +827,85 @@ fn collect_visible_links_filters_by_viewport() {
 
     let visible = collect_visible_links(&doc, 80, &ctx, bottom_line, 1);
     assert_eq!(visible, vec![LinkId(1)]);
+}
+
+#[test]
+fn footnote_nav_collects_reference_and_definition_lines() {
+    let doc = Document::new(
+        vec![Block::Paragraph(vec![
+            Inline::Text("Text ".into()),
+            Inline::FootnoteReference(FootnoteId(0), 1),
+            Inline::Text(" end.".into()),
+        ])],
+        vec![],
+        vec![],
+        vec![FootnoteDefinition {
+            label: "note".into(),
+            content: vec![Block::Paragraph(vec![Inline::Text(
+                "Footnote body.".into(),
+            )])],
+        }],
+        vec![FootnoteId(0)],
+        None,
+    )
+    .unwrap();
+    let ctx = test_render_context();
+
+    let ref_line = find_footnote_ref_line_offset(&doc, 80, &ctx, FootnoteId(0)).unwrap();
+    let def_line = find_footnote_definition_line_offset(&doc, 80, &ctx, FootnoteId(0)).unwrap();
+    assert!(def_line > ref_line);
+
+    let hits = collect_footnote_hits(&doc, 80, &ctx);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].line, ref_line);
+}
+
+#[test]
+fn collect_visible_nav_targets_orders_links_and_footnotes() {
+    let doc = Document::new(
+        vec![Block::Paragraph(vec![
+            Inline::FootnoteReference(FootnoteId(0), 1),
+            Inline::Text(" ".into()),
+            Inline::Link(LinkId(0), vec![Inline::Text("link".into())]),
+        ])],
+        vec![Link {
+            url: LinkUrl::new("https://example.com".into()).unwrap(),
+            title: None,
+            kind: LinkKind::Web,
+        }],
+        vec![],
+        vec![FootnoteDefinition {
+            label: "n".into(),
+            content: vec![Block::Paragraph(vec![Inline::Text("body".into())])],
+        }],
+        vec![FootnoteId(0)],
+        None,
+    )
+    .unwrap();
+    let ctx = test_render_context();
+    let visible = collect_visible_nav_targets(&doc, 80, &ctx, 0, 10);
+    assert_eq!(
+        visible,
+        vec![
+            NavTarget::Footnote(FootnoteId(0)),
+            NavTarget::Link(LinkId(0))
+        ]
+    );
+}
+
+#[test]
+fn nav_target_selection_wraps_mixed_targets() {
+    let visible = [
+        NavTarget::Footnote(FootnoteId(0)),
+        NavTarget::Link(LinkId(1)),
+    ];
+    let size = crate::domain::TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size)
+        .select_next_nav_in(&visible)
+        .select_next_nav_in(&visible);
+    assert_eq!(state.selected_link(), Some(LinkId(1)));
+    let state = state.select_next_nav_in(&visible);
+    assert_eq!(state.selected_footnote(), Some(FootnoteId(0)));
 }
 
 #[test]

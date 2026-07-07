@@ -5,7 +5,10 @@ use crate::domain::{
     AnchorIdle, AnchorStackEmpty, AnchorStackFull, FixedScrollPrior, NavBackPlan, NavResetPlan,
     anchor_stack_limit_message, plan_back, plan_document_back, plan_document_reset, plan_reset,
 };
-use crate::render::{find_heading_line_by_anchor, next_heading_line, prev_heading_line};
+use crate::render::{
+    find_footnote_definition_line_offset, find_heading_line_by_anchor, next_heading_line,
+    prev_heading_line,
+};
 
 use super::App;
 use super::scroll::HALF_PAGE_SCROLL_ANIM_SPEED;
@@ -48,19 +51,29 @@ impl App {
     }
 
     pub(crate) fn next_link(&mut self) {
-        let visible = self.visible_links();
-        self.view_state = self.view_state.clone().select_next_link_in(&visible);
+        let visible = self.visible_nav_targets();
+        self.view_state = self.view_state.clone().select_next_nav_in(&visible);
         self.maybe_warm_selected_preview();
     }
 
     pub(crate) fn prev_link(&mut self) {
-        let visible = self.visible_links();
-        self.view_state = self.view_state.clone().select_prev_link_in(&visible);
+        let visible = self.visible_nav_targets();
+        self.view_state = self.view_state.clone().select_prev_nav_in(&visible);
         self.maybe_warm_selected_preview();
     }
 
-    fn visible_links(&self) -> Vec<crate::domain::LinkId> {
-        self.visible_link_ids()
+    fn visible_nav_targets(&self) -> Vec<crate::domain::NavTarget> {
+        let ctx = self.render_context();
+        let width = self.view_state.terminal_size().width();
+        let scroll = self.view_state.scroll().offset();
+        let visible_lines = self.content_height() as usize;
+        crate::render::collect_visible_nav_targets(
+            &self.document,
+            width,
+            &ctx,
+            scroll,
+            visible_lines,
+        )
     }
 
     pub(crate) fn next_heading(&mut self) {
@@ -87,8 +100,12 @@ impl App {
     }
 
     pub(crate) fn open_current_link(&mut self) {
+        if let Some(footnote_id) = self.view_state.selected_footnote() {
+            self.open_footnote(footnote_id);
+            return;
+        }
         let Some(id) = self.view_state.selected_link() else {
-            self.set_status_message("no link selected — press n to select a link".into());
+            self.set_status_message("no link or footnote selected — press n to select".into());
             return;
         };
         let Some(link) = self.document.links.get(id.0).cloned() else {
@@ -284,5 +301,22 @@ impl App {
         let target = scroll_link_target(line_offset, max, &self.view_state);
         self.view_state = self.view_state.clone().scroll_to(target);
         self.snap_scroll_visual();
+    }
+
+    pub(crate) fn open_footnote(&mut self, footnote_id: crate::domain::FootnoteId) {
+        let ctx = self.render_context();
+        let width = self.view_state.terminal_size().width();
+        let Some(line) =
+            find_footnote_definition_line_offset(&self.document, width, &ctx, footnote_id)
+        else {
+            self.set_status_message(format!("footnote not found: {footnote_id}"));
+            return;
+        };
+        let prior = FixedScrollPrior::fix(self.view_state.scroll().offset());
+        if let Err(AnchorStackFull) = self.nav_stack.fix_prior_on_link_jump(prior) {
+            self.set_status_message(anchor_stack_limit_message());
+            return;
+        }
+        self.scroll_to_line(line);
     }
 }

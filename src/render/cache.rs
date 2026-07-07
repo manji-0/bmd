@@ -2,7 +2,7 @@
 
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
-use crate::domain::{Document, LinkId, ViewState};
+use crate::domain::{Document, FootnoteId, LinkId, ViewState};
 
 use super::context::RenderContext;
 use super::measure::measure_document_height;
@@ -15,6 +15,7 @@ struct RenderCacheKey {
     width: u16,
     search_query: Option<String>,
     selected_link: Option<LinkId>,
+    selected_footnote: Option<FootnoteId>,
     selected_match_line_offset: Option<usize>,
     checklist_revision: u64,
 }
@@ -25,6 +26,7 @@ impl RenderCacheKey {
             width,
             search_query: ctx.search_query.clone(),
             selected_link: ctx.selected_link,
+            selected_footnote: ctx.selected_footnote,
             selected_match_line_offset: ctx.selected_match_line_offset,
             checklist_revision: ctx.checklist_state.revision(),
         }
