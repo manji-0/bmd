@@ -69,12 +69,11 @@ impl App {
             }
         }
 
-        if let Event::Key(key) = &event {
-            if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
-                if let Some(handled) = self.handle_toc_preview_key(key) {
-                    return Ok(handled);
-                }
-            }
+        if let Event::Key(key) = &event
+            && (key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat)
+            && let Some(handled) = self.handle_toc_preview_key(key)
+        {
+            return Ok(handled);
         }
 
         let command = self.keymap.map_event(

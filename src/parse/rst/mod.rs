@@ -296,18 +296,17 @@ fn merge_sibling_directive_bodies(blocks: Vec<RstBlock>) -> Vec<RstBlock> {
             argument,
             content,
         } = &blocks[index]
+            && content.is_empty()
         {
-            if content.is_empty() {
-                let (body, trailing) = trailing_directive_body_blocks(&blocks, index + 1);
-                if !body.is_empty() {
-                    out.push(RstBlock::Directive {
-                        name: name.clone(),
-                        argument: argument.clone(),
-                        content: normalize_directive_body_blocks(body),
-                    });
-                    index += 1 + trailing;
-                    continue;
-                }
+            let (body, trailing) = trailing_directive_body_blocks(&blocks, index + 1);
+            if !body.is_empty() {
+                out.push(RstBlock::Directive {
+                    name: name.clone(),
+                    argument: argument.clone(),
+                    content: normalize_directive_body_blocks(body),
+                });
+                index += 1 + trailing;
+                continue;
             }
         }
         out.push(blocks[index].clone());

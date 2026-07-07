@@ -467,10 +467,9 @@ impl<'a> ParserState<'a> {
                     footnote_id,
                     blocks,
                 } = frame
+                    && let Some(def) = self.footnotes.get_mut(footnote_id)
                 {
-                    if let Some(def) = self.footnotes.get_mut(footnote_id) {
-                        def.blocks = blocks;
-                    }
+                    def.blocks = blocks;
                 }
             }
             TagEnd::MetadataBlock(_) => {
@@ -501,12 +500,11 @@ impl<'a> ParserState<'a> {
             }
             TagEnd::DefinitionListTitle => {
                 let frame = self.pop_frame("definition list title")?;
-                if let BlockFrame::Paragraph(parser) = frame {
-                    if let Some(BlockFrame::DefinitionList { current_term, .. }) =
+                if let BlockFrame::Paragraph(parser) = frame
+                    && let Some(BlockFrame::DefinitionList { current_term, .. }) =
                         self.stack.last_mut()
-                    {
-                        *current_term = Some(parser.into_inlines());
-                    }
+                {
+                    *current_term = Some(parser.into_inlines());
                 }
             }
             TagEnd::DefinitionListDefinition => {

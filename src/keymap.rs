@@ -110,14 +110,14 @@ fn modifier_from_token(token: &str) -> Result<KeyModifiers, AppError> {
 
 fn resolve_key(key: &KeyEvent) -> ResolvedKey {
     let mut modifiers = key.modifiers;
-    if let KeyCode::Char(c) = key.code {
-        if modifiers.contains(KeyModifiers::SHIFT) {
-            modifiers -= KeyModifiers::SHIFT;
-            return ResolvedKey {
-                code: KeyCode::Char(c),
-                modifiers,
-            };
-        }
+    if let KeyCode::Char(c) = key.code
+        && modifiers.contains(KeyModifiers::SHIFT)
+    {
+        modifiers -= KeyModifiers::SHIFT;
+        return ResolvedKey {
+            code: KeyCode::Char(c),
+            modifiers,
+        };
     }
     ResolvedKey {
         code: key.code,

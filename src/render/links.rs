@@ -472,10 +472,10 @@ fn collect_inline_link_hits_filtered(
                     x = 0;
                     continue;
                 }
-                if let Some(id) = link_id {
-                    if target_line.is_none_or(|target| target == line) {
-                        push_link_hit(hits, id, line, base_x + x, 1);
-                    }
+                if let Some(id) = link_id
+                    && target_line.is_none_or(|target| target == line)
+                {
+                    push_link_hit(hits, id, line, base_x + x, 1);
                 }
                 x += 1;
             }
@@ -509,19 +509,18 @@ fn append_word_hits_filtered(word: &str, link_id: Option<LinkId>, cursor: &mut W
             *cursor.line += 1;
             *cursor.x = 0;
         }
-        if let Some(id) = link_id {
-            if cursor
+        if let Some(id) = link_id
+            && cursor
                 .target_line
                 .is_none_or(|target| target == *cursor.line)
-            {
-                push_link_hit(
-                    cursor.hits,
-                    id,
-                    *cursor.line,
-                    cursor.base_x + *cursor.x,
-                    grapheme_width,
-                );
-            }
+        {
+            push_link_hit(
+                cursor.hits,
+                id,
+                *cursor.line,
+                cursor.base_x + *cursor.x,
+                grapheme_width,
+            );
         }
         *cursor.x += grapheme_width;
     }
@@ -541,19 +540,18 @@ fn append_fitting_word_filtered(
     if *cursor.x > 0 {
         *cursor.x += 1;
     }
-    if let Some(id) = link_id {
-        if cursor
+    if let Some(id) = link_id
+        && cursor
             .target_line
             .is_none_or(|target| target == *cursor.line)
-        {
-            push_link_hit(
-                cursor.hits,
-                id,
-                *cursor.line,
-                cursor.base_x + *cursor.x,
-                word_width,
-            );
-        }
+    {
+        push_link_hit(
+            cursor.hits,
+            id,
+            *cursor.line,
+            cursor.base_x + *cursor.x,
+            word_width,
+        );
     }
     *cursor.x += word_width;
 }

@@ -14,19 +14,19 @@ pub(crate) fn find_table_regions(content: &str) -> Vec<TableRegionMeta> {
     let mut regions = Vec::new();
     let mut index = 0;
     while index < lines.len() {
-        if is_simple_table_boundary(lines[index]) {
-            if let Some((meta, end)) = parse_simple_table_region(&lines, index) {
-                regions.push(meta);
-                index = end;
-                continue;
-            }
+        if is_simple_table_boundary(lines[index])
+            && let Some((meta, end)) = parse_simple_table_region(&lines, index)
+        {
+            regions.push(meta);
+            index = end;
+            continue;
         }
-        if is_grid_border(lines[index]) {
-            if let Some((meta, end)) = parse_grid_table_region(&lines, index) {
-                regions.push(meta);
-                index = end;
-                continue;
-            }
+        if is_grid_border(lines[index])
+            && let Some((meta, end)) = parse_grid_table_region(&lines, index)
+        {
+            regions.push(meta);
+            index = end;
+            continue;
         }
         index += 1;
     }

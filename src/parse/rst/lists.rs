@@ -259,13 +259,13 @@ fn parse_list_items(
                 continue;
             }
         }
-        if line.indent > min_indent {
-            if let Some(last) = items.last_mut() {
-                let (body, consumed) = parse_continuation(lines, end, *cursor, min_indent);
-                last.body.extend(body);
-                *cursor += consumed;
-                continue;
-            }
+        if line.indent > min_indent
+            && let Some(last) = items.last_mut()
+        {
+            let (body, consumed) = parse_continuation(lines, end, *cursor, min_indent);
+            last.body.extend(body);
+            *cursor += consumed;
+            continue;
         }
         break;
     }
@@ -361,10 +361,10 @@ fn parse_literal_block(
     let mut body = String::new();
     while index < end {
         if is_blank(&lines[index]) {
-            if let Some(next_idx) = next_non_blank(lines, end, index + 1) {
-                if lines[next_idx].indent < content_indent {
-                    break;
-                }
+            if let Some(next_idx) = next_non_blank(lines, end, index + 1)
+                && lines[next_idx].indent < content_indent
+            {
+                break;
             }
             body.push('\n');
             index += 1;

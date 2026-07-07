@@ -93,10 +93,10 @@ impl Config {
     /// Load configuration from the default path, falling back to built-in defaults.
     pub fn load() -> Result<Self, AppError> {
         let path = default_config_path();
-        if let Some(path) = path {
-            if path.is_file() {
-                return Self::load_from_path(&path);
-            }
+        if let Some(path) = path
+            && path.is_file()
+        {
+            return Self::load_from_path(&path);
         }
         Ok(Self::default())
     }

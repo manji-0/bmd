@@ -2,7 +2,7 @@
 name = "bmd"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.92"
 description = "Terminal TUI markdown viewer with vim bindings, mermaid diagrams, and in-app document navigation"
 readme = "README.md"
 license = "Apache-2.0"
@@ -37,12 +37,12 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 merman = { version = "0.6.2", features = ["raster"] }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 ratatui = "0.30"
-ratatui-image = { version = "11", default-features = false, features = ["crossterm", "image-defaults"] }
+ratatui-image = { version = "11.0", default-features = false, features = ["crossterm", "image-defaults"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
-syntect = "5"
-thiserror = "2"
-toml = "0.8"
+syntect = "5.3"
+thiserror = "2.0"
+toml = "1.1"
 unicode-width = "0.2"
 unicode-segmentation = "1.13"
 parserst = "0.1.1"
