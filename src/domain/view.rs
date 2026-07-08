@@ -2,7 +2,7 @@
 
 use super::link::LinkId;
 use super::markdown::FootnoteId;
-use super::mode::{NormalSearch, UiMode};
+use super::mode::{NormalSearch, PreviewKind, UiMode};
 use super::nav_target::NavTarget;
 
 /// Terminal dimensions with the invariant that neither dimension is zero.
@@ -319,7 +319,19 @@ impl ViewState {
     /// Open a floating preview for the given preview link.
     pub fn open_preview(self, link_id: LinkId) -> Self {
         Self {
-            mode: UiMode::Preview { link_id },
+            mode: UiMode::Preview {
+                kind: PreviewKind::Link(link_id),
+            },
+            ..self
+        }
+    }
+
+    /// Open a floating preview for a footnote definition.
+    pub fn open_footnote_preview(self, footnote_id: FootnoteId) -> Self {
+        Self {
+            mode: UiMode::Preview {
+                kind: PreviewKind::Footnote(footnote_id),
+            },
             ..self
         }
     }

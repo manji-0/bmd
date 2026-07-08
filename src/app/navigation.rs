@@ -5,10 +5,7 @@ use crate::domain::{
     AnchorIdle, AnchorStackEmpty, AnchorStackFull, FixedScrollPrior, NavBackPlan, NavResetPlan,
     anchor_stack_limit_message, plan_back, plan_document_back, plan_document_reset, plan_reset,
 };
-use crate::render::{
-    find_footnote_definition_line_offset, find_heading_line_by_anchor, next_heading_line,
-    prev_heading_line,
-};
+use crate::render::{find_heading_line_by_anchor, next_heading_line, prev_heading_line};
 
 use super::App;
 use super::scroll::HALF_PAGE_SCROLL_ANIM_SPEED;
@@ -304,19 +301,11 @@ impl App {
     }
 
     pub(crate) fn open_footnote(&mut self, footnote_id: crate::domain::FootnoteId) {
-        let ctx = self.render_context();
-        let width = self.view_state.terminal_size().width();
-        let Some(line) =
-            find_footnote_definition_line_offset(&self.document, width, &ctx, footnote_id)
-        else {
+        if self.document.footnotes.get(footnote_id.0).is_none() {
             self.set_status_message(format!("footnote not found: {footnote_id}"));
             return;
-        };
-        let prior = FixedScrollPrior::fix(self.view_state.scroll().offset());
-        if let Err(AnchorStackFull) = self.nav_stack.fix_prior_on_link_jump(prior) {
-            self.set_status_message(anchor_stack_limit_message());
-            return;
         }
-        self.scroll_to_line(line);
+        self.reset_preview_zoom();
+        self.view_state = self.view_state.clone().open_footnote_preview(footnote_id);
     }
 }

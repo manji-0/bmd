@@ -271,3 +271,70 @@ pub fn find_footnote_definition_line_offset(
     }
     None
 }
+
+/// Render a footnote definition into `area`. Returns false when the footnote is missing.
+pub fn render_footnote_preview(
+    document: &Document,
+    footnote_id: FootnoteId,
+    area: Rect,
+    buf: &mut Buffer,
+    ctx: &RenderContext,
+) -> bool {
+    if area.width == 0 || area.height == 0 {
+        return true;
+    }
+    let Some(def) = document.footnotes.get(footnote_id.0) else {
+        return false;
+    };
+    if def.content.is_empty() {
+        return true;
+    }
+
+    let mut y = area.y;
+    let max_y = area.y + area.height;
+    let mut line_offset = 0usize;
+
+    for (block_idx, block) in def.content.iter().enumerate() {
+        let gap = if block_idx == 0 { 0 } else { 1 };
+        if gap > 0 && y < max_y {
+            y += 1;
+        }
+        let height = measure_block_height(block, usize::MAX, area.width, ctx);
+        let visible_height = height.min((max_y - y) as usize);
+        if visible_height == 0 {
+            break;
+        }
+        let block_area = Rect {
+            x: area.x,
+            y,
+            width: area.width,
+            height: visible_height as u16,
+        };
+        render_block(block, usize::MAX, block_area, buf, 0, ctx, line_offset);
+        y += visible_height as u16;
+        line_offset += height + gap;
+        if y >= max_y {
+            break;
+        }
+    }
+    true
+}
+
+pub fn footnote_preview_title(document: &Document, footnote_id: FootnoteId) -> String {
+    let display = document
+        .footnote_order
+        .iter()
+        .position(|&id| id == footnote_id)
+        .map(|pos| pos + 1)
+        .unwrap_or(footnote_id.0 + 1);
+    let label = document
+        .footnotes
+        .get(footnote_id.0)
+        .map(|def| def.label.as_str())
+        .unwrap_or("");
+    if label.is_empty() {
+        format!("[{display}]")
+    } else {
+        format!("[{display}] {label}")
+    }
+}

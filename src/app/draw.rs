@@ -8,9 +8,12 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use crate::domain::{PreviewLoadStatus, SearchDirection, UiMode};
+use crate::domain::{PreviewKind, PreviewLoadStatus, SearchDirection, UiMode};
 use crate::error::AppError;
-use crate::render::{CachedMarkdownView, RenderContext, paint_selection_overlay};
+use crate::render::{
+    CachedMarkdownView, RenderContext, footnote_preview_title, paint_selection_overlay,
+    render_footnote_preview,
+};
 
 use super::App;
 use super::layout::split_layout;
@@ -57,8 +60,15 @@ impl App {
                 );
             }
 
-            if let Some(link_id) = self.view_state.mode().preview_link() {
-                self.draw_floating_preview(f, full_area, link_id);
+            if let Some(kind) = self.view_state.mode().preview_kind() {
+                match kind {
+                    PreviewKind::Link(link_id) => {
+                        self.draw_floating_preview(f, full_area, link_id);
+                    }
+                    PreviewKind::Footnote(footnote_id) => {
+                        self.draw_footnote_preview(f, full_area, footnote_id, &ctx);
+                    }
+                }
             }
 
             if self.help_visible {
@@ -211,5 +221,43 @@ impl App {
         };
         let paragraph = Paragraph::new(lines).scroll((scroll_y as u16, 0));
         frame.render_widget(paragraph, inner);
+    }
+
+    fn draw_footnote_preview(
+        &self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        footnote_id: crate::domain::FootnoteId,
+        ctx: &RenderContext<'_>,
+    ) {
+        let popup = crate::render::centered_rect(
+            crate::render::PREVIEW_POPUP_PERCENT,
+            crate::render::PREVIEW_POPUP_PERCENT,
+            area,
+        );
+        frame.render_widget(Clear, popup);
+        let title = footnote_preview_title(&self.document, footnote_id);
+        let block = Block::bordered().title(title);
+        let inner = block.inner(popup);
+        frame.render_widget(block, popup);
+
+        if self.document.footnotes.get(footnote_id.0).is_none() {
+            frame.render_widget(Paragraph::new("(footnote not found)"), inner);
+            return;
+        }
+
+        let mut buffer = ratatui::buffer::Buffer::empty(inner);
+        if !render_footnote_preview(&self.document, footnote_id, inner, &mut buffer, ctx) {
+            frame.render_widget(Paragraph::new("(footnote not found)"), inner);
+            return;
+        }
+
+        for y in 0..inner.height {
+            for x in 0..inner.width {
+                if let Some(cell) = buffer.cell((x, y)) {
+                    frame.buffer_mut()[(inner.x + x, inner.y + y)] = cell.clone();
+                }
+            }
+        }
     }
 }

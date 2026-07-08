@@ -89,7 +89,7 @@ impl App {
             height: terminal.height(),
         };
 
-        if self.view_state.mode().preview_link().is_some() {
+        if self.view_state.mode().is_preview() {
             let popup = centered_rect(PREVIEW_POPUP_PERCENT, PREVIEW_POPUP_PERCENT, full_area);
             if !popup.contains(Position::new(column, row)) {
                 self.close_preview();
@@ -137,7 +137,7 @@ impl App {
         if self.help_visible || !self.view_state.mode().is_normal() {
             return None;
         }
-        if self.view_state.mode().preview_link().is_some() {
+        if self.view_state.mode().is_preview() {
             return None;
         }
 
@@ -187,7 +187,7 @@ impl App {
         if !self.view_state.mode().is_normal() {
             return;
         }
-        if self.view_state.mode().preview_link().is_some() {
+        if self.view_state.mode().is_preview() {
             return;
         }
 

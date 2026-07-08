@@ -551,7 +551,7 @@ mod tests {
             map_event(
                 Event::Key(KeyEvent::from(KeyCode::Esc)),
                 &UiMode::Preview {
-                    link_id: crate::domain::LinkId(0)
+                    kind: crate::domain::PreviewKind::Link(crate::domain::LinkId(0))
                 },
                 &NormalSearch::inactive()
             ),
@@ -614,7 +614,7 @@ mod tests {
             map_event(
                 Event::Key(key('o')),
                 &UiMode::Preview {
-                    link_id: crate::domain::LinkId(0)
+                    kind: crate::domain::PreviewKind::Link(crate::domain::LinkId(0))
                 },
                 &NormalSearch::inactive()
             ),
@@ -628,7 +628,7 @@ mod tests {
             map_event(
                 Event::Key(key('q')),
                 &UiMode::Preview {
-                    link_id: crate::domain::LinkId(0)
+                    kind: crate::domain::PreviewKind::Link(crate::domain::LinkId(0))
                 },
                 &NormalSearch::inactive()
             ),

@@ -1,6 +1,6 @@
 use super::{
     Alignment, Block, Callout, CalloutKind, CodeBlock, Document, DocumentError, Heading,
-    HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl, LinkUrlError, NormalSearch,
+    HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl, LinkUrlError, NormalSearch, PreviewKind,
     SearchDirection, SearchMatch, SearchQuery, SearchQueryError, Table, TerminalSize,
     TerminalSizeError, UiMode, ViewState,
 };
@@ -357,6 +357,19 @@ fn view_state_preview_transitions() {
 }
 
 #[test]
+fn view_state_footnote_preview_transitions() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size).open_footnote_preview(crate::domain::FootnoteId(0));
+    assert!(state.mode().is_preview());
+    assert_eq!(
+        state.mode().preview_footnote(),
+        Some(crate::domain::FootnoteId(0))
+    );
+    let state = state.close_preview();
+    assert!(state.mode().is_normal());
+}
+
+#[test]
 fn view_state_cancel_search_returns_to_inactive() {
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size)
@@ -385,7 +398,9 @@ fn ui_mode_helpers() {
         Some((&SearchDirection::Backward, "foo"))
     );
 
-    let preview = UiMode::Preview { link_id: LinkId(3) };
+    let preview = UiMode::Preview {
+        kind: PreviewKind::Link(LinkId(3)),
+    };
     assert!(preview.is_preview());
     assert_eq!(preview.preview_link(), Some(LinkId(3)));
 }

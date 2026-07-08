@@ -1,7 +1,15 @@
 //! UI interaction mode and typed transitions.
 
 use super::link::LinkId;
+use super::markdown::FootnoteId;
 use super::view::{SearchDirection, SearchMatch, SearchQuery};
+
+/// What a floating preview is showing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewKind {
+    Link(LinkId),
+    Footnote(FootnoteId),
+}
 
 /// Top-level UI mode that selects key bindings and layout.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -13,8 +21,8 @@ pub enum UiMode {
         direction: SearchDirection,
         query: String,
     },
-    /// Floating preview of an image or mermaid link.
-    Preview { link_id: LinkId },
+    /// Floating preview of a link or footnote.
+    Preview { kind: PreviewKind },
 }
 
 /// In-document search state while in [`UiMode::Normal`].
@@ -58,7 +66,25 @@ impl UiMode {
 
     pub fn preview_link(&self) -> Option<LinkId> {
         match self {
-            Self::Preview { link_id } => Some(*link_id),
+            Self::Preview {
+                kind: PreviewKind::Link(link_id),
+            } => Some(*link_id),
+            _ => None,
+        }
+    }
+
+    pub fn preview_footnote(&self) -> Option<FootnoteId> {
+        match self {
+            Self::Preview {
+                kind: PreviewKind::Footnote(footnote_id),
+            } => Some(*footnote_id),
+            _ => None,
+        }
+    }
+
+    pub fn preview_kind(&self) -> Option<PreviewKind> {
+        match self {
+            Self::Preview { kind } => Some(*kind),
             _ => None,
         }
     }

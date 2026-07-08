@@ -9,8 +9,8 @@ use super::{
     checklist, collect_footnote_hits, collect_heading_offsets, collect_visible_links,
     collect_visible_nav_targets, find_footnote_definition_line_offset,
     find_footnote_ref_line_offset, find_heading_line_by_anchor, find_search_matches,
-    measure_block_height, measure_document_height, next_heading_line, prev_heading_line,
-    slugify_heading,
+    footnote_preview_title, measure_block_height, measure_document_height, next_heading_line,
+    prev_heading_line, render_footnote_preview, slugify_heading,
 };
 use crate::domain::{
     Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, FootnoteDefinition,
@@ -906,6 +906,46 @@ fn nav_target_selection_wraps_mixed_targets() {
     assert_eq!(state.selected_link(), Some(LinkId(1)));
     let state = state.select_next_nav_in(&visible);
     assert_eq!(state.selected_footnote(), Some(FootnoteId(0)));
+}
+
+#[test]
+fn footnote_preview_renders_definition_body() {
+    let doc = Document::new(
+        vec![Block::Paragraph(vec![Inline::FootnoteReference(
+            FootnoteId(0),
+            1,
+        )])],
+        vec![],
+        vec![],
+        vec![FootnoteDefinition {
+            label: "note".into(),
+            content: vec![Block::Paragraph(vec![Inline::Text(
+                "Footnote body.".into(),
+            )])],
+        }],
+        vec![FootnoteId(0)],
+        None,
+    )
+    .unwrap();
+    let ctx = test_render_context();
+    assert_eq!(footnote_preview_title(&doc, FootnoteId(0)), "[1] note");
+
+    let area = Rect::new(0, 0, 40, 5);
+    let mut buf = Buffer::empty(area);
+    assert!(render_footnote_preview(
+        &doc,
+        FootnoteId(0),
+        area,
+        &mut buf,
+        &ctx
+    ));
+    let mut text = String::new();
+    for y in 0..area.height {
+        for x in 0..area.width {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(text.contains("Footnote body."));
 }
 
 #[test]

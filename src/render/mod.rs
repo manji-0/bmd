@@ -29,7 +29,9 @@ mod tests;
 
 pub use cache::{CachedMarkdownView, DocumentRenderCache};
 pub use context::RenderContext;
-pub use footnotes::find_footnote_definition_line_offset;
+pub use footnotes::{
+    find_footnote_definition_line_offset, footnote_preview_title, render_footnote_preview,
+};
 pub use headings::{
     HeadingOffsetCache, collect_heading_offsets, find_heading_line_by_anchor, next_heading_line,
     prev_heading_line, slugify_heading,

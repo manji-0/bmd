@@ -58,7 +58,7 @@ pub use mermaid_render::{
     MermaidRenderSession, MermaidSessionSnapshot, MermaidSource, MermaidSpawnRequest, MermaidTask,
     MermaidTaskPhase, mermaid_diagram_index, mermaid_source_for_link,
 };
-pub use mode::{NormalSearch, UiMode};
+pub use mode::{NormalSearch, PreviewKind, UiMode};
 pub use nav_stack::{AnchorStackEmpty, FixedScrollPrior, NavStack};
 pub use nav_target::NavTarget;
 pub use navigation::{
