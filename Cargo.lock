@@ -315,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "bmd"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "acdc-parser",
  "arboard",
