@@ -165,8 +165,7 @@ impl App {
         document: crate::domain::Document,
     ) -> Result<(), AppError> {
         let terminal_size = self.view_state.terminal_size();
-        let rendered =
-            RenderedDocument::new(&document, &self.picker, terminal_size, None)?;
+        let rendered = RenderedDocument::new(&document, &self.picker, terminal_size, None)?;
         self.document = document;
         self.rendered = rendered;
         self.bump_document_revision();

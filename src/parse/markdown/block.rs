@@ -249,10 +249,12 @@ impl<'a> ParserState<'a> {
             Tag::DefinitionListTitle => {
                 self.stack.push(BlockFrame::Paragraph(InlineParser::new()));
             }
-            Tag::DefinitionListDefinition => self.stack.push(BlockFrame::DefinitionListDefinition {
-                blocks: Vec::new(),
-                pending_inline: None,
-            }),
+            Tag::DefinitionListDefinition => {
+                self.stack.push(BlockFrame::DefinitionListDefinition {
+                    blocks: Vec::new(),
+                    pending_inline: None,
+                })
+            }
             Tag::HtmlBlock => {}
         }
         Ok(())

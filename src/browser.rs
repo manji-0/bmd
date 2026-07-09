@@ -45,15 +45,12 @@ fn spawn_opener(target: impl AsRef<OsStr>) -> Result<(), AppError> {
         "xdg-open"
     };
     let target = target.as_ref();
-    Command::new(program)
-        .arg(target)
-        .spawn()
-        .map_err(|e| {
-            AppError::OpenLink(format!(
-                "{program} {} failed: {e}",
-                target.to_string_lossy()
-            ))
-        })?;
+    Command::new(program).arg(target).spawn().map_err(|e| {
+        AppError::OpenLink(format!(
+            "{program} {} failed: {e}",
+            target.to_string_lossy()
+        ))
+    })?;
     Ok(())
 }
 

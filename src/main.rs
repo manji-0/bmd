@@ -101,8 +101,7 @@ fn read_input() -> Result<ReadInputResult, AppError> {
                         eprintln!("fetching PR #{}...", pr.number);
                         let info = github::fetch_pr_info(&pr, &auth)
                             .map_err(|e| AppError::GitHubFetch(e.to_string()))?;
-                        let source_label =
-                            Some(format!("PR #{}: {}", pr.number, info.title));
+                        let source_label = Some(format!("PR #{}: {}", pr.number, info.title));
                         let markdown = github::build_pr_listing_markdown(&pr, &info);
                         let document = parse_document(MarkupFormat::Markdown, &markdown)?;
                         Ok((document, None, source_label, Some(auth)))

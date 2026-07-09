@@ -203,10 +203,8 @@ mod tests {
         use image::{Rgba, RgbaImage};
         use ratatui_image::picker::Picker;
 
-        let path = std::env::temp_dir().join(format!(
-            "bmd-render-image-test-{}.png",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("bmd-render-image-test-{}.png", std::process::id()));
         let img = RgbaImage::from_pixel(4, 4, Rgba([255, 0, 0, 255]));
         img.save(&path).unwrap();
 

@@ -110,7 +110,9 @@ pub fn parse_github_url(url: &str) -> Option<GitHubUrl> {
 
 /// Extract the `#fragment` from a URL, if present.
 pub fn url_fragment(url: &str) -> Option<&str> {
-    url.split_once('#').map(|(_, frag)| frag).filter(|f| !f.is_empty())
+    url.split_once('#')
+        .map(|(_, frag)| frag)
+        .filter(|f| !f.is_empty())
 }
 
 // ---------------------------------------------------------------------------
@@ -474,7 +476,9 @@ mod tests {
     fn parses_blob_url_with_commit_sha() {
         let url = "https://github.com/kkhs/platform-domain-app/blob/29839af7f5c8c24a4b355d07e529f4e01fc262d3/docs/ciam/adr/adr-file.md";
         let result = parse_github_url(url);
-        assert!(matches!(result, Some(GitHubUrl::Blob(ref b)) if b.git_ref == "29839af7f5c8c24a4b355d07e529f4e01fc262d3"));
+        assert!(
+            matches!(result, Some(GitHubUrl::Blob(ref b)) if b.git_ref == "29839af7f5c8c24a4b355d07e529f4e01fc262d3")
+        );
     }
 
     #[test]
@@ -517,10 +521,7 @@ mod tests {
     fn rejects_incomplete_github_url() {
         assert_eq!(parse_github_url("https://github.com/owner"), None);
         assert_eq!(parse_github_url("https://github.com/owner/repo"), None);
-        assert_eq!(
-            parse_github_url("https://github.com/owner/repo/blob"),
-            None
-        );
+        assert_eq!(parse_github_url("https://github.com/owner/repo/blob"), None);
         assert_eq!(
             parse_github_url("https://github.com/owner/repo/blob/main"),
             None
