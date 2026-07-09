@@ -289,6 +289,12 @@ pub fn resolve_auth() -> GitHubAuth {
 fn build_agent() -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(30)))
+        .timeout_connect(Some(std::time::Duration::from_secs(10)))
+        // GitHub's hostnames are reliably reachable over IPv4. Networks with
+        // broken/black-holed IPv6 routes otherwise burn most of the connect
+        // budget on dead IPv6 addresses before falling back (ureq tries
+        // resolved addresses sequentially, unlike curl's Happy Eyeballs).
+        .ip_family(ureq::config::IpFamily::Ipv4Only)
         .build();
     ureq::Agent::new_with_config(config)
 }
