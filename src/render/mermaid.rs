@@ -101,6 +101,10 @@ pub(crate) fn render_mermaid_from_source(
 /// Supersample factor for mermaid PNG rasterization before terminal downscale.
 const MERMAID_RASTER_SCALE: f32 = 3.0;
 
+/// Upper bound on the supersample factor used when compensating for a
+/// diagram whose intrinsic size is much smaller than the preview popup.
+const MERMAID_MAX_RASTER_SCALE: f32 = 12.0;
+
 fn render_mermaid_image(
     diag: &MermaidDiagram,
     picker: &ratatui_image::picker::Picker,
@@ -108,23 +112,51 @@ fn render_mermaid_image(
 ) -> Result<Protocol, AppError> {
     let target = preview_content_size(terminal);
     let font = picker.font_size();
+    let target_px_w = target.width as f64 * font.width as f64;
+    let target_px_h = target.height as f64 * font.height as f64;
+
     let mut layout = LayoutOptions::headless_svg_defaults();
-    layout.viewport_width = target.width as f64 * font.width as f64;
-    layout.viewport_height = target.height as f64 * font.height as f64;
+    layout.viewport_width = target_px_w;
+    layout.viewport_height = target_px_h;
 
     let renderer = HeadlessRenderer::new()
         .with_layout_options(layout)
         .with_diagram_id("bmd-mermaid");
+
+    let dyn_img = rasterize_mermaid(&renderer, &diag.source, MERMAID_RASTER_SCALE)?;
+
+    // `merman` lays most diagram types out at their own intrinsic,
+    // content-driven size regardless of `viewport_width`/`viewport_height`
+    // (that field only affects the C4 diagram layout). If the resulting
+    // raster is smaller than the popup, the terminal display step's
+    // aspect-preserving fit would *upscale* it — blurring text and edges.
+    // Re-render at a larger supersample so that step only ever downsamples.
+    let fit_ratio = (target_px_w / dyn_img.width().max(1) as f64)
+        .min(target_px_h / dyn_img.height().max(1) as f64);
+    let dyn_img = if fit_ratio > 1.0 {
+        let needed_scale =
+            (f64::from(MERMAID_RASTER_SCALE) * fit_ratio).min(f64::from(MERMAID_MAX_RASTER_SCALE));
+        rasterize_mermaid(&renderer, &diag.source, needed_scale as f32)?
+    } else {
+        dyn_img
+    };
+
+    terminal_image_protocol(dyn_img, picker, target)
+}
+
+fn rasterize_mermaid(
+    renderer: &HeadlessRenderer,
+    source: &str,
+    scale: f32,
+) -> Result<image::DynamicImage, AppError> {
     let options = RasterOptions {
-        scale: MERMAID_RASTER_SCALE,
+        scale,
         ..Default::default()
     };
     let png = renderer
-        .render_png_sync(&diag.source, &options)?
+        .render_png_sync(source, &options)?
         .ok_or(AppError::MermaidNoDiagram)?;
-    let dyn_img = image::load_from_memory(&png)?;
-
-    terminal_image_protocol(dyn_img, picker, target)
+    Ok(image::load_from_memory(&png)?)
 }
 
 #[cfg(test)]
@@ -138,6 +170,51 @@ mod tests {
     fn mermaid_diagram_index_parses_bmd_url() {
         assert_eq!(mermaid_diagram_index("bmd:mermaid:0"), Some(0));
         assert_eq!(mermaid_diagram_index("https://x"), None);
+    }
+
+    #[test]
+    fn small_diagram_in_large_terminal_is_not_upscaled_below_target() {
+        // A tiny diagram rendered for a large popup would otherwise be
+        // upscaled by the terminal display step, blurring it. The raster
+        // should be re-rendered large enough that only downscaling happens.
+        let picker = Picker::halfblocks();
+        let terminal = TerminalSize::new(200, 60).unwrap();
+        let font = picker.font_size();
+        let target = preview_content_size(terminal);
+        let target_px_w = target.width as f64 * font.width as f64;
+        let target_px_h = target.height as f64 * font.height as f64;
+
+        let source = "graph TD; A-->B; B-->C; A-->C;";
+
+        let mut layout = LayoutOptions::headless_svg_defaults();
+        layout.viewport_width = target_px_w;
+        layout.viewport_height = target_px_h;
+        let renderer = HeadlessRenderer::new()
+            .with_layout_options(layout)
+            .with_diagram_id("bmd-mermaid");
+        let base = rasterize_mermaid(&renderer, source, MERMAID_RASTER_SCALE).unwrap();
+        let base_fit_ratio = (target_px_w / base.width().max(1) as f64)
+            .min(target_px_h / base.height().max(1) as f64);
+        assert!(
+            base_fit_ratio > 1.0,
+            "expected this synthetic diagram to undershoot the target so the fix is exercised"
+        );
+
+        let diag = MermaidDiagram {
+            source: source.into(),
+        };
+        // The public entry point should compensate for the undershoot above.
+        render_mermaid_image(&diag, &picker, terminal).unwrap();
+
+        let needed_scale = (f64::from(MERMAID_RASTER_SCALE) * base_fit_ratio)
+            .min(f64::from(MERMAID_MAX_RASTER_SCALE));
+        let corrected = rasterize_mermaid(&renderer, source, needed_scale as f32).unwrap();
+        let corrected_fit_ratio = (target_px_w / corrected.width().max(1) as f64)
+            .min(target_px_h / corrected.height().max(1) as f64);
+        assert!(
+            corrected_fit_ratio <= 1.0 + f64::EPSILON,
+            "corrected raster should be large enough that the terminal step only downsamples, got ratio {corrected_fit_ratio}"
+        );
     }
 
     #[test]
