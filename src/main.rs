@@ -40,8 +40,14 @@ fn run() -> Result<(), AppError> {
     stdout.execute(EnterAlternateScreen)?;
     stdout.execute(EnableMouseCapture)?;
 
+    // Query the terminal (Ghostty, Kitty, iTerm2, etc.) for native graphics support.
+    // 200ms proved too aggressive: some graphics-capable terminals (e.g. Ghostty)
+    // don't reliably respond in time, silently falling back to the low-fidelity
+    // halfblocks protocol. ratatui-image's own default is 2000ms; split the
+    // difference so terminals with no graphics query support (which never
+    // respond) don't stall startup for a full 2 seconds.
     let options = QueryStdioOptions {
-        timeout: Duration::from_millis(200),
+        timeout: Duration::from_millis(1000),
         ..QueryStdioOptions::default()
     };
     let picker =
