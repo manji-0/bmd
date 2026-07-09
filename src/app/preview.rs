@@ -141,3 +141,25 @@ pub(crate) fn preview_failed_message(kind: LinkKind) -> String {
         _ => "[failed to load preview]".to_string(),
     }
 }
+
+/// Shown instead of an inline image when the terminal's graphics protocol
+/// falls back to Halfblocks and the diagram/image was opened externally.
+pub(crate) fn preview_external_open_message() -> String {
+    if cfg!(target_os = "macos") {
+        "Opened in Preview.app — press o/Esc to close.".to_string()
+    } else {
+        "Opened in external viewer — press o/Esc to close.".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_open_message_mentions_close_keys() {
+        let message = preview_external_open_message();
+        assert!(message.contains("Esc"));
+        assert!(message.contains("o/"));
+    }
+}

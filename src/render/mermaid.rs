@@ -141,7 +141,28 @@ fn render_mermaid_image(
         dyn_img
     };
 
+    // Terminals that don't answer the graphics-capability query fall back to
+    // Halfblocks, which is too low-fidelity for a diagram of any complexity.
+    // Open the full-resolution raster in the OS's default image viewer
+    // instead of rendering it (badly) inline.
+    if picker.protocol_type() == ratatui_image::picker::ProtocolType::Halfblocks
+        && let Some(path) = save_mermaid_temp_png(&dyn_img)
+    {
+        let _ = crate::browser::open_path(&path);
+    }
+
     terminal_image_protocol(dyn_img, picker, target)
+}
+
+static MERMAID_TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Save a rendered mermaid diagram to a uniquely-named temp PNG for viewing
+/// in an external app. Returns `None` if the write fails.
+fn save_mermaid_temp_png(dyn_img: &image::DynamicImage) -> Option<std::path::PathBuf> {
+    let n = MERMAID_TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("bmd-mermaid-{}-{n}.png", std::process::id()));
+    dyn_img.save(&path).ok()?;
+    Some(path)
 }
 
 fn rasterize_mermaid(
@@ -170,6 +191,44 @@ mod tests {
     fn mermaid_diagram_index_parses_bmd_url() {
         assert_eq!(mermaid_diagram_index("bmd:mermaid:0"), Some(0));
         assert_eq!(mermaid_diagram_index("https://x"), None);
+    }
+
+    #[test]
+    fn halfblocks_picker_saves_diagram_to_openable_temp_png() {
+        let picker = Picker::halfblocks();
+        let terminal = TerminalSize::new(80, 24).unwrap();
+        let prefix = format!("bmd-mermaid-{}-", std::process::id());
+
+        let count_matching = |prefix: &str| -> usize {
+            std::fs::read_dir(std::env::temp_dir())
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .is_some_and(|name| name.starts_with(prefix) && name.ends_with(".png"))
+                })
+                .count()
+        };
+
+        let before = count_matching(&prefix);
+        render_mermaid_from_source("graph TD; A-->B;", &picker, terminal).unwrap();
+        let after = count_matching(&prefix);
+        assert!(after > before, "expected a new temp PNG to be saved");
+
+        if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+            for entry in entries.flatten() {
+                if entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with(&prefix) && name.ends_with(".png"))
+                {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
     }
 
     #[test]

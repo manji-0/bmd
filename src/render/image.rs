@@ -101,6 +101,16 @@ pub(crate) fn render_markdown_image_from_src(
 ) -> Result<Protocol, AppError> {
     let target = preview_content_size(terminal);
     let dyn_img = load_markdown_image(src, base_path)?;
+
+    // Terminals that don't answer the graphics-capability query fall back to
+    // Halfblocks, which is too low-fidelity to be useful. The image already
+    // lives on disk, so just open it in the OS's default viewer directly.
+    if picker.protocol_type() == ratatui_image::picker::ProtocolType::Halfblocks
+        && let Ok(path) = resolve_image_path(src, base_path)
+    {
+        let _ = crate::browser::open_path(&path);
+    }
+
     terminal_image_protocol(dyn_img, picker, target)
 }
 
@@ -182,5 +192,25 @@ mod tests {
     fn reject_remote_image_urls() {
         let err = resolve_image_path("https://example.com/a.png", None).unwrap_err();
         assert!(matches!(err, AppError::UnsupportedInput(_)));
+    }
+
+    #[test]
+    fn halfblocks_picker_renders_markdown_image_without_error() {
+        use image::{Rgba, RgbaImage};
+        use ratatui_image::picker::Picker;
+
+        let path = std::env::temp_dir().join(format!(
+            "bmd-render-image-test-{}.png",
+            std::process::id()
+        ));
+        let img = RgbaImage::from_pixel(4, 4, Rgba([255, 0, 0, 255]));
+        img.save(&path).unwrap();
+
+        let picker = Picker::halfblocks();
+        let terminal = TerminalSize::new(80, 24).unwrap();
+        let result =
+            render_markdown_image_from_src(path.to_str().unwrap(), None, &picker, terminal);
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_ok());
     }
 }

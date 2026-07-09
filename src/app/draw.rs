@@ -17,7 +17,7 @@ use crate::render::{
 
 use super::App;
 use super::layout::split_layout;
-use super::preview::preview_failed_message;
+use super::preview::{preview_external_open_message, preview_failed_message};
 use super::status::{draw_help_overlay, draw_status_bar, format_status_bar};
 
 impl App {
@@ -120,6 +120,30 @@ impl App {
             .as_deref()
             .unwrap_or(link.url.as_str())
             .to_string();
+
+        let is_external_kind = matches!(
+            link.kind,
+            crate::domain::LinkKind::Mermaid | crate::domain::LinkKind::Image
+        );
+        if is_external_kind
+            && self.picker.protocol_type() == ratatui_image::picker::ProtocolType::Halfblocks
+            && self
+                .rendered
+                .preview_protocol(link_id.0, link.kind, link.url.as_str())
+                .is_some()
+        {
+            let popup = crate::render::centered_rect(
+                crate::render::PREVIEW_POPUP_PERCENT,
+                crate::render::PREVIEW_POPUP_PERCENT,
+                area,
+            );
+            frame.render_widget(Clear, popup);
+            let block = Block::bordered().title(title);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            frame.render_widget(Paragraph::new(preview_external_open_message()), inner);
+            return;
+        }
 
         if let Some(protocol) =
             self.rendered
