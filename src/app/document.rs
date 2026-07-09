@@ -58,12 +58,57 @@ impl App {
 
         if let Err(e) = self.apply_document(resolved, document) {
             self.set_status_message(e.to_string());
-            // apply failed before mutating self; drop the pushed snapshot only.
             self.doc_stack.pop();
             return;
         }
 
         if let Some(anchor) = anchor {
+            self.follow_anchor(anchor);
+        }
+    }
+
+    pub(crate) fn open_github_blob_link(
+        &mut self,
+        blob: &crate::github::GitHubBlobUrl,
+        fragment: Option<&str>,
+    ) {
+        self.set_status_message(format!("fetching {}...", blob.path));
+
+        let auth = self.ensure_github_auth();
+        let content = match crate::github::fetch_blob_content(blob, &auth) {
+            Ok(c) => c,
+            Err(e) => {
+                self.set_status_message(format!("fetch failed: {e}"));
+                return;
+            }
+        };
+
+        let format = crate::parse::MarkupFormat::from_path(std::path::Path::new(&blob.path))
+            .unwrap_or(crate::parse::MarkupFormat::Markdown);
+
+        let mut document = match crate::parse::parse_document(format, &content) {
+            Ok(doc) => doc,
+            Err(e) => {
+                self.set_status_message(format!("parse error: {e}"));
+                return;
+            }
+        };
+
+        crate::github::rewrite_relative_links(&mut document, blob);
+
+        let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
+        if let Err(DocumentStackFull) = self.doc_stack.fix_prior_on_link_jump(prior) {
+            self.set_status_message(document_stack_limit_message());
+            return;
+        }
+
+        if let Err(e) = self.apply_github_document(blob, document) {
+            self.set_status_message(e.to_string());
+            self.doc_stack.pop();
+            return;
+        }
+
+        if let Some(anchor) = fragment {
             self.follow_anchor(anchor);
         }
     }
@@ -112,6 +157,41 @@ impl App {
                     .expect("restore rollback");
             }
         }
+    }
+
+    fn apply_github_document(
+        &mut self,
+        blob: &crate::github::GitHubBlobUrl,
+        document: crate::domain::Document,
+    ) -> Result<(), AppError> {
+        let terminal_size = self.view_state.terminal_size();
+        let rendered =
+            RenderedDocument::new(&document, &self.picker, terminal_size, None)?;
+        self.document = document;
+        self.rendered = rendered;
+        self.bump_document_revision();
+        self.document_cache = DocumentRenderCache::default();
+        self.preview_render_cache.clear();
+        self.pending_preview = None;
+        self.view_state = crate::domain::ViewState::new(terminal_size);
+        self.nav_stack.clear();
+        self.checklist_state = ChecklistState::new(ChecklistStyle::from_env());
+        self.base_path = None;
+        self.source_label = Some(blob.path.clone());
+        self.file_watch = None;
+        self.scroll_visual = 0.0;
+        self.scroll_anim_speed = SCROLL_ANIM_SPEED;
+        self.tracked_scroll_position = 0.0;
+        self.show_terminal_images = true;
+        self.images_reenable_at = None;
+        self.scroll_key_down_at = None;
+        self.help_visible = false;
+        self.mermaid_render.begin_document();
+        self.image_render.begin_document();
+        self.document_prefetch.begin_document();
+        self.invalidate_prefetch_viewport();
+        self.maybe_prefetch_visible_links();
+        Ok(())
     }
 
     fn capture_document_frame(&self) -> DocumentFrame {

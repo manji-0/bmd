@@ -22,7 +22,8 @@ use ratatui_image::picker::{Picker, cap_parser::QueryStdioOptions};
 
 use bmd::app::App;
 use bmd::error::AppError;
-use bmd::parse::parse_with_path;
+use bmd::github::{self, GitHubAuth, GitHubUrl};
+use bmd::parse::{MarkupFormat, parse_document, parse_with_path};
 
 fn main() {
     if let Err(e) = run() {
@@ -32,17 +33,13 @@ fn main() {
 }
 
 fn run() -> Result<(), AppError> {
-    let (input, base_path) = read_input()?;
-    let document = parse_with_path(base_path.as_deref(), &input)?;
+    let (document, base_path, source_label, github_auth) = read_input()?;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     stdout.execute(EnterAlternateScreen)?;
     stdout.execute(EnableMouseCapture)?;
 
-    // Query the terminal (Ghostty, Kitty, iTerm2, etc.) for native graphics support.
-    // Use a short timeout so an immediate 'q' is not delayed if the terminal does
-    // not respond quickly.
     let options = QueryStdioOptions {
         timeout: Duration::from_millis(200),
         ..QueryStdioOptions::default()
@@ -54,28 +51,64 @@ fn run() -> Result<(), AppError> {
     let mut terminal =
         Terminal::new(backend).map_err(|e| AppError::TerminalSetup(e.to_string()))?;
 
-    let source_label = base_path.as_ref().and_then(|path| {
-        path.file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-    });
-    let app = App::new(document, picker, base_path, source_label)?;
+    let mut app = App::new(document, picker, base_path, source_label)?;
+    app.set_github_auth(github_auth);
     let result = app.run(&mut terminal);
 
     restore_terminal(&mut terminal)?;
     result
 }
 
-fn read_input() -> Result<(String, Option<PathBuf>), AppError> {
+type ReadInputResult = (
+    bmd::domain::Document,
+    Option<PathBuf>,
+    Option<String>,
+    Option<GitHubAuth>,
+);
+
+fn read_input() -> Result<ReadInputResult, AppError> {
     match env::args().nth(1) {
-        Some(path) if path != "-" => {
-            let path = PathBuf::from(path);
-            let content = fs::read_to_string(&path).map_err(AppError::Io)?;
-            Ok((content, Some(path)))
+        Some(arg) if arg != "-" => {
+            if let Some(github_url) = github::parse_github_url(&arg) {
+                let auth = github::resolve_auth();
+                match github_url {
+                    GitHubUrl::Blob(blob) => {
+                        eprintln!("fetching {}...", blob.path);
+                        let content = github::fetch_blob_content(&blob, &auth)
+                            .map_err(|e| AppError::GitHubFetch(e.to_string()))?;
+                        let format = MarkupFormat::from_path(std::path::Path::new(&blob.path))
+                            .unwrap_or(MarkupFormat::Markdown);
+                        let mut document = parse_document(format, &content)?;
+                        github::rewrite_relative_links(&mut document, &blob);
+                        let source_label = Some(blob.path.clone());
+                        Ok((document, None, source_label, Some(auth)))
+                    }
+                    GitHubUrl::PullRequest(pr) => {
+                        eprintln!("fetching PR #{}...", pr.number);
+                        let info = github::fetch_pr_info(&pr, &auth)
+                            .map_err(|e| AppError::GitHubFetch(e.to_string()))?;
+                        let source_label =
+                            Some(format!("PR #{}: {}", pr.number, info.title));
+                        let markdown = github::build_pr_listing_markdown(&pr, &info);
+                        let document = parse_document(MarkupFormat::Markdown, &markdown)?;
+                        Ok((document, None, source_label, Some(auth)))
+                    }
+                }
+            } else {
+                let path = PathBuf::from(&arg);
+                let content = fs::read_to_string(&path).map_err(AppError::Io)?;
+                let document = parse_with_path(Some(&path), &content)?;
+                let source_label = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned());
+                Ok((document, Some(path), source_label, None))
+            }
         }
         _ => {
             let mut buffer = String::new();
             io::stdin().read_to_string(&mut buffer)?;
-            Ok((buffer, None))
+            let document = parse_with_path(None, &buffer)?;
+            Ok((document, None, None, None))
         }
     }
 }

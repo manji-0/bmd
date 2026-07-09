@@ -109,6 +109,7 @@ pub struct App {
     last_prefetch_viewport: Option<PrefetchViewportKey>,
     document_revision: u64,
     heading_cache: HeadingOffsetCache,
+    pub(crate) github_auth: Option<crate::github::GitHubAuth>,
     should_quit: bool,
     #[cfg(test)]
     pub(crate) fail_apply_document: bool,
@@ -210,6 +211,7 @@ impl App {
             last_prefetch_viewport: None,
             document_revision: 0,
             heading_cache: HeadingOffsetCache::default(),
+            github_auth: None,
             should_quit: false,
             #[cfg(test)]
             fail_apply_document: false,
@@ -218,6 +220,17 @@ impl App {
         };
         app.maybe_prefetch_visible_links();
         Ok(app)
+    }
+
+    pub fn set_github_auth(&mut self, auth: Option<crate::github::GitHubAuth>) {
+        self.github_auth = auth;
+    }
+
+    fn ensure_github_auth(&mut self) -> crate::github::GitHubAuth {
+        if self.github_auth.is_none() {
+            self.github_auth = Some(crate::github::resolve_auth());
+        }
+        self.github_auth.clone().unwrap()
     }
 
     pub(crate) fn prefetch_visible_links(&mut self) {

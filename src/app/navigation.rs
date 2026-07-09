@@ -155,8 +155,18 @@ impl App {
                 self.pending_preview = Some(id);
                 self.set_status_message(super::preview::preview_waiting_message(link.kind));
             }
-        } else if let Err(e) = open_link(&link.url) {
-            self.set_status_message(e.to_string());
+        } else if link.kind == crate::domain::LinkKind::Web {
+            if let Some(crate::github::GitHubUrl::Blob(blob)) =
+                crate::github::parse_github_url(&url)
+                && crate::github::is_supported_document_extension(&blob.path)
+            {
+                let fragment = crate::github::url_fragment(&url).map(str::to_string);
+                self.open_github_blob_link(&blob, fragment.as_deref());
+                return;
+            }
+            if let Err(e) = open_link(&link.url) {
+                self.set_status_message(e.to_string());
+            }
         }
     }
 

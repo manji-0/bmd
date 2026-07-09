@@ -49,6 +49,9 @@ pub enum AppError {
 
     #[error("unsupported input: {0}")]
     UnsupportedInput(String),
+
+    #[error("GitHub fetch error: {0}")]
+    GitHubFetch(String),
 }
 
 impl From<std::convert::Infallible> for AppError {
