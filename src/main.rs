@@ -47,6 +47,14 @@ fn run() -> Result<(), AppError> {
     let picker =
         Picker::from_query_stdio_with_options(options).unwrap_or_else(|_| Picker::halfblocks());
 
+    if env::var("BMD_DEBUG_PICKER").is_ok() {
+        eprintln!(
+            "[bmd] picker protocol={:?} font_size={:?}",
+            picker.protocol_type(),
+            picker.font_size()
+        );
+    }
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal =
         Terminal::new(backend).map_err(|e| AppError::TerminalSetup(e.to_string()))?;
