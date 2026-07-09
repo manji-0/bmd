@@ -287,6 +287,34 @@ fn parse_nested_list() {
 }
 
 #[test]
+fn parse_tight_list_item_link() {
+    // Tight lists (no blank line between items) omit pulldown-cmark's
+    // `Paragraph` wrapper around item content; links must still be captured.
+    let doc = parse("- [alpha](https://example.com/a)\n- beta").unwrap();
+    assert_eq!(doc.links.len(), 1);
+    assert_eq!(doc.links[0].url.as_str(), "https://example.com/a");
+    let Block::List(list) = &doc.blocks[0] else {
+        panic!("expected list");
+    };
+    let Block::Paragraph(inlines) = &list.items[0].content[0] else {
+        panic!("expected paragraph, got {:?}", list.items[0].content);
+    };
+    assert!(matches!(inlines[0], Inline::Link(LinkId(0), _)));
+}
+
+#[test]
+fn parse_tight_list_item_strong() {
+    let doc = parse("- **bold**\n- plain").unwrap();
+    let Block::List(list) = &doc.blocks[0] else {
+        panic!("expected list");
+    };
+    let Block::Paragraph(inlines) = &list.items[0].content[0] else {
+        panic!("expected paragraph, got {:?}", list.items[0].content);
+    };
+    assert!(matches!(inlines[0], Inline::Strong(_)));
+}
+
+#[test]
 fn parse_fenced_code_block_with_language() {
     let doc = parse("```rust\nfn main() {}\n```").unwrap();
     assert_eq!(doc.blocks.len(), 1);

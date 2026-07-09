@@ -54,6 +54,9 @@ enum BlockFrame {
         blocks: Vec<ParsedBlock>,
         checked: bool,
         checklist_id: Option<u32>,
+        /// Accumulates inline content for tight list items, where pulldown-cmark
+        /// emits inline events directly under the item without a `Paragraph` tag.
+        pending_inline: Option<InlineParser>,
     },
     Heading {
         parser: InlineParser,
@@ -87,6 +90,8 @@ enum BlockFrame {
     },
     DefinitionListDefinition {
         blocks: Vec<ParsedBlock>,
+        /// See `ListItem::pending_inline`.
+        pending_inline: Option<InlineParser>,
     },
 }
 
@@ -172,6 +177,7 @@ impl<'a> ParserState<'a> {
                 blocks: Vec::new(),
                 checked: false,
                 checklist_id: None,
+                pending_inline: None,
             }),
             Tag::Table(alignments) => self.stack.push(BlockFrame::Table {
                 alignments: alignments.into_iter().map(map_alignment).collect(),
@@ -191,13 +197,8 @@ impl<'a> ParserState<'a> {
             } => {
                 let dest = dest_url.into_string();
                 let title = title.into_string();
-                if let Some(
-                    BlockFrame::Paragraph(p)
-                    | BlockFrame::Heading { parser: p, .. }
-                    | BlockFrame::TableCell(p),
-                ) = self.stack.last_mut()
-                {
-                    let kind = ParsedLinkKind::classify_url(&dest);
+                let kind = ParsedLinkKind::classify_url(&dest);
+                if let Some(p) = Self::inline_parser_from_stack(&mut self.stack) {
                     p.start_link(&mut self.links, dest, title, kind);
                 }
             }
@@ -210,25 +211,15 @@ impl<'a> ParserState<'a> {
                 } else {
                     Some(title.into_string())
                 };
-                if let Some(BlockFrame::Paragraph(parser)) = self.stack.last() {
-                    if parser.is_empty() {
-                        self.paragraph_standalone_image = Some(PendingStandaloneImage {
-                            src: dest,
-                            title,
-                            alt: String::new(),
-                        });
-                    } else if let Some(BlockFrame::Paragraph(p)) = self.stack.last_mut() {
-                        p.start_link(
-                            &mut self.links,
-                            dest,
-                            title.unwrap_or_default(),
-                            ParsedLinkKind::Image,
-                        );
-                    }
-                } else if let Some(
-                    BlockFrame::Heading { parser: p, .. } | BlockFrame::TableCell(p),
-                ) = self.stack.last_mut()
+                if let Some(BlockFrame::Paragraph(parser)) = self.stack.last()
+                    && parser.is_empty()
                 {
+                    self.paragraph_standalone_image = Some(PendingStandaloneImage {
+                        src: dest,
+                        title,
+                        alt: String::new(),
+                    });
+                } else if let Some(p) = Self::inline_parser_from_stack(&mut self.stack) {
                     p.start_link(
                         &mut self.links,
                         dest,
@@ -258,9 +249,10 @@ impl<'a> ParserState<'a> {
             Tag::DefinitionListTitle => {
                 self.stack.push(BlockFrame::Paragraph(InlineParser::new()));
             }
-            Tag::DefinitionListDefinition => self
-                .stack
-                .push(BlockFrame::DefinitionListDefinition { blocks: Vec::new() }),
+            Tag::DefinitionListDefinition => self.stack.push(BlockFrame::DefinitionListDefinition {
+                blocks: Vec::new(),
+                pending_inline: None,
+            }),
             Tag::HtmlBlock => {}
         }
         Ok(())
@@ -373,11 +365,13 @@ impl<'a> ParserState<'a> {
             TagEnd::Item => {
                 let frame = self.pop_frame("list item")?;
                 if let BlockFrame::ListItem {
-                    blocks,
+                    mut blocks,
                     checked,
                     checklist_id,
+                    mut pending_inline,
                 } = frame
                 {
+                    Self::flush_pending_inline(&mut pending_inline, &mut blocks, &mut self.links);
                     if let Some(BlockFrame::List { items, .. }) = self.stack.last_mut() {
                         items.push(ParsedListItem {
                             checklist_id,
@@ -510,7 +504,12 @@ impl<'a> ParserState<'a> {
             }
             TagEnd::DefinitionListDefinition => {
                 let frame = self.pop_frame("definition list definition")?;
-                if let BlockFrame::DefinitionListDefinition { blocks } = frame {
+                if let BlockFrame::DefinitionListDefinition {
+                    mut blocks,
+                    mut pending_inline,
+                } = frame
+                {
+                    Self::flush_pending_inline(&mut pending_inline, &mut blocks, &mut self.links);
                     self.finish_definition_list_definition(blocks);
                 }
             }
@@ -652,7 +651,7 @@ impl<'a> ParserState<'a> {
     }
 
     fn push_inline_to_list_item(&mut self, inline: ParsedInline) {
-        if let Some(BlockFrame::DefinitionListDefinition { blocks }) = self.stack.last_mut() {
+        if let Some(BlockFrame::DefinitionListDefinition { blocks, .. }) = self.stack.last_mut() {
             if let Some(ParsedBlock::Paragraph(inlines)) = blocks.last_mut() {
                 inlines.push(inline);
             } else {
@@ -701,18 +700,52 @@ impl<'a> ParserState<'a> {
             BlockFrame::Paragraph(p)
             | BlockFrame::Heading { parser: p, .. }
             | BlockFrame::TableCell(p) => Some(p),
+            BlockFrame::ListItem { pending_inline, .. }
+            | BlockFrame::DefinitionListDefinition { pending_inline, .. } => {
+                Some(pending_inline.get_or_insert_with(InlineParser::new))
+            }
             _ => None,
         }
     }
 
+    /// Flush a tight list item's/definition's accumulated inline run into a
+    /// `Paragraph` block, so it precedes any sibling block-level content in
+    /// document order.
+    fn flush_pending_inline(
+        pending_inline: &mut Option<InlineParser>,
+        blocks: &mut Vec<ParsedBlock>,
+        links: &mut Vec<ParsedLink>,
+    ) {
+        if let Some(parser) = pending_inline.take() {
+            let inlines = parser.into_inlines(links);
+            if !inlines.is_empty() {
+                blocks.push(ParsedBlock::Paragraph(inlines));
+            }
+        }
+    }
+
     fn finish_block(&mut self, block: ParsedBlock) {
+        let links = &mut self.links;
         if let Some(parent) = self.stack.last_mut() {
             match parent {
                 BlockFrame::BlockQuote { blocks, .. } => blocks.push(block),
-                BlockFrame::ListItem { blocks, .. } => blocks.push(block),
+                BlockFrame::ListItem {
+                    blocks,
+                    pending_inline,
+                    ..
+                } => {
+                    Self::flush_pending_inline(pending_inline, blocks, links);
+                    blocks.push(block);
+                }
                 BlockFrame::List { current_item, .. } => current_item.push(block),
                 BlockFrame::FootnoteDefinition { blocks, .. } => blocks.push(block),
-                BlockFrame::DefinitionListDefinition { blocks } => blocks.push(block),
+                BlockFrame::DefinitionListDefinition {
+                    blocks,
+                    pending_inline,
+                } => {
+                    Self::flush_pending_inline(pending_inline, blocks, links);
+                    blocks.push(block);
+                }
                 _ => self.blocks.push(block),
             }
         } else {
