@@ -141,17 +141,23 @@ fn render_mermaid_image(
         dyn_img
     };
 
-    // Terminals that don't answer the graphics-capability query fall back to
-    // Halfblocks, which is too low-fidelity for a diagram of any complexity.
-    // Open the full-resolution raster in the OS's default image viewer
-    // instead of rendering it (badly) inline.
-    if picker.protocol_type() == ratatui_image::picker::ProtocolType::Halfblocks
-        && let Some(path) = save_mermaid_temp_png(&dyn_img)
-    {
-        let _ = crate::browser::open_path(&path);
-    }
-
     terminal_image_protocol(dyn_img, picker, target)
+}
+
+/// Render a mermaid diagram and open it in the OS default viewer.
+///
+/// Used when the terminal's graphics protocol falls back to Halfblocks,
+/// which is too low-fidelity for a diagram of any complexity. Only called on
+/// an explicit user action (pressing `o`) — never from background prefetch —
+/// so an external viewer window doesn't pop up unexpectedly on document load.
+pub(crate) fn open_mermaid_externally(source: &str) -> Result<(), AppError> {
+    let renderer = HeadlessRenderer::new()
+        .with_layout_options(LayoutOptions::headless_svg_defaults())
+        .with_diagram_id("bmd-mermaid");
+    let dyn_img = rasterize_mermaid(&renderer, source, MERMAID_RASTER_SCALE)?;
+    let path = save_mermaid_temp_png(&dyn_img)
+        .ok_or_else(|| AppError::TerminalImage("failed to save mermaid diagram".into()))?;
+    crate::browser::open_path(&path)
 }
 
 static MERMAID_TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -194,9 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn halfblocks_picker_saves_diagram_to_openable_temp_png() {
-        let picker = Picker::halfblocks();
-        let terminal = TerminalSize::new(80, 24).unwrap();
+    fn open_mermaid_externally_saves_a_temp_png() {
         let prefix = format!("bmd-mermaid-{}-", std::process::id());
 
         let count_matching = |prefix: &str| -> usize {
@@ -214,7 +218,7 @@ mod tests {
         };
 
         let before = count_matching(&prefix);
-        render_mermaid_from_source("graph TD; A-->B;", &picker, terminal).unwrap();
+        open_mermaid_externally("graph TD; A-->B;").unwrap();
         let after = count_matching(&prefix);
         assert!(after > before, "expected a new temp PNG to be saved");
 
@@ -229,6 +233,16 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn render_mermaid_image_has_no_external_open_side_effect() {
+        // Background prefetch renders via render_mermaid_from_source and must
+        // not launch an external viewer — only the explicit `o`-triggered
+        // open_mermaid_externally() should do that.
+        let picker = Picker::halfblocks();
+        let terminal = TerminalSize::new(80, 24).unwrap();
+        assert!(render_mermaid_from_source("graph TD; A-->B;", &picker, terminal).is_ok());
     }
 
     #[test]

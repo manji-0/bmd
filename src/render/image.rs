@@ -101,17 +101,21 @@ pub(crate) fn render_markdown_image_from_src(
 ) -> Result<Protocol, AppError> {
     let target = preview_content_size(terminal);
     let dyn_img = load_markdown_image(src, base_path)?;
-
-    // Terminals that don't answer the graphics-capability query fall back to
-    // Halfblocks, which is too low-fidelity to be useful. The image already
-    // lives on disk, so just open it in the OS's default viewer directly.
-    if picker.protocol_type() == ratatui_image::picker::ProtocolType::Halfblocks
-        && let Ok(path) = resolve_image_path(src, base_path)
-    {
-        let _ = crate::browser::open_path(&path);
-    }
-
     terminal_image_protocol(dyn_img, picker, target)
+}
+
+/// Open the markdown image at `src` in the OS default viewer.
+///
+/// Used when the terminal's graphics protocol falls back to Halfblocks,
+/// which is too low-fidelity to be useful. Only called on an explicit user
+/// action (pressing `o`) — never from background prefetch — so an external
+/// viewer window doesn't pop up unexpectedly on document load.
+pub(crate) fn open_markdown_image_externally(
+    src: &str,
+    base_path: Option<&std::path::Path>,
+) -> Result<(), AppError> {
+    let path = resolve_image_path(src, base_path)?;
+    crate::browser::open_path(&path)
 }
 
 pub(crate) fn render_floating_image(protocol: &Protocol, area: Rect, buf: &mut Buffer, zoom: f32) {
@@ -210,7 +214,12 @@ mod tests {
         let terminal = TerminalSize::new(80, 24).unwrap();
         let result =
             render_markdown_image_from_src(path.to_str().unwrap(), None, &picker, terminal);
-        let _ = std::fs::remove_file(&path);
         assert!(result.is_ok());
+
+        // Background prefetch must not launch an external viewer — only the
+        // explicit `o`-triggered open_markdown_image_externally() should.
+        assert!(open_markdown_image_externally(path.to_str().unwrap(), None).is_ok());
+
+        let _ = std::fs::remove_file(&path);
     }
 }
