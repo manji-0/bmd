@@ -25,16 +25,64 @@ pub enum UiMode {
     Preview { kind: PreviewKind },
 }
 
-/// In-document search state while in [`UiMode::Normal`].
+/// Validated in-document search overlay while in [`UiMode::Normal`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum NormalSearch {
-    Inactive,
-    Active {
+pub struct ActiveSearch {
+    direction: SearchDirection,
+    query: SearchQuery,
+    matches: Vec<SearchMatch>,
+    current_index: usize,
+}
+
+impl ActiveSearch {
+    /// Build an active search, clamping `current_index` into range.
+    ///
+    /// Empty `matches` always uses index `0`.
+    pub fn new(
         direction: SearchDirection,
         query: SearchQuery,
         matches: Vec<SearchMatch>,
         current_index: usize,
-    },
+    ) -> Self {
+        let current_index = if matches.is_empty() {
+            0
+        } else {
+            current_index.min(matches.len() - 1)
+        };
+        Self {
+            direction,
+            query,
+            matches,
+            current_index,
+        }
+    }
+
+    pub fn direction(&self) -> SearchDirection {
+        self.direction
+    }
+
+    pub fn query(&self) -> &SearchQuery {
+        &self.query
+    }
+
+    pub fn matches(&self) -> &[SearchMatch] {
+        &self.matches
+    }
+
+    pub fn current_index(&self) -> usize {
+        self.current_index
+    }
+
+    pub(crate) fn with_index(self, current_index: usize) -> Self {
+        Self::new(self.direction, self.query, self.matches, current_index)
+    }
+}
+
+/// In-document search state while in [`UiMode::Normal`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NormalSearch {
+    Inactive,
+    Active(ActiveSearch),
 }
 
 impl NormalSearch {
@@ -42,8 +90,17 @@ impl NormalSearch {
         Self::Inactive
     }
 
+    pub fn active(
+        direction: SearchDirection,
+        query: SearchQuery,
+        matches: Vec<SearchMatch>,
+        current_index: usize,
+    ) -> Self {
+        Self::Active(ActiveSearch::new(direction, query, matches, current_index))
+    }
+
     pub fn is_active(&self) -> bool {
-        matches!(self, Self::Active { .. })
+        matches!(self, Self::Active(_))
     }
 }
 

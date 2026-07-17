@@ -529,12 +529,12 @@ mod tests {
 
     #[test]
     fn active_search_esc_clears_search_instead_of_quitting() {
-        let active = NormalSearch::Active {
-            direction: crate::domain::SearchDirection::Forward,
-            query: crate::domain::SearchQuery::new("foo".to_string()).unwrap(),
-            matches: vec![],
-            current_index: 0,
-        };
+        let active = NormalSearch::active(
+            crate::domain::SearchDirection::Forward,
+            crate::domain::SearchQuery::new("foo".to_string()).unwrap(),
+            vec![],
+            0,
+        );
         assert_eq!(
             map_event(
                 Event::Key(KeyEvent::from(KeyCode::Esc)),

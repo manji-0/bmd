@@ -93,6 +93,15 @@ pub enum SearchQueryError {
     Empty,
 }
 
+/// Errors from search-input transitions on [`ViewState`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SearchTransitionError {
+    #[error("not in search input mode")]
+    WrongMode,
+    #[error("search query cannot be empty")]
+    EmptyQuery,
+}
+
 /// A search match expressed as a logical line offset in the rendered document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SearchMatch {
@@ -190,11 +199,20 @@ impl ViewState {
         }
     }
 
-    pub fn scroll_to(self, offset: usize) -> Self {
+    /// Jump to `offset`, clamped to `max_scroll`.
+    pub fn scroll_to(self, offset: usize, max_scroll: usize) -> Self {
         Self {
-            scroll: Scroll { offset },
+            scroll: Scroll {
+                offset: offset.min(max_scroll),
+            },
             ..self
         }
+    }
+
+    /// Clamp the current scroll offset to `max_scroll` without changing other state.
+    pub fn clamp_scroll(self, max_scroll: usize) -> Self {
+        let offset = self.scroll.offset;
+        self.scroll_to(offset, max_scroll)
     }
 
     pub fn jump_to_bottom(self, max_scroll: usize) -> Self {
@@ -245,51 +263,63 @@ impl ViewState {
     }
 
     /// Append a character to the query while in search input mode.
-    pub fn append_search_input(self, c: char) -> Self {
-        let mode = match self.mode {
-            UiMode::SearchInput { direction, query } => {
-                let mut next = query;
-                next.push(c);
-                UiMode::SearchInput {
-                    direction,
-                    query: next,
-                }
-            }
-            other => other,
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SearchTransitionError::WrongMode`] when not in search input mode.
+    pub fn append_search_input(self, c: char) -> Result<Self, SearchTransitionError> {
+        let UiMode::SearchInput { direction, query } = self.mode else {
+            return Err(SearchTransitionError::WrongMode);
         };
-        Self { mode, ..self }
+        let mut next = query;
+        next.push(c);
+        Ok(Self {
+            mode: UiMode::SearchInput {
+                direction,
+                query: next,
+            },
+            ..self
+        })
     }
 
     /// Remove the last character from the query while in search input mode.
-    pub fn backspace_search_input(self) -> Self {
-        let mode = match self.mode {
-            UiMode::SearchInput { direction, query } => {
-                let mut next = query;
-                next.pop();
-                UiMode::SearchInput {
-                    direction,
-                    query: next,
-                }
-            }
-            other => other,
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SearchTransitionError::WrongMode`] when not in search input mode.
+    pub fn backspace_search_input(self) -> Result<Self, SearchTransitionError> {
+        let UiMode::SearchInput { direction, query } = self.mode else {
+            return Err(SearchTransitionError::WrongMode);
         };
-        Self { mode, ..self }
+        let mut next = query;
+        next.pop();
+        Ok(Self {
+            mode: UiMode::SearchInput {
+                direction,
+                query: next,
+            },
+            ..self
+        })
     }
 
     /// Confirm the current search query, build matches, and return to normal mode.
     ///
-    /// `matches` must be sorted by ascending `line_offset`. The first match that
-    /// is at or after the current scroll offset is selected for forward searches;
-    /// for backward searches the last match at or before the offset is selected.
+    /// Matches are sorted by ascending `(line_offset, match_index)` before selection.
+    /// The first match at or after the current scroll offset is selected for forward
+    /// searches; for backward searches the last match at or before the offset is selected.
     ///
     /// # Errors
     ///
-    /// Returns `SearchQueryError::Empty` if the trimmed query is empty.
-    pub fn confirm_search(self, matches: Vec<SearchMatch>) -> Result<Self, SearchQueryError> {
+    /// Returns [`SearchTransitionError::WrongMode`] when not in search input mode.
+    /// Returns [`SearchTransitionError::EmptyQuery`] if the trimmed query is empty.
+    pub fn confirm_search(self, matches: Vec<SearchMatch>) -> Result<Self, SearchTransitionError> {
         let UiMode::SearchInput { direction, query } = self.mode else {
-            return Ok(self);
+            return Err(SearchTransitionError::WrongMode);
         };
-        let query = SearchQuery::new(query.trim().to_string())?;
+        let query = SearchQuery::new(query.trim().to_string())
+            .map_err(|_| SearchTransitionError::EmptyQuery)?;
+        let mut matches = matches;
+        matches.sort_by_key(|m| (m.line_offset, m.match_index));
         let current_index = if matches.is_empty() {
             0
         } else {
@@ -306,12 +336,7 @@ impl ViewState {
         };
         Ok(Self {
             mode: UiMode::Normal,
-            normal_search: NormalSearch::Active {
-                direction,
-                query,
-                matches,
-                current_index,
-            },
+            normal_search: NormalSearch::active(direction, query, matches, current_index),
             ..self
         })
     }
@@ -353,32 +378,14 @@ impl ViewState {
     /// Move to the next search match and scroll to it.
     pub fn next_search_match(self, max_scroll: usize) -> Self {
         let (normal_search, line_offset) = match self.normal_search {
-            NormalSearch::Active {
-                direction,
-                query,
-                matches,
-                current_index,
-            } => {
-                if matches.is_empty() {
-                    (
-                        NormalSearch::Active {
-                            direction,
-                            query,
-                            matches,
-                            current_index,
-                        },
-                        None,
-                    )
+            NormalSearch::Active(active) => {
+                if active.matches().is_empty() {
+                    (NormalSearch::Active(active), None)
                 } else {
-                    let next_index = (current_index + 1) % matches.len();
-                    let line_offset = Some(matches[next_index].line_offset);
+                    let next_index = (active.current_index() + 1) % active.matches().len();
+                    let line_offset = Some(active.matches()[next_index].line_offset);
                     (
-                        NormalSearch::Active {
-                            direction,
-                            query,
-                            matches,
-                            current_index: next_index,
-                        },
+                        NormalSearch::Active(active.with_index(next_index)),
                         line_offset,
                     )
                 }
@@ -401,36 +408,18 @@ impl ViewState {
     /// Move to the previous search match and scroll to it.
     pub fn prev_search_match(self, max_scroll: usize) -> Self {
         let (normal_search, line_offset) = match self.normal_search {
-            NormalSearch::Active {
-                direction,
-                query,
-                matches,
-                current_index,
-            } => {
-                if matches.is_empty() {
-                    (
-                        NormalSearch::Active {
-                            direction,
-                            query,
-                            matches,
-                            current_index,
-                        },
-                        None,
-                    )
+            NormalSearch::Active(active) => {
+                if active.matches().is_empty() {
+                    (NormalSearch::Active(active), None)
                 } else {
-                    let prev_index = if current_index == 0 {
-                        matches.len() - 1
+                    let prev_index = if active.current_index() == 0 {
+                        active.matches().len() - 1
                     } else {
-                        current_index - 1
+                        active.current_index() - 1
                     };
-                    let line_offset = Some(matches[prev_index].line_offset);
+                    let line_offset = Some(active.matches()[prev_index].line_offset);
                     (
-                        NormalSearch::Active {
-                            direction,
-                            query,
-                            matches,
-                            current_index: prev_index,
-                        },
+                        NormalSearch::Active(active.with_index(prev_index)),
                         line_offset,
                     )
                 }

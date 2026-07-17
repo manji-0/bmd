@@ -109,8 +109,8 @@ impl App {
         }
         self.view_state = self.view_state.clone().resize(size);
         let max = self.max_scroll();
-        let clamped = self.view_state.scroll().offset().min(max) as f32;
-        self.scroll_visual = clamped;
+        self.view_state = self.view_state.clone().clamp_scroll(max);
+        self.scroll_visual = self.view_state.scroll().offset() as f32;
         self.invalidate_preview_caches();
         Ok(true)
     }

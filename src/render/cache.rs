@@ -79,7 +79,7 @@ impl DocumentRenderCache {
         let total_height = measure_document_height(document, width, ctx).max(1);
         let height = total_height.min(u16::MAX as usize) as u16;
         let mut buffer = Buffer::empty(Rect::new(0, 0, width, height));
-        let top_view = view_state.clone().scroll_to(0);
+        let top_view = view_state.clone().scroll_to(0, 0);
         let widget = MarkdownWidget::new(document, ctx, &top_view);
         widget.render(Rect::new(0, 0, width, height), &mut buffer);
         self.key = Some(key);

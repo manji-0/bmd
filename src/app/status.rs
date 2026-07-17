@@ -65,7 +65,7 @@ fn trailing_status(
             .unwrap_or_else(|| "(stdin)".to_string()),
     );
 
-    let offset = view_state.scroll().offset();
+    let offset = view_state.scroll().offset().min(max_scroll);
     let pct = if max_scroll == 0 {
         100
     } else {
@@ -73,16 +73,19 @@ fn trailing_status(
     };
     parts.push(format!("{pct}%"));
 
-    if let NormalSearch::Active {
-        matches,
-        current_index,
-        query,
-        ..
-    } = view_state.normal_search()
-    {
-        let total = matches.len();
-        let current = if total == 0 { 0 } else { current_index + 1 };
-        parts.push(format!("{current}/{total} '{}'", query.as_str()));
+    if let NormalSearch::Active(active) = view_state.normal_search() {
+        let total = active.matches().len();
+        let current = if total == 0 {
+            0
+        } else {
+            active.current_index() + 1
+        };
+        parts.push(format!(
+            "{}/{} '{}'",
+            current,
+            total,
+            active.query().as_str()
+        ));
     }
 
     if let Some(id) = view_state.selected_link() {

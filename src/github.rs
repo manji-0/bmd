@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::domain::{Document, LinkKind, LinkUrl};
+use crate::domain::{Document, Link, LinkKind, LinkUrl};
 use crate::parse::MarkupFormat;
 
 // ---------------------------------------------------------------------------
@@ -30,10 +30,19 @@ pub enum GitHubUrl {
     PullRequest(GitHubPrUrl),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum GitHubAuth {
     Token(String),
     None,
+}
+
+impl std::fmt::Debug for GitHubAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Token(_) => f.write_str("Token(***)"),
+            Self::None => f.write_str("None"),
+        }
+    }
 }
 
 pub struct PrInfo {
@@ -187,14 +196,14 @@ fn resolve_path(base_dir: &str, relative: &str) -> String {
 
 /// Rewrite relative `LinkKind::Document` links to absolute GitHub blob URLs.
 pub fn rewrite_relative_links(document: &mut Document, blob: &GitHubBlobUrl) {
-    for link in &mut document.links {
+    document.rewrite_document_links(|link| {
         if link.kind != LinkKind::Document {
-            continue;
+            return None;
         }
         let url_str = link.url.as_str().to_string();
         let (path_part, fragment) = crate::domain::document_link_path_part(&url_str);
         if path_part.is_empty() {
-            continue;
+            return None;
         }
         let resolved = blob.resolve_relative(path_part);
         let mut new_url = resolved.to_url();
@@ -202,11 +211,15 @@ pub fn rewrite_relative_links(document: &mut Document, blob: &GitHubBlobUrl) {
             new_url.push('#');
             new_url.push_str(frag);
         }
-        if let Ok(new_link_url) = LinkUrl::new(new_url) {
-            link.url = new_link_url;
-            link.kind = LinkKind::Web;
-        }
-    }
+        let Ok(new_link_url) = LinkUrl::new(new_url) else {
+            return None;
+        };
+        Some(Link {
+            url: new_link_url,
+            title: link.title.clone(),
+            kind: LinkKind::Web,
+        })
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +469,14 @@ pub fn fetch_pr_info(pr: &GitHubPrUrl, auth: &GitHubAuth) -> Result<PrInfo, GitH
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn github_auth_debug_redacts_token() {
+        let auth = GitHubAuth::Token("ghp_secret_value".into());
+        let rendered = format!("{auth:?}");
+        assert_eq!(rendered, "Token(***)");
+        assert!(!rendered.contains("ghp_secret_value"));
+    }
 
     #[test]
     fn parses_blob_url() {

@@ -28,15 +28,20 @@ pub struct FootnoteDefinition {
 }
 
 /// A parsed markdown document.
+///
+/// Fields are crate-private so validated construction via [`Document::new`] is
+/// the only path available to downstream crates. In-crate mutation of links
+/// (for example GitHub relative-link rewriting) goes through
+/// [`Document::rewrite_document_links`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Document {
-    pub blocks: Vec<Block>,
-    pub links: Vec<Link>,
-    pub mermaid_diagrams: Vec<MermaidDiagram>,
-    pub footnotes: Vec<FootnoteDefinition>,
+    pub(crate) blocks: Vec<Block>,
+    pub(crate) links: Vec<Link>,
+    pub(crate) mermaid_diagrams: Vec<MermaidDiagram>,
+    pub(crate) footnotes: Vec<FootnoteDefinition>,
     /// Footnote ids in order of first inline reference.
-    pub footnote_order: Vec<FootnoteId>,
-    pub front_matter: Option<FrontMatter>,
+    pub(crate) footnote_order: Vec<FootnoteId>,
+    pub(crate) front_matter: Option<FrontMatter>,
 }
 
 impl Document {
@@ -66,6 +71,42 @@ impl Document {
         doc.validate_mermaid_links()?;
         doc.validate_footnotes()?;
         Ok(doc)
+    }
+
+    pub fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+
+    pub fn links(&self) -> &[Link] {
+        &self.links
+    }
+
+    pub fn mermaid_diagrams(&self) -> &[MermaidDiagram] {
+        &self.mermaid_diagrams
+    }
+
+    pub fn footnotes(&self) -> &[FootnoteDefinition] {
+        &self.footnotes
+    }
+
+    pub fn footnote_order(&self) -> &[FootnoteId] {
+        &self.footnote_order
+    }
+
+    pub fn front_matter(&self) -> Option<&FrontMatter> {
+        self.front_matter.as_ref()
+    }
+
+    /// Rewrite each document link through `f`, keeping only successful updates.
+    ///
+    /// Used at the GitHub adapter boundary so relative document links can become
+    /// absolute web URLs without exposing raw field mutation to downstream crates.
+    pub fn rewrite_document_links(&mut self, mut f: impl FnMut(&Link) -> Option<Link>) {
+        for link in &mut self.links {
+            if let Some(next) = f(link) {
+                *link = next;
+            }
+        }
     }
 
     fn validate_links(&self) -> Result<(), DocumentError> {

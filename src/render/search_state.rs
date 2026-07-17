@@ -4,29 +4,27 @@ use crate::domain::NormalSearch;
 
 pub(crate) fn active_search_query(normal_search: &NormalSearch) -> Option<String> {
     match normal_search {
-        NormalSearch::Active { query, .. } => Some(query.as_str().to_string()),
+        NormalSearch::Active(active) => Some(active.query().as_str().to_string()),
         _ => None,
     }
 }
 
 pub(crate) fn active_search_match_index(normal_search: &NormalSearch) -> Option<usize> {
     match normal_search {
-        NormalSearch::Active {
-            matches,
-            current_index,
-            ..
-        } => matches.get(*current_index).map(|m| m.match_index),
+        NormalSearch::Active(active) => active
+            .matches()
+            .get(active.current_index())
+            .map(|m| m.match_index),
         _ => None,
     }
 }
 
 pub(crate) fn active_search_match_line_offset(normal_search: &NormalSearch) -> Option<usize> {
     match normal_search {
-        NormalSearch::Active {
-            matches,
-            current_index,
-            ..
-        } => matches.get(*current_index).map(|m| m.line_offset),
+        NormalSearch::Active(active) => active
+            .matches()
+            .get(active.current_index())
+            .map(|m| m.line_offset),
         _ => None,
     }
 }
@@ -37,12 +35,12 @@ mod tests {
     use crate::domain::{SearchDirection, SearchMatch, SearchQuery};
 
     fn active_search() -> NormalSearch {
-        NormalSearch::Active {
-            direction: SearchDirection::Forward,
-            query: SearchQuery::new("needle".to_string()).unwrap(),
-            matches: vec![SearchMatch::new(4, 7), SearchMatch::new(9, 2)],
-            current_index: 1,
-        }
+        NormalSearch::active(
+            SearchDirection::Forward,
+            SearchQuery::new("needle".to_string()).unwrap(),
+            vec![SearchMatch::new(4, 7), SearchMatch::new(9, 2)],
+            1,
+        )
     }
 
     #[test]

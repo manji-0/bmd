@@ -255,8 +255,11 @@ fn view_state_appends_search_input() {
     let state = ViewState::new(size)
         .start_search(SearchDirection::Forward)
         .append_search_input('f')
+        .unwrap()
         .append_search_input('o')
-        .append_search_input('o');
+        .unwrap()
+        .append_search_input('o')
+        .unwrap();
     assert!(matches!(
         state.mode(),
         UiMode::SearchInput { query, .. } if query == "foo"
@@ -269,9 +272,13 @@ fn view_state_backspace_search_input() {
     let state = ViewState::new(size)
         .start_search(SearchDirection::Forward)
         .append_search_input('b')
+        .unwrap()
         .append_search_input('a')
+        .unwrap()
         .append_search_input('r')
-        .backspace_search_input();
+        .unwrap()
+        .backspace_search_input()
+        .unwrap();
     assert!(matches!(
         state.mode(),
         UiMode::SearchInput { query, .. } if query == "ba"
@@ -285,17 +292,17 @@ fn view_state_confirms_search_selects_first_forward_match() {
         .scroll_down(5, 100)
         .start_search(SearchDirection::Forward)
         .append_search_input('f')
+        .unwrap()
         .append_search_input('o')
-        .append_search_input('o');
+        .unwrap()
+        .append_search_input('o')
+        .unwrap();
     let matches = vec![SearchMatch::new(2, 0), SearchMatch::new(7, 1)];
     let state = state.confirm_search(matches).unwrap();
-    assert!(matches!(
-        state.normal_search(),
-        NormalSearch::Active {
-            current_index: 1,
-            ..
-        }
-    ));
+    let NormalSearch::Active(active) = state.normal_search() else {
+        panic!("expected active search");
+    };
+    assert_eq!(active.current_index(), 1);
 }
 
 #[test]
@@ -305,17 +312,17 @@ fn view_state_confirms_search_selects_last_backward_match() {
         .scroll_down(5, 100)
         .start_search(SearchDirection::Backward)
         .append_search_input('f')
+        .unwrap()
         .append_search_input('o')
-        .append_search_input('o');
+        .unwrap()
+        .append_search_input('o')
+        .unwrap();
     let matches = vec![SearchMatch::new(2, 0), SearchMatch::new(7, 1)];
     let state = state.confirm_search(matches).unwrap();
-    assert!(matches!(
-        state.normal_search(),
-        NormalSearch::Active {
-            current_index: 0,
-            ..
-        }
-    ));
+    let NormalSearch::Active(active) = state.normal_search() else {
+        panic!("expected active search");
+    };
+    assert_eq!(active.current_index(), 0);
 }
 
 #[test]
@@ -325,26 +332,23 @@ fn view_state_search_navigation_wraps() {
     let state = ViewState::new(size)
         .start_search(SearchDirection::Forward)
         .append_search_input('f')
+        .unwrap()
         .append_search_input('o')
+        .unwrap()
         .append_search_input('o')
+        .unwrap()
         .confirm_search(matches)
         .unwrap();
     let state = state.next_search_match(100);
-    assert!(matches!(
-        state.normal_search(),
-        NormalSearch::Active {
-            current_index: 1,
-            ..
-        }
-    ));
+    let NormalSearch::Active(active) = state.normal_search() else {
+        panic!("expected active search");
+    };
+    assert_eq!(active.current_index(), 1);
     let state = state.next_search_match(100);
-    assert!(matches!(
-        state.normal_search(),
-        NormalSearch::Active {
-            current_index: 0,
-            ..
-        }
-    ));
+    let NormalSearch::Active(active) = state.normal_search() else {
+        panic!("expected active search");
+    };
+    assert_eq!(active.current_index(), 0);
 }
 
 #[test]
@@ -408,13 +412,24 @@ fn ui_mode_helpers() {
 #[test]
 fn normal_search_active_flag() {
     assert!(!NormalSearch::inactive().is_active());
-    let active = NormalSearch::Active {
-        direction: SearchDirection::Forward,
-        query: SearchQuery::new("x".to_string()).unwrap(),
-        matches: vec![],
-        current_index: 0,
-    };
+    let active = NormalSearch::active(
+        SearchDirection::Forward,
+        SearchQuery::new("x".to_string()).unwrap(),
+        vec![],
+        0,
+    );
     assert!(active.is_active());
+}
+
+#[test]
+fn active_search_clamps_out_of_range_index() {
+    let active = crate::domain::ActiveSearch::new(
+        SearchDirection::Forward,
+        SearchQuery::new("x".to_string()).unwrap(),
+        vec![SearchMatch::new(1, 0)],
+        99,
+    );
+    assert_eq!(active.current_index(), 0);
 }
 
 #[test]
@@ -455,24 +470,19 @@ fn view_state_prev_search_match_wraps() {
     let state = ViewState::new(size)
         .start_search(SearchDirection::Forward)
         .append_search_input('x')
+        .unwrap()
         .confirm_search(matches)
         .unwrap();
     let state = state.prev_search_match(100);
-    assert!(matches!(
-        state.normal_search(),
-        NormalSearch::Active {
-            current_index: 1,
-            ..
-        }
-    ));
+    let NormalSearch::Active(active) = state.normal_search() else {
+        panic!("expected active search");
+    };
+    assert_eq!(active.current_index(), 1);
     let state = state.prev_search_match(100);
-    assert!(matches!(
-        state.normal_search(),
-        NormalSearch::Active {
-            current_index: 0,
-            ..
-        }
-    ));
+    let NormalSearch::Active(active) = state.normal_search() else {
+        panic!("expected active search");
+    };
+    assert_eq!(active.current_index(), 0);
 }
 
 #[test]
@@ -495,6 +505,36 @@ fn resize_preserves_scroll_offset() {
 }
 
 #[test]
+fn scroll_to_clamps_to_max() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size).scroll_to(500, 10);
+    assert_eq!(state.scroll().offset(), 10);
+}
+
+#[test]
+fn clamp_scroll_reduces_overshoot() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size).scroll_down(50, 100).clamp_scroll(12);
+    assert_eq!(state.scroll().offset(), 12);
+}
+
+#[test]
+fn confirm_search_sorts_unsorted_matches() {
+    let size = TerminalSize::new(80, 24).unwrap();
+    let state = ViewState::new(size)
+        .start_search(SearchDirection::Forward)
+        .append_search_input('x')
+        .unwrap()
+        .confirm_search(vec![SearchMatch::new(9, 1), SearchMatch::new(2, 0)])
+        .unwrap();
+    let NormalSearch::Active(active) = state.normal_search() else {
+        panic!("expected active search");
+    };
+    assert_eq!(active.matches()[0].line_offset, 2);
+    assert_eq!(active.matches()[1].line_offset, 9);
+}
+
+#[test]
 fn cancel_search_in_preview_is_noop() {
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size).open_preview(LinkId(0)).cancel_search();
@@ -502,17 +542,17 @@ fn cancel_search_in_preview_is_noop() {
 }
 
 #[test]
-fn append_search_input_outside_search_mode_is_noop() {
+fn append_search_input_outside_search_mode_is_error() {
     let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size).append_search_input('x');
-    assert!(state.mode().is_normal());
+    let err = ViewState::new(size).append_search_input('x').unwrap_err();
+    assert_eq!(err, crate::domain::SearchTransitionError::WrongMode);
 }
 
 #[test]
-fn confirm_search_outside_search_input_is_noop() {
+fn confirm_search_outside_search_input_is_error() {
     let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size)
+    let err = ViewState::new(size)
         .confirm_search(vec![SearchMatch::new(0, 0)])
-        .unwrap();
-    assert!(matches!(state.normal_search(), NormalSearch::Inactive));
+        .unwrap_err();
+    assert_eq!(err, crate::domain::SearchTransitionError::WrongMode);
 }

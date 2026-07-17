@@ -364,15 +364,21 @@ fn selected_search_match_renders_selected_style_in_buffer() {
     let view_state = ViewState::new(size)
         .start_search(SearchDirection::Forward)
         .append_search_input('n')
+        .unwrap()
         .append_search_input('e')
+        .unwrap()
         .append_search_input('e')
+        .unwrap()
         .append_search_input('d')
+        .unwrap()
         .append_search_input('l')
+        .unwrap()
         .append_search_input('e')
+        .unwrap()
         .confirm_search(matches)
         .unwrap()
         .next_search_match(1000)
-        .scroll_to(0);
+        .scroll_to(0, 0);
 
     let ctx = RenderContext::new(
         ctx_base.theme,

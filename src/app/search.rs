@@ -15,11 +15,15 @@ impl App {
     }
 
     pub(crate) fn append_search_input(&mut self, c: char) {
-        self.view_state = self.view_state.clone().append_search_input(c);
+        if let Ok(state) = self.view_state.clone().append_search_input(c) {
+            self.view_state = state;
+        }
     }
 
     pub(crate) fn backspace_search_input(&mut self) {
-        self.view_state = self.view_state.clone().backspace_search_input();
+        if let Ok(state) = self.view_state.clone().backspace_search_input() {
+            self.view_state = state;
+        }
     }
 
     pub(crate) fn confirm_search(&mut self) {
@@ -44,16 +48,11 @@ impl App {
         match self.view_state.clone().confirm_search(matches) {
             Ok(state) => {
                 self.view_state = state;
-                if let NormalSearch::Active {
-                    matches,
-                    current_index,
-                    ..
-                } = self.view_state.normal_search()
-                {
-                    if let Some(m) = matches.get(*current_index) {
+                if let NormalSearch::Active(active) = self.view_state.normal_search() {
+                    if let Some(m) = active.matches().get(active.current_index()) {
                         let max = self.max_scroll();
                         let target = m.line_offset.min(max);
-                        self.view_state = self.view_state.clone().scroll_to(target);
+                        self.view_state = self.view_state.clone().scroll_to(target, max);
                     } else {
                         self.set_status_message("no matches found".into());
                     }

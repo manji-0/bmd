@@ -234,7 +234,8 @@ impl App {
     fn apply_anchor_back(&mut self) {
         match self.nav_stack.step_back() {
             Ok(offset) => {
-                self.view_state = self.view_state.clone().scroll_to(offset);
+                let max = self.max_scroll();
+                self.view_state = self.view_state.clone().scroll_to(offset, max);
                 self.snap_scroll_visual();
             }
             Err(AnchorStackEmpty) => {
@@ -247,7 +248,8 @@ impl App {
         let Ok(origin) = self.nav_stack.step_reset() else {
             return;
         };
-        self.view_state = self.view_state.clone().scroll_to(origin);
+        let max = self.max_scroll();
+        self.view_state = self.view_state.clone().scroll_to(origin, max);
         self.snap_scroll_visual();
     }
 
@@ -323,7 +325,7 @@ impl App {
     fn scroll_to_line(&mut self, line_offset: usize) {
         let max = self.max_scroll();
         let target = scroll_link_target(line_offset, max, &self.view_state);
-        self.view_state = self.view_state.clone().scroll_to(target);
+        self.view_state = self.view_state.clone().scroll_to(target, max);
         self.snap_scroll_visual();
     }
 
