@@ -17,63 +17,74 @@ bmd — Markdown viewer (press H or Esc to close)
 
 Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   wheel scroll
 Headings      [/] prev/next section   #anchor links jump in-document
+Outline       t toggle sidebar   j/k when focused   Enter/o jump   Esc unfocus   click entry
+Marks         ma set mark   'a jump to mark
 Links         n/p/N next/prev in viewport   o/Enter open   click link   O step back or close preview   Esc reset stack
 Open/close    o opens links and previews   O closes what o opened (preview overlay) or steps back one navigation level
 Search        / forward   ? backward   n/p/N next/prev match   Esc clear
+Yank          y then l link / h heading / c code / y selection   (y alone copies active selection)
 Preview       Ctrl+pinch or +/- zoom   0 reset zoom   o/Esc close   click outside to close
 Tasks         click checkbox   x toggle at top line
-Selection     drag to select (auto-copy on release)   y copy again
+Selection     drag to select (auto-copy on release)   y copy again when selected
 Other         h help   H close help   q/Ctrl-c quit";
 
-pub(crate) fn format_status_bar(
-    source_label: Option<&str>,
-    view_state: &ViewState,
-    max_scroll: usize,
-    doc_stack_depth: usize,
-    status_message: Option<&str>,
-) -> Line<'static> {
-    if let Some(msg) = status_message {
+/// Inputs for the bottom status line.
+pub(crate) struct StatusBarInput<'a> {
+    pub source_label: Option<&'a str>,
+    pub view_state: &'a ViewState,
+    pub max_scroll: usize,
+    pub doc_stack_depth: usize,
+    pub status_message: Option<&'a str>,
+    pub outline_visible: bool,
+    pub outline_focused: bool,
+    pub pending_prompt: Option<&'a str>,
+}
+
+pub(crate) fn format_status_bar(input: StatusBarInput<'_>) -> Line<'static> {
+    if let Some(msg) = input.status_message {
         return Line::from(vec![
             Span::styled(
                 msg.to_string(),
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
             Span::raw("  "),
-            Span::styled(
-                trailing_status(source_label, view_state, max_scroll, doc_stack_depth),
-                dim_style(),
-            ),
+            Span::styled(trailing_status(&input), dim_style()),
         ]);
     }
 
-    Line::from(vec![Span::styled(
-        trailing_status(source_label, view_state, max_scroll, doc_stack_depth),
-        dim_style(),
-    )])
+    Line::from(vec![Span::styled(trailing_status(&input), dim_style())])
 }
 
-fn trailing_status(
-    source_label: Option<&str>,
-    view_state: &ViewState,
-    max_scroll: usize,
-    doc_stack_depth: usize,
-) -> String {
+fn trailing_status(input: &StatusBarInput<'_>) -> String {
     let mut parts = Vec::new();
     parts.push(
-        source_label
+        input
+            .source_label
             .map(ToString::to_string)
             .unwrap_or_else(|| "(stdin)".to_string()),
     );
 
-    let offset = view_state.scroll().offset().min(max_scroll);
-    let pct = if max_scroll == 0 {
+    let offset = input.view_state.scroll().offset().min(input.max_scroll);
+    let pct = if input.max_scroll == 0 {
         100
     } else {
-        ((offset as f64 / max_scroll as f64) * 100.0).round() as u32
+        ((offset as f64 / input.max_scroll as f64) * 100.0).round() as u32
     };
     parts.push(format!("{pct}%"));
 
-    if let NormalSearch::Active(active) = view_state.normal_search() {
+    if let Some(prompt) = input.pending_prompt {
+        parts.push(prompt.to_string());
+    }
+
+    if input.outline_visible {
+        parts.push(if input.outline_focused {
+            "outline*".to_string()
+        } else {
+            "outline".to_string()
+        });
+    }
+
+    if let NormalSearch::Active(active) = input.view_state.normal_search() {
         let total = active.matches().len();
         let current = if total == 0 {
             0
@@ -88,16 +99,16 @@ fn trailing_status(
         ));
     }
 
-    if let Some(id) = view_state.selected_link() {
+    if let Some(id) = input.view_state.selected_link() {
         parts.push(format!("link #{}", id.0));
     }
 
-    if let Some(id) = view_state.selected_footnote() {
+    if let Some(id) = input.view_state.selected_footnote() {
         parts.push(format!("footnote #{}", id.0));
     }
 
-    if doc_stack_depth > 0 {
-        parts.push(format!("doc+{doc_stack_depth}"));
+    if input.doc_stack_depth > 0 {
+        parts.push(format!("doc+{}", input.doc_stack_depth));
     }
 
     parts.join("  |  ")

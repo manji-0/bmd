@@ -10,7 +10,7 @@ use crate::render::checklist::checklist_at_click;
 use crate::render::{PREVIEW_POPUP_PERCENT, centered_rect, extract_selected_text, link_at_click};
 
 use super::App;
-use super::layout::split_main_and_prompt;
+use super::layout::{split_layout, split_main_and_prompt};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SelectionDrag {
@@ -35,6 +35,10 @@ impl App {
     }
 
     fn handle_mouse_down(&mut self, column: u16, row: u16) -> Result<bool, AppError> {
+        if self.try_outline_click(column, row) {
+            self.selection_drag = None;
+            return Ok(true);
+        }
         let Some(point) = self.main_area_text_point(column, row) else {
             self.selection_drag = None;
             return Ok(false);
@@ -63,6 +67,7 @@ impl App {
 
     fn handle_mouse_up(&mut self, column: u16, row: u16) -> Result<bool, AppError> {
         let Some(drag) = self.selection_drag.take() else {
+            // Outline click is handled on mouse down; ignore matching up.
             return Ok(false);
         };
 
@@ -78,6 +83,27 @@ impl App {
 
         self.text_selection = None;
         self.handle_mouse_click(column, row)
+    }
+
+    fn try_outline_click(&mut self, column: u16, row: u16) -> bool {
+        if !self.outline_visible || !self.view_state.mode().is_normal() || self.help_visible {
+            return false;
+        }
+        let terminal = self.view_state.terminal_size();
+        let full_area = Rect {
+            x: 0,
+            y: 0,
+            width: terminal.width(),
+            height: terminal.height(),
+        };
+        let areas = split_layout(full_area, self.view_state.mode(), true);
+        let Some(index) = self.outline_hit_index(column, row, areas.outline) else {
+            return false;
+        };
+        self.outline_selected_index = index;
+        self.outline_focused = true;
+        self.jump_to_outline_heading();
+        true
     }
 
     fn handle_mouse_click(&mut self, column: u16, row: u16) -> Result<bool, AppError> {
@@ -102,7 +128,12 @@ impl App {
             return Ok(false);
         }
 
-        let (main_area, _) = split_main_and_prompt(full_area, self.view_state.mode());
+        if self.try_outline_click(column, row) {
+            return Ok(true);
+        }
+
+        let (main_area, _) =
+            split_main_and_prompt(full_area, self.view_state.mode(), self.outline_visible);
 
         if column < main_area.x
             || column >= main_area.x + main_area.width
@@ -116,7 +147,7 @@ impl App {
         let local_row = (row - main_area.y) as usize;
         let logical_row = self.scroll_visual.floor() as usize + local_row;
         let ctx = self.render_context();
-        let width = main_area.width;
+        let width = self.document_width();
 
         if let Some(item) = checklist_at_click(&self.document, width, &ctx, logical_row, local_col)
         {
@@ -148,7 +179,8 @@ impl App {
             width: terminal.width(),
             height: terminal.height(),
         };
-        let (main_area, _) = split_main_and_prompt(full_area, self.view_state.mode());
+        let (main_area, _) =
+            split_main_and_prompt(full_area, self.view_state.mode(), self.outline_visible);
         if column < main_area.x
             || column >= main_area.x + main_area.width
             || row < main_area.y
@@ -193,7 +225,7 @@ impl App {
 
         let logical_row = self.scroll_visual.floor() as usize;
         let ctx = self.render_context();
-        let width = self.view_state.terminal_size().width();
+        let width = self.document_width();
 
         let Some(item) = checklist_at_click(&self.document, width, &ctx, logical_row, 0) else {
             return;

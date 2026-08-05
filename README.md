@@ -1,6 +1,6 @@
 # bmd
 
-A terminal TUI for reading Markdown. Vim-style keybindings, rich markup rendering, native Mermaid diagrams, in-document search, and interactive task lists.
+A terminal TUI for reading Markdown. Vim-style keybindings, rich markup rendering, native Mermaid diagrams, in-document search, sticky outline, scroll marks, yank, and interactive task lists.
 
 ## Features
 
@@ -26,7 +26,18 @@ Scroll position is tracked in logical lines; the on-screen position is animated 
 | Scroll down / up 2 lines | `j` `↓` / `k` `↑` |
 | Half page down / up | `d` `PageDown` / `u` `PageUp` |
 | Jump to top / bottom | `g` / `G` |
+| Previous / next heading | `[` / `]` |
+| Toggle outline sidebar | `t` |
+| Set / jump scroll mark | `ma` / `'a` (`a`–`z`) |
 | Quit | `q` `Ctrl-c` |
+
+### Outline
+
+Press `t` to pin a heading outline on the left. Opening the outline focuses it: `j` / `k` (or `n` / `p`) move the selection, `Enter` / `o` jumps to that heading, `Esc` returns focus to the document while keeping the sidebar, and `t` closes it. Click an outline entry to jump. While unfocused, the selection tracks the heading under the current scroll position.
+
+### Yank
+
+Press `y` to copy an active text selection. With no selection, `y` waits for a second key: `l` copies the selected link URL, `h` copies the current heading as `#slug`, `c` copies the nearest visible code block, and `y` retries selection copy.
 
 ### In-document search
 
@@ -124,6 +135,9 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `u` / `PageUp` | Half page up |
 | `g` / `G` | Jump to top / bottom |
 | `[` / `]` | Previous / next heading |
+| `t` | Toggle outline sidebar (j/k navigate when focused; Enter/o jump; Esc unfocus) |
+| `m` then `a`–`z` | Set scroll mark |
+| `'` then `a`–`z` | Jump to scroll mark |
 | `Tab` / `n` | Next visible link (or next search match when search is active) |
 | `Shift-Tab` / `N` / `p` | Previous visible link (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
@@ -131,12 +145,13 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `/` / `?` | Start forward / backward search |
 | `h` / `H` | Show help overlay / close help overlay |
 | `x` | Toggle task-list item on top visible line |
+| `y` | Copy text selection, or start yank (`yl` link, `yh` heading, `yc` code, `yy` selection) |
 | Mouse wheel | Scroll up / down |
 | `q` / `Ctrl-c` | Quit (`Esc` clears search when active; else resets anchor or document stack) |
 | Left click on link | Open link / preview |
 | Left click on checkbox | Toggle task-list item (normal mode) |
+| Left click on outline | Jump to heading |
 | Drag | Select text (copied to clipboard on release) |
-| `y` | Copy current text selection |
 
 ### Search input mode
 
@@ -211,6 +226,8 @@ prev_heading = "["
 next_heading = "]"
 toggle_help = "h"
 close_help = "H"
+toggle_outline = "t"
+yank_prefix = "y"
 
 [keymap.preview]
 preview_zoom_in = ["+", "="]
@@ -222,7 +239,7 @@ Available commands:
 
 | Mode | Commands |
 |------|----------|
-| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_checklist`, `quit` |
+| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_checklist`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` |
 | `preview` | `close_preview`, `preview_zoom_in`, `preview_zoom_out`, `preview_zoom_reset`, `quit` |
 | `search` | `search_confirm`, `search_cancel`, `search_backspace` |
 

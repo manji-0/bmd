@@ -17,6 +17,7 @@ mod image_render;
 mod link;
 mod link_jump_stack;
 mod markdown;
+mod marks;
 mod mermaid_render;
 mod mode;
 mod nav_stack;
@@ -53,6 +54,7 @@ pub use markdown::{
     Alignment, Block, CodeBlock, DefinitionItem, DefinitionList, Document, FootnoteDefinition,
     FootnoteId, Heading, HeadingLevel, Inline, List, ListItem, MathBlock, MermaidDiagram, Table,
 };
+pub use marks::{MarkName, MarkNameError, Marks};
 pub use mermaid_render::{
     MermaidCompletion, MermaidCompletionApplied, MermaidPreviewStatus, MermaidRenderError,
     MermaidRenderSession, MermaidSessionSnapshot, MermaidSource, MermaidSpawnRequest, MermaidTask,

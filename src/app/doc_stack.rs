@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::domain::{
     ChecklistState, DOCUMENT_STACK_MAX_LAYERS, Document, DocumentPrefetchSessionSnapshot,
-    DocumentStackFull, ImageSessionSnapshot, LinkId, LinkJumpStack, LinkJumpStackFull,
+    DocumentStackFull, ImageSessionSnapshot, LinkId, LinkJumpStack, LinkJumpStackFull, Marks,
     MermaidSessionSnapshot, NavStack, PriorAtLinkJump, ViewState,
 };
 use crate::render::{DocumentRenderCache, PreviewRenderCache, RenderedDocument};
@@ -36,6 +36,7 @@ pub(crate) struct DocumentFrame {
     pub base_path: Option<PathBuf>,
     pub file_watch: Option<FileWatch>,
     pub nav_stack: NavStack,
+    pub marks: Marks,
 }
 
 /// Document state fixed at the moment before a document link jump.

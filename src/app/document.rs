@@ -185,6 +185,9 @@ impl App {
         self.images_reenable_at = None;
         self.scroll_key_down_at = None;
         self.help_visible = false;
+        self.clear_marks();
+        self.pending_input = super::pending::PendingInput::None;
+        self.outline_focused = false;
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
         self.document_prefetch.begin_document();
@@ -213,6 +216,7 @@ impl App {
             base_path: self.base_path.clone(),
             file_watch: self.file_watch.clone(),
             nav_stack: self.nav_stack.clone(),
+            marks: self.marks.clone(),
         }
     }
 
@@ -248,6 +252,9 @@ impl App {
         self.images_reenable_at = None;
         self.scroll_key_down_at = None;
         self.help_visible = false;
+        self.clear_marks();
+        self.pending_input = super::pending::PendingInput::None;
+        self.outline_focused = false;
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
         self.document_prefetch.begin_document();
@@ -283,6 +290,9 @@ impl App {
         self.base_path = frame.base_path;
         self.file_watch = frame.file_watch;
         self.nav_stack = frame.nav_stack;
+        self.marks = frame.marks;
+        self.pending_input = super::pending::PendingInput::None;
+        self.outline_focused = false;
         self.images_reenable_at = None;
         self.scroll_key_down_at = None;
         self.help_visible = false;

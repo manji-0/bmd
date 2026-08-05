@@ -1078,3 +1078,93 @@ fn prefetched_child_navigation_round_trip_restores_parent() {
 
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn toggle_outline_opens_and_focuses() {
+    let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
+    let mut app = new_test_app(doc);
+    assert!(!app.outline_visible);
+    app.toggle_outline();
+    assert!(app.outline_visible);
+    assert!(app.outline_focused);
+    app.toggle_outline();
+    assert!(!app.outline_visible);
+    assert!(!app.outline_focused);
+}
+
+#[test]
+fn outline_jump_follows_heading() {
+    let doc = parse("# One\n\npara\n\n## Two\n\nmore\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.toggle_outline();
+    app.outline_select_next();
+    let before = app.view_state.scroll().offset();
+    app.jump_to_outline_heading();
+    assert!(app.view_state.scroll().offset() >= before);
+    assert!(!app.outline_focused);
+    assert!(app.outline_visible);
+}
+
+#[test]
+fn marks_set_and_jump() {
+    use crate::domain::MarkName;
+    let body = (0..80)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let doc = parse(&format!("# Top\n\n{body}\n\n## Bottom\n")).unwrap();
+    let mut app = new_test_app(doc);
+    app.jump_to_bottom();
+    let bottom = app.view_state.scroll().offset();
+    assert!(bottom > 0);
+    let name = MarkName::new('a').unwrap();
+    app.set_mark(name);
+    app.jump_to_top();
+    assert_eq!(app.view_state.scroll().offset(), 0);
+    app.jump_to_mark(name);
+    assert_eq!(app.view_state.scroll().offset(), bottom);
+}
+
+#[test]
+fn yank_heading_and_link_commands() {
+    let doc = parse("# Hello World\n\nSee [site](https://example.com).\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.yank_heading_slug().unwrap();
+    assert!(
+        app.status_message
+            .as_deref()
+            .unwrap_or("")
+            .contains("#hello-world")
+    );
+    app.next_link();
+    app.yank_link_url().unwrap();
+    assert!(
+        app.status_message
+            .as_deref()
+            .unwrap_or("")
+            .contains("example.com")
+    );
+}
+
+#[test]
+fn yank_code_block_from_viewport() {
+    let doc = parse("# Title\n\n```rust\nfn main() {}\n```\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.yank_code_block().unwrap();
+    assert!(
+        app.status_message
+            .as_deref()
+            .unwrap_or("")
+            .contains("yanked code block")
+    );
+}
+
+#[test]
+fn document_width_shrinks_when_outline_open() {
+    let doc = dummy_document();
+    let mut app = new_test_app(doc);
+    let full = app.document_width();
+    app.toggle_outline();
+    let shrunk = app.document_width();
+    assert!(shrunk < full);
+}

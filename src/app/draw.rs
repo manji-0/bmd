@@ -18,7 +18,7 @@ use crate::render::{
 use super::App;
 use super::layout::split_layout;
 use super::preview::{preview_external_open_message, preview_failed_message};
-use super::status::{draw_help_overlay, draw_status_bar, format_status_bar};
+use super::status::{StatusBarInput, draw_help_overlay, draw_status_bar, format_status_bar};
 
 impl App {
     pub(crate) fn draw_frame<B: Backend>(
@@ -30,7 +30,11 @@ impl App {
     {
         terminal.draw(|f| {
             let full_area = f.area();
-            let areas = split_layout(full_area, self.view_state.mode());
+            let areas = split_layout(full_area, self.view_state.mode(), self.outline_visible);
+
+            if areas.outline.width > 0 {
+                self.draw_outline_sidebar(f, areas.outline);
+            }
 
             let ctx = RenderContext::new(
                 &self.theme,
@@ -41,7 +45,7 @@ impl App {
                 self.show_terminal_images,
                 &self.checklist_state,
             );
-            let width = self.view_state.terminal_size().width();
+            let width = self.document_width();
             self.document_cache
                 .ensure(&self.document, &ctx, &self.view_state, width);
             let widget = CachedMarkdownView {
@@ -75,13 +79,16 @@ impl App {
                 draw_help_overlay(f, areas.main);
             }
 
-            let status = format_status_bar(
-                self.source_label.as_deref(),
-                &self.view_state,
-                self.max_scroll(),
-                self.doc_stack.len_frames(),
-                self.status_message.as_deref(),
-            );
+            let status = format_status_bar(StatusBarInput {
+                source_label: self.source_label.as_deref(),
+                view_state: &self.view_state,
+                max_scroll: self.max_scroll(),
+                doc_stack_depth: self.doc_stack.len_frames(),
+                status_message: self.status_message.as_deref(),
+                outline_visible: self.outline_visible,
+                outline_focused: self.outline_focused,
+                pending_prompt: self.pending_input.prompt(),
+            });
             draw_status_bar(f, areas.status, status);
 
             if let UiMode::SearchInput { direction, query } = self.view_state.mode() {

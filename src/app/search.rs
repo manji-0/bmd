@@ -38,12 +38,7 @@ impl App {
         }
 
         let ctx = self.render_context();
-        let matches = find_search_matches(
-            &self.document,
-            self.view_state.terminal_size().width(),
-            &trimmed,
-            &ctx,
-        );
+        let matches = find_search_matches(&self.document, self.document_width(), &trimmed, &ctx);
 
         match self.view_state.clone().confirm_search(matches) {
             Ok(state) => {

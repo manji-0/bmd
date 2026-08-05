@@ -61,7 +61,7 @@ impl App {
 
     fn visible_nav_targets(&self) -> Vec<crate::domain::NavTarget> {
         let ctx = self.render_context();
-        let width = self.view_state.terminal_size().width();
+        let width = self.document_width();
         let scroll = self.view_state.scroll().offset();
         let visible_lines = self.content_height() as usize;
         crate::render::collect_visible_nav_targets(
@@ -255,7 +255,7 @@ impl App {
 
     pub(crate) fn follow_anchor(&mut self, anchor: &str) {
         let ctx = self.render_context();
-        let width = self.view_state.terminal_size().width();
+        let width = self.document_width();
         let Some(line) = find_heading_line_by_anchor(&self.document, width, &ctx, anchor) else {
             self.set_status_message(format!("heading not found: #{anchor}"));
             return;

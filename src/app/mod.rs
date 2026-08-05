@@ -8,14 +8,18 @@ mod draw;
 mod image_render;
 mod input;
 mod layout;
+mod marks;
 mod mermaid_render;
 mod navigation;
+mod outline;
+mod pending;
 mod preview;
 mod reload;
 mod scroll;
 mod search;
 pub mod status;
 mod worker_pool;
+mod yank;
 
 #[cfg(test)]
 mod tests;
@@ -30,7 +34,8 @@ use ratatui_image::picker::Picker;
 
 use crate::config::Config;
 use crate::domain::{
-    ChecklistState, ChecklistStyle, Document, NavStack, TerminalSize, TextSelection, ViewState,
+    ChecklistState, ChecklistStyle, Document, Marks, NavStack, TerminalSize, TextSelection,
+    ViewState,
 };
 use crate::error::AppError;
 use crate::keymap::Keymap;
@@ -44,6 +49,7 @@ use document_prefetch::DocumentPrefetchPool;
 use image_render::ImageRenderPool;
 use layout::terminal_size;
 use mermaid_render::MermaidRenderPool;
+use pending::PendingInput;
 use reload::FileWatch;
 use scroll::{
     ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED, STATUS_MESSAGE_DURATION,
@@ -102,6 +108,16 @@ pub struct App {
     preview_zoom: f32,
     /// Selected heading index within the TOC preview.
     toc_selected_index: usize,
+    /// Sticky outline sidebar visibility.
+    outline_visible: bool,
+    /// Whether outline navigation keys are active.
+    outline_focused: bool,
+    /// Selected heading index within the outline sidebar.
+    outline_selected_index: usize,
+    /// Vim-style scroll marks for the current document.
+    marks: Marks,
+    /// Two-key operator waiting for a second keystroke.
+    pending_input: PendingInput,
     /// Mouse-selected text range in document logical coordinates.
     text_selection: Option<TextSelection>,
     /// In-progress mouse drag for text selection.
@@ -206,6 +222,11 @@ impl App {
             preview_render_cache: PreviewRenderCache::default(),
             preview_zoom: 1.0,
             toc_selected_index: 0,
+            outline_visible: false,
+            outline_focused: false,
+            outline_selected_index: 0,
+            marks: Marks::new(),
+            pending_input: PendingInput::None,
             text_selection: None,
             selection_drag: None,
             last_prefetch_viewport: None,
@@ -272,14 +293,14 @@ impl App {
         PrefetchViewportKey {
             scroll: self.view_state.scroll().offset(),
             visible_lines: self.content_height() as usize,
-            width: self.view_state.terminal_size().width(),
+            width: self.document_width(),
             document_path: self.base_path.clone(),
         }
     }
 
     pub(crate) fn visible_link_ids(&self) -> Vec<crate::domain::LinkId> {
         let ctx = self.render_context();
-        let width = self.view_state.terminal_size().width();
+        let width = self.document_width();
         let scroll = self.view_state.scroll().offset();
         let visible_lines = self.content_height() as usize;
         crate::render::collect_visible_links(&self.document, width, &ctx, scroll, visible_lines)
@@ -311,7 +332,7 @@ impl App {
 
     pub(crate) fn heading_offsets(&mut self) -> Vec<(usize, crate::domain::HeadingLevel)> {
         let document_revision = self.document_revision;
-        let width = self.view_state.terminal_size().width();
+        let width = self.document_width();
         let checklist_revision = self.checklist_state.revision();
         let ctx = RenderContext::new(
             &self.theme,
@@ -331,6 +352,13 @@ impl App {
                 &ctx,
             )
             .to_vec()
+    }
+
+    /// Content width available for document wrapping (excludes outline sidebar).
+    pub(crate) fn document_width(&self) -> u16 {
+        let full = self.view_state.terminal_size().width();
+        let reserve = outline::outline_reserve_width(full, self.outline_visible);
+        full.saturating_sub(reserve).max(1)
     }
 
     pub(crate) fn preview_work_pending(&self) -> bool {

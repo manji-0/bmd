@@ -35,7 +35,9 @@ pub enum Command {
     ToggleHelp,
     CloseHelp,
     ToggleChecklist,
+    ToggleOutline,
     CopySelection,
+    YankPrefix,
     ClearSelection,
     NavBack,
     NavReset,
@@ -402,7 +404,8 @@ fn default_normal_bindings() -> Vec<(KeySpec, Command)> {
         k("h", Command::ToggleHelp),
         k("H", Command::CloseHelp),
         k("x", Command::ToggleChecklist),
-        k("y", Command::CopySelection),
+        k("t", Command::ToggleOutline),
+        k("y", Command::YankPrefix),
         k("q", Command::Quit),
         k("C-c", Command::Quit),
     ]
@@ -471,6 +474,12 @@ mod tests {
     #[test]
     fn help_close_uses_shift_h() {
         assert_eq!(map(shift('H')), Command::CloseHelp);
+    }
+
+    #[test]
+    fn outline_and_yank_bindings() {
+        assert_eq!(map(key('t')), Command::ToggleOutline);
+        assert_eq!(map(key('y')), Command::YankPrefix);
     }
 
     #[test]

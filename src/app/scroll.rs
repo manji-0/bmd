@@ -24,7 +24,7 @@ impl App {
     pub(crate) fn max_scroll(&self) -> usize {
         let total_height = measure_document_height(
             &self.document,
-            self.view_state.terminal_size().width(),
+            self.document_width(),
             &self.render_context(),
         );
         let view_height = self.content_height() as usize;
