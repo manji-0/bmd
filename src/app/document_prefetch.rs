@@ -8,6 +8,7 @@ use crate::domain::{
     DocumentPrefetchCompletion, DocumentPrefetchError, DocumentPrefetchSession,
     DocumentPrefetchSessionSnapshot, DocumentPrefetchSpawnRequest, PrefetchedDocument,
 };
+use crate::fs::StdDocumentFs;
 use crate::parse::parse_with_path;
 
 use super::worker_pool::WorkerPool;
@@ -57,13 +58,14 @@ impl DocumentPrefetchPool {
         base_path: Option<&PathBuf>,
     ) {
         let session = mem::take(&mut self.session);
-        let fresh_ready = session.fresh_ready_paths();
+        let fresh_ready = session.fresh_ready_paths(&StdDocumentFs);
         let is_ready = move |path: &Path| fresh_ready.contains(path);
         let (session, spawns) = session.schedule_visible_prefetch(
             visible,
             document,
             base_path.map(PathBuf::as_path),
             is_ready,
+            &StdDocumentFs,
         );
         self.session = session;
         self.spawn_all(spawns);
@@ -73,7 +75,7 @@ impl DocumentPrefetchPool {
         let mut dirty = false;
         while let Ok(result) = self.receiver.try_recv() {
             let session = mem::take(&mut self.session);
-            let (session, _, spawns) = session.apply_completion(result.completion);
+            let (session, _, spawns) = session.apply_completion(result.completion, &StdDocumentFs);
             self.session = session;
             dirty = true;
             self.spawn_all(spawns);
@@ -82,7 +84,7 @@ impl DocumentPrefetchPool {
     }
 
     pub fn ready_document(&self, path: &Path) -> Option<crate::domain::Document> {
-        self.session.ready_document(path).cloned()
+        self.session.ready_document(path, &StdDocumentFs).cloned()
     }
 
     pub fn has_pending(&self) -> bool {
@@ -127,7 +129,8 @@ mod tests {
     use std::fs;
     use std::time::Duration;
 
-    use crate::domain::{Document, Link, LinkId, LinkKind, LinkUrl, normalize_document_path};
+    use crate::domain::{Document, Link, LinkId, LinkKind, LinkUrl};
+    use crate::fs::normalize_document_path;
     use crate::parse::parse;
 
     use super::*;

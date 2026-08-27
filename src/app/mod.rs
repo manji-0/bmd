@@ -40,8 +40,7 @@ use crate::domain::{
 use crate::error::AppError;
 use crate::keymap::Keymap;
 use crate::render::{
-    DocumentRenderCache, HeadingOffsetCache, PreviewRenderCache, RenderContext, RenderedDocument,
-    SyntaxAssets, Theme,
+    DocumentRenderCache, HeadingOffsetCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
 };
 
 use doc_stack::DocStack;
@@ -49,11 +48,11 @@ use document_prefetch::DocumentPrefetchPool;
 use image_render::ImageRenderPool;
 use layout::terminal_size;
 use mermaid_render::MermaidRenderPool;
+use outline::OutlineUi;
 use pending::PendingInput;
+use preview::PreviewUi;
 use reload::FileWatch;
-use scroll::{
-    ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, SCROLL_ANIM_SPEED, STATUS_MESSAGE_DURATION,
-};
+use scroll::{ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, STATUS_MESSAGE_DURATION, ScrollUi};
 use worker_pool::WorkerPool;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -69,21 +68,8 @@ pub struct App {
     rendered: RenderedDocument,
     view_state: ViewState,
     document_cache: DocumentRenderCache,
-    /// Animated scroll position; lerps toward `view_state.scroll().offset()`.
-    scroll_visual: f32,
-    /// Exponential smoothing rate for the current scroll animation.
-    scroll_anim_speed: f32,
-    /// When the current j/k hold sequence started (`Press`); cleared on `Release`.
-    scroll_key_down_at: Option<Instant>,
-    /// Timestamp of the last line scroll triggered by key repeat.
-    last_scroll_repeat: Instant,
+    scroll: ScrollUi,
     last_tick: Instant,
-    /// Fractional scroll position used to detect motion for image deferral.
-    tracked_scroll_position: f32,
-    /// When to turn terminal images back on after scrolling stops.
-    images_reenable_at: Option<Instant>,
-    /// Whether mermaid/markdown images are drawn in the current cache.
-    pub(crate) show_terminal_images: bool,
     syntax_assets: SyntaxAssets,
     theme: Theme,
     keymap: Keymap,
@@ -101,19 +87,8 @@ pub struct App {
     mermaid_render: MermaidRenderPool,
     image_render: ImageRenderPool,
     document_prefetch: DocumentPrefetchPool,
-    /// Open preview once background render completes.
-    pending_preview: Option<crate::domain::LinkId>,
-    preview_render_cache: PreviewRenderCache,
-    /// Pinch/keyboard zoom factor for the floating preview overlay (1.0 = fit).
-    preview_zoom: f32,
-    /// Selected heading index within the TOC preview.
-    toc_selected_index: usize,
-    /// Sticky outline sidebar visibility.
-    outline_visible: bool,
-    /// Whether outline navigation keys are active.
-    outline_focused: bool,
-    /// Selected heading index within the outline sidebar.
-    outline_selected_index: usize,
+    preview: PreviewUi,
+    outline: OutlineUi,
     /// Vim-style scroll marks for the current document.
     marks: Marks,
     /// Two-key operator waiting for a second keystroke.
@@ -193,14 +168,8 @@ impl App {
             rendered,
             view_state,
             document_cache: DocumentRenderCache::default(),
-            scroll_visual,
-            scroll_anim_speed: SCROLL_ANIM_SPEED,
-            scroll_key_down_at: None,
-            last_scroll_repeat: now,
+            scroll: ScrollUi::new(scroll_visual, now),
             last_tick: now,
-            tracked_scroll_position: scroll_visual,
-            images_reenable_at: None,
-            show_terminal_images: true,
             syntax_assets: SyntaxAssets::new(),
             theme: config.theme,
             keymap: config.keymap,
@@ -218,13 +187,8 @@ impl App {
             mermaid_render: MermaidRenderPool::new(Arc::clone(&worker_pool)),
             image_render: ImageRenderPool::new(Arc::clone(&worker_pool)),
             document_prefetch: DocumentPrefetchPool::new(worker_pool),
-            pending_preview: None,
-            preview_render_cache: PreviewRenderCache::default(),
-            preview_zoom: 1.0,
-            toc_selected_index: 0,
-            outline_visible: false,
-            outline_focused: false,
-            outline_selected_index: 0,
+            preview: PreviewUi::default(),
+            outline: OutlineUi::default(),
             marks: Marks::new(),
             pending_input: PendingInput::None,
             text_selection: None,
@@ -340,7 +304,7 @@ impl App {
             &self.rendered,
             &self.document.links,
             &self.view_state,
-            self.show_terminal_images,
+            self.scroll.show_images,
             &self.checklist_state,
         );
         self.heading_cache
@@ -357,12 +321,12 @@ impl App {
     /// Content width available for document wrapping (excludes outline sidebar).
     pub(crate) fn document_width(&self) -> u16 {
         let full = self.view_state.terminal_size().width();
-        let reserve = outline::outline_reserve_width(full, self.outline_visible);
+        let reserve = outline::outline_reserve_width(full, self.outline.visible);
         full.saturating_sub(reserve).max(1)
     }
 
     pub(crate) fn preview_work_pending(&self) -> bool {
-        self.pending_preview.is_some()
+        self.preview.pending.is_some()
             || self.mermaid_render.has_pending()
             || self.image_render.has_pending()
             || self.document_prefetch.has_pending()
@@ -428,7 +392,7 @@ impl App {
             let image_dirty = self.update_terminal_image_visibility(now);
             self.maybe_prefetch_visible_links();
             let mermaid_dirty = self.poll_preview_renders();
-            let awaiting_images = self.images_reenable_at.is_some();
+            let awaiting_images = self.scroll.images_reenable_at.is_some();
             let awaiting_preview = self.preview_work_pending();
             self.tick_status_message(now);
 

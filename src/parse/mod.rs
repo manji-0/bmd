@@ -9,17 +9,16 @@ mod into_domain;
 mod markdown;
 mod parity;
 mod rst;
-mod slug;
 mod subsup;
 
 #[cfg(test)]
 mod tests;
 
+pub use crate::domain::{anchor_href, normalize_anchor_slug, slugify_heading};
 pub use dto::ParsedDocument;
 pub use error::ParseError;
 pub use format::MarkupFormat;
 pub use into_domain::IntoDomainError;
-pub use slug::{anchor_href, normalize_anchor_slug, slugify_heading};
 
 use std::path::Path;
 

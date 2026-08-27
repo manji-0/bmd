@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use serde::Deserialize;
 
-use crate::config::{KeyBindingValue, command_from_name, parse_binding_specs};
 use crate::domain::{NormalSearch, UiMode};
 use crate::error::AppError;
 
@@ -43,6 +43,64 @@ pub enum Command {
     NavReset,
     Quit,
     None,
+}
+
+/// Config TOML value for a command: one binding or a list of bindings.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum KeyBindingValue {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl KeyBindingValue {
+    pub(crate) fn into_specs(self) -> Vec<String> {
+        match self {
+            Self::One(value) => vec![value],
+            Self::Many(values) => values,
+        }
+    }
+}
+
+/// Map a config command name to the runtime [`Command`].
+pub fn command_from_name(name: &str) -> Option<Command> {
+    match name {
+        "scroll_down" => Some(Command::ScrollDown),
+        "scroll_up" => Some(Command::ScrollUp),
+        "half_page_down" => Some(Command::HalfPageDown),
+        "half_page_up" => Some(Command::HalfPageUp),
+        "jump_to_top" => Some(Command::JumpToTop),
+        "jump_to_bottom" => Some(Command::JumpToBottom),
+        "next_link" => Some(Command::NextLink),
+        "prev_link" => Some(Command::PrevLink),
+        "next_heading" => Some(Command::NextHeading),
+        "prev_heading" => Some(Command::PrevHeading),
+        "open_link" => Some(Command::OpenLink),
+        "nav_back" => Some(Command::NavBack),
+        "start_search_forward" => Some(Command::StartSearchForward),
+        "start_search_backward" => Some(Command::StartSearchBackward),
+        "toggle_help" => Some(Command::ToggleHelp),
+        "close_help" => Some(Command::CloseHelp),
+        "toggle_checklist" => Some(Command::ToggleChecklist),
+        "toggle_outline" => Some(Command::ToggleOutline),
+        "copy_selection" => Some(Command::CopySelection),
+        "yank_prefix" => Some(Command::YankPrefix),
+        "clear_selection" => Some(Command::ClearSelection),
+        "quit" => Some(Command::Quit),
+        "close_preview" => Some(Command::ClosePreview),
+        "preview_zoom_in" => Some(Command::PreviewZoomIn),
+        "preview_zoom_out" => Some(Command::PreviewZoomOut),
+        "preview_zoom_reset" => Some(Command::PreviewZoomReset),
+        "search_confirm" => Some(Command::SearchConfirm),
+        "search_cancel" => Some(Command::SearchCancel),
+        "search_backspace" => Some(Command::SearchBackspace),
+        _ => None,
+    }
+}
+
+/// Parse a list of key binding strings from config.
+pub fn parse_binding_specs(values: Vec<String>) -> Result<Vec<KeySpec>, AppError> {
+    values.into_iter().map(|v| KeySpec::parse(&v)).collect()
 }
 
 /// Parsed key binding from config or defaults.

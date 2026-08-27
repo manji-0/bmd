@@ -20,6 +20,39 @@ pub(crate) const HALF_PAGE_SCROLL_ANIM_SPEED: f32 = 140.0;
 pub(crate) const LINE_SCROLL_LINES: usize = 2;
 pub(crate) const STATUS_MESSAGE_DURATION: Duration = Duration::from_secs(3);
 
+pub(crate) struct ScrollUi {
+    pub visual: f32,
+    pub anim_speed: f32,
+    pub key_down_at: Option<Instant>,
+    pub last_repeat: Instant,
+    pub tracked_position: f32,
+    pub images_reenable_at: Option<Instant>,
+    pub show_images: bool,
+}
+
+impl ScrollUi {
+    pub(crate) fn new(visual: f32, now: Instant) -> Self {
+        Self {
+            visual,
+            anim_speed: SCROLL_ANIM_SPEED,
+            key_down_at: None,
+            last_repeat: now,
+            tracked_position: visual,
+            images_reenable_at: None,
+            show_images: true,
+        }
+    }
+
+    pub(crate) fn reset_to_top(&mut self) {
+        self.visual = 0.0;
+        self.anim_speed = SCROLL_ANIM_SPEED;
+        self.tracked_position = 0.0;
+        self.show_images = true;
+        self.images_reenable_at = None;
+        self.key_down_at = None;
+    }
+}
+
 impl App {
     pub(crate) fn max_scroll(&self) -> usize {
         let total_height = measure_document_height(
@@ -41,7 +74,7 @@ impl App {
             &self.rendered,
             &self.document.links,
             &self.view_state,
-            self.show_terminal_images,
+            self.scroll.show_images,
             &self.checklist_state,
         )
     }
@@ -50,25 +83,25 @@ impl App {
     ///
     /// Returns `true` when image visibility toggled and the frame should redraw.
     pub(crate) fn update_terminal_image_visibility(&mut self, now: Instant) -> bool {
-        let scroll_pos = self.scroll_visual;
+        let scroll_pos = self.scroll.visual;
         let mut dirty = false;
 
-        if (scroll_pos - self.tracked_scroll_position).abs() >= SUBPIXEL_SNAP {
-            self.tracked_scroll_position = scroll_pos;
-            self.images_reenable_at = None;
-            if self.show_terminal_images {
-                self.show_terminal_images = false;
+        if (scroll_pos - self.scroll.tracked_position).abs() >= SUBPIXEL_SNAP {
+            self.scroll.tracked_position = scroll_pos;
+            self.scroll.images_reenable_at = None;
+            if self.scroll.show_images {
+                self.scroll.show_images = false;
                 dirty = true;
             }
-        } else if !self.show_terminal_images && self.images_reenable_at.is_none() {
-            self.images_reenable_at = Some(now + IMAGE_REENABLE_DELAY);
+        } else if !self.scroll.show_images && self.scroll.images_reenable_at.is_none() {
+            self.scroll.images_reenable_at = Some(now + IMAGE_REENABLE_DELAY);
         }
 
-        if let Some(deadline) = self.images_reenable_at
+        if let Some(deadline) = self.scroll.images_reenable_at
             && now >= deadline
         {
-            self.images_reenable_at = None;
-            self.show_terminal_images = true;
+            self.scroll.images_reenable_at = None;
+            self.scroll.show_images = true;
             dirty = true;
         }
 
@@ -76,25 +109,25 @@ impl App {
     }
 
     pub(crate) fn snap_scroll_visual(&mut self) {
-        self.scroll_visual = self.view_state.scroll().offset() as f32;
+        self.scroll.visual = self.view_state.scroll().offset() as f32;
     }
 
     /// Advance the visual scroll toward the logical target with exponential ease-out.
     /// Returns `true` while the target has not been reached.
     pub(crate) fn tick_scroll_animation(&mut self, dt: Duration) -> bool {
         let target = self.view_state.scroll().offset() as f32;
-        let delta = target - self.scroll_visual;
+        let delta = target - self.scroll.visual;
         if delta.abs() < SUBPIXEL_SNAP {
-            self.scroll_visual = target;
-            self.scroll_anim_speed = SCROLL_ANIM_SPEED;
+            self.scroll.visual = target;
+            self.scroll.anim_speed = SCROLL_ANIM_SPEED;
             return false;
         }
         let t = dt.as_secs_f32().max(1.0 / 120.0);
-        let factor = 1.0 - (-self.scroll_anim_speed * t).exp();
-        self.scroll_visual += delta * factor;
-        if (target - self.scroll_visual).abs() < SUBPIXEL_SNAP {
-            self.scroll_visual = target;
-            self.scroll_anim_speed = SCROLL_ANIM_SPEED;
+        let factor = 1.0 - (-self.scroll.anim_speed * t).exp();
+        self.scroll.visual += delta * factor;
+        if (target - self.scroll.visual).abs() < SUBPIXEL_SNAP {
+            self.scroll.visual = target;
+            self.scroll.anim_speed = SCROLL_ANIM_SPEED;
             return false;
         }
         true
@@ -110,7 +143,7 @@ impl App {
         self.view_state = self.view_state.clone().resize(size);
         let max = self.max_scroll();
         self.view_state = self.view_state.clone().clamp_scroll(max);
-        self.scroll_visual = self.view_state.scroll().offset() as f32;
+        self.scroll.visual = self.view_state.scroll().offset() as f32;
         self.invalidate_preview_caches();
         Ok(true)
     }

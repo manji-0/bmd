@@ -24,14 +24,14 @@ impl App {
     }
 
     pub(crate) fn half_page_down(&mut self) {
-        self.scroll_anim_speed = HALF_PAGE_SCROLL_ANIM_SPEED;
+        self.scroll.anim_speed = HALF_PAGE_SCROLL_ANIM_SPEED;
         let half = self.content_height() as usize / 2;
         let max = self.max_scroll();
         self.view_state = self.view_state.clone().scroll_down(half, max);
     }
 
     pub(crate) fn half_page_up(&mut self) {
-        self.scroll_anim_speed = HALF_PAGE_SCROLL_ANIM_SPEED;
+        self.scroll.anim_speed = HALF_PAGE_SCROLL_ANIM_SPEED;
         let half = self.content_height() as usize / 2;
         self.view_state = self.view_state.clone().scroll_up(half);
     }
@@ -120,7 +120,7 @@ impl App {
             return;
         }
         if link.kind == crate::domain::LinkKind::Toc {
-            self.toc_selected_index = 0;
+            self.preview.toc_selected = 0;
             self.open_preview_now(id);
             return;
         }
@@ -166,10 +166,10 @@ impl App {
                 _ => {}
             }
             if self.preview_ready_to_open(id) {
-                self.pending_preview = None;
+                self.preview.pending = None;
                 self.open_preview_now(id);
             } else {
-                self.pending_preview = Some(id);
+                self.preview.pending = Some(id);
                 self.set_status_message(super::preview::preview_waiting_message(link.kind));
             }
         } else if link.kind == crate::domain::LinkKind::Web {
@@ -188,7 +188,7 @@ impl App {
     }
 
     pub(crate) fn close_preview(&mut self) {
-        self.pending_preview = None;
+        self.preview.pending = None;
         self.reset_preview_zoom();
         self.view_state = self.view_state.clone().close_preview();
     }
@@ -269,8 +269,7 @@ impl App {
     }
 
     pub(crate) fn collect_toc_entries(&self) -> Vec<(crate::domain::HeadingLevel, String, String)> {
-        use crate::domain::{Block, Heading, Inline};
-        use crate::parse::slugify_heading;
+        use crate::domain::{Block, Heading, Inline, slugify_heading};
         let mut entries = Vec::new();
         for block in &self.document.blocks {
             if let Block::Heading(Heading {
@@ -294,7 +293,7 @@ impl App {
 
     pub(crate) fn jump_to_toc_heading(&mut self) {
         let entries = self.collect_toc_entries();
-        let Some((_, _, slug)) = entries.get(self.toc_selected_index) else {
+        let Some((_, _, slug)) = entries.get(self.preview.toc_selected) else {
             return;
         };
         let slug = slug.clone();
@@ -307,7 +306,7 @@ impl App {
         if count == 0 {
             return;
         }
-        self.toc_selected_index = (self.toc_selected_index + 1) % count;
+        self.preview.toc_selected = (self.preview.toc_selected + 1) % count;
     }
 
     pub(crate) fn toc_select_prev(&mut self) {
@@ -315,10 +314,10 @@ impl App {
         if count == 0 {
             return;
         }
-        self.toc_selected_index = if self.toc_selected_index == 0 {
+        self.preview.toc_selected = if self.preview.toc_selected == 0 {
             count - 1
         } else {
-            self.toc_selected_index - 1
+            self.preview.toc_selected - 1
         };
     }
 

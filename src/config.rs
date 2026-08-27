@@ -11,7 +11,7 @@ use ratatui::style::{Color, Modifier, Style};
 use serde::Deserialize;
 
 use crate::error::AppError;
-use crate::keymap::{Command, KeySpec, Keymap};
+use crate::keymap::{KeyBindingValue, Keymap};
 use crate::render::{DEFAULT_PRESET, Theme};
 
 const CONFIG_RELATIVE: &str = ".config/bmd/config.toml";
@@ -80,13 +80,6 @@ struct KeymapSection {
     normal: Option<HashMap<String, KeyBindingValue>>,
     preview: Option<HashMap<String, KeyBindingValue>>,
     search: Option<HashMap<String, KeyBindingValue>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum KeyBindingValue {
-    One(String),
-    Many(Vec<String>),
 }
 
 impl Config {
@@ -276,15 +269,6 @@ impl KeymapSection {
     }
 }
 
-impl KeyBindingValue {
-    pub(crate) fn into_specs(self) -> Vec<String> {
-        match self {
-            Self::One(value) => vec![value],
-            Self::Many(values) => values,
-        }
-    }
-}
-
 /// Default config file path: `$XDG_CONFIG_HOME/bmd/config.toml` or `~/.config/bmd/config.toml`.
 pub fn default_config_path() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("XDG_CONFIG_HOME") {
@@ -293,50 +277,10 @@ pub fn default_config_path() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|home| PathBuf::from(home).join(CONFIG_RELATIVE))
 }
 
-/// Map a config command name to the runtime [`Command`].
-pub fn command_from_name(name: &str) -> Option<Command> {
-    match name {
-        "scroll_down" => Some(Command::ScrollDown),
-        "scroll_up" => Some(Command::ScrollUp),
-        "half_page_down" => Some(Command::HalfPageDown),
-        "half_page_up" => Some(Command::HalfPageUp),
-        "jump_to_top" => Some(Command::JumpToTop),
-        "jump_to_bottom" => Some(Command::JumpToBottom),
-        "next_link" => Some(Command::NextLink),
-        "prev_link" => Some(Command::PrevLink),
-        "next_heading" => Some(Command::NextHeading),
-        "prev_heading" => Some(Command::PrevHeading),
-        "open_link" => Some(Command::OpenLink),
-        "nav_back" => Some(Command::NavBack),
-        "start_search_forward" => Some(Command::StartSearchForward),
-        "start_search_backward" => Some(Command::StartSearchBackward),
-        "toggle_help" => Some(Command::ToggleHelp),
-        "close_help" => Some(Command::CloseHelp),
-        "toggle_checklist" => Some(Command::ToggleChecklist),
-        "toggle_outline" => Some(Command::ToggleOutline),
-        "copy_selection" => Some(Command::CopySelection),
-        "yank_prefix" => Some(Command::YankPrefix),
-        "clear_selection" => Some(Command::ClearSelection),
-        "quit" => Some(Command::Quit),
-        "close_preview" => Some(Command::ClosePreview),
-        "preview_zoom_in" => Some(Command::PreviewZoomIn),
-        "preview_zoom_out" => Some(Command::PreviewZoomOut),
-        "preview_zoom_reset" => Some(Command::PreviewZoomReset),
-        "search_confirm" => Some(Command::SearchConfirm),
-        "search_cancel" => Some(Command::SearchCancel),
-        "search_backspace" => Some(Command::SearchBackspace),
-        _ => None,
-    }
-}
-
-/// Parse a list of key binding strings from config.
-pub fn parse_binding_specs(values: Vec<String>) -> Result<Vec<KeySpec>, AppError> {
-    values.into_iter().map(|v| KeySpec::parse(&v)).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keymap::Command;
     use crossterm::event::{KeyCode, KeyModifiers};
 
     #[test]

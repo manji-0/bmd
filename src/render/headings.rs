@@ -1,6 +1,8 @@
 //! Heading position discovery for navigation.
 
-use crate::domain::{Block, Document, Heading, HeadingLevel, Inline};
+use crate::domain::{
+    Block, Document, Heading, HeadingLevel, Inline, normalize_anchor_slug, slugify_heading,
+};
 
 use super::context::RenderContext;
 use super::measure::measure_block_height;
@@ -91,7 +93,7 @@ pub fn find_heading_line_by_anchor(
     if width == 0 || anchor.is_empty() {
         return None;
     }
-    let target = crate::parse::normalize_anchor_slug(anchor);
+    let target = normalize_anchor_slug(anchor);
     let mut line_offset = 0usize;
     for (block_idx, block) in document.blocks.iter().enumerate() {
         let gap = if block_idx == 0 { 0 } else { 1 };
@@ -109,13 +111,8 @@ fn heading_anchor_slug(heading: &Heading) -> String {
     heading
         .anchor
         .as_ref()
-        .map(|anchor| crate::parse::normalize_anchor_slug(anchor))
+        .map(|anchor| normalize_anchor_slug(anchor))
         .unwrap_or_else(|| slugify_heading(&Inline::plain_text(&heading.content)))
-}
-
-/// GitHub-compatible heading slug: lowercase words separated by hyphens.
-pub fn slugify_heading(text: &str) -> String {
-    crate::parse::slugify_heading(text)
 }
 
 #[cfg(test)]

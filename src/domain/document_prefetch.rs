@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use super::document_generation::DocumentGeneration;
-use super::document_link::{file_modified_time, normalize_document_path, resolve_document_path};
+use super::document_link::{DocumentFs, resolve_document_path};
 use super::link::{LinkId, LinkKind};
 use super::markdown::Document;
 
@@ -114,8 +114,9 @@ impl DocumentPrefetchSession {
         document: &Document,
         base_path: Option<&Path>,
         is_ready: impl Fn(&Path) -> bool,
+        fs: &impl DocumentFs,
     ) -> (Self, Vec<DocumentPrefetchSpawnRequest>) {
-        self.invalidate_stale_entries();
+        self.invalidate_stale_entries(fs);
         for &link_id in visible {
             let Some(link) = document.links.get(link_id.0) else {
                 continue;
@@ -126,10 +127,9 @@ impl DocumentPrefetchSession {
             let Ok(path) = resolve_document_path(base_path, link.url.as_str()) else {
                 continue;
             };
-            let path = normalize_document_path(path);
-            if !path.is_file() {
+            let Some(path) = fs.existing_file(path) else {
                 continue;
-            }
+            };
             if is_ready(&path) {
                 continue;
             }
@@ -141,12 +141,13 @@ impl DocumentPrefetchSession {
     pub fn apply_completion(
         mut self,
         completion: DocumentPrefetchCompletion,
+        fs: &impl DocumentFs,
     ) -> (
         Self,
         DocumentPrefetchCompletionApplied,
         Vec<DocumentPrefetchSpawnRequest>,
     ) {
-        let applied = self.record_completion(completion);
+        let applied = self.record_completion(completion, fs);
         let (session, spawns) = if matches!(applied, DocumentPrefetchCompletionApplied::Stale) {
             (self, Vec::new())
         } else {
@@ -155,11 +156,11 @@ impl DocumentPrefetchSession {
         (session, applied, spawns)
     }
 
-    pub fn ready_document(&self, path: &Path) -> Option<&Document> {
-        let key = normalize_document_path(path.to_path_buf());
+    pub fn ready_document(&self, path: &Path, fs: &impl DocumentFs) -> Option<&Document> {
+        let key = fs.identity(path.to_path_buf());
         match self.tasks.get(&key) {
             Some(DocumentPrefetchTask::Ready(prefetched))
-                if prefetched_is_fresh(&key, prefetched) =>
+                if prefetched_is_fresh(fs, &key, prefetched) =>
             {
                 Some(&prefetched.document)
             }
@@ -167,28 +168,28 @@ impl DocumentPrefetchSession {
         }
     }
 
-    pub fn is_fresh_ready(&self, path: &Path) -> bool {
-        let key = normalize_document_path(path.to_path_buf());
+    pub fn is_fresh_ready(&self, path: &Path, fs: &impl DocumentFs) -> bool {
+        let key = fs.identity(path.to_path_buf());
         self.tasks
             .get(&key)
-            .is_some_and(|task| matches!(task, DocumentPrefetchTask::Ready(prefetched) if prefetched_is_fresh(&key, prefetched)))
+            .is_some_and(|task| matches!(task, DocumentPrefetchTask::Ready(prefetched) if prefetched_is_fresh(fs, &key, prefetched)))
     }
 
-    pub fn fresh_ready_paths(&self) -> HashSet<PathBuf> {
+    pub fn fresh_ready_paths(&self, fs: &impl DocumentFs) -> HashSet<PathBuf> {
         self.tasks
             .keys()
-            .filter(|path| self.is_fresh_ready(path))
+            .filter(|path| self.is_fresh_ready(path, fs))
             .cloned()
             .collect()
     }
 
-    pub fn invalidate_stale_entries(&mut self) {
+    pub fn invalidate_stale_entries(&mut self, fs: &impl DocumentFs) {
         let stale = self
             .tasks
             .iter()
             .filter_map(|(path, task)| {
                 if let DocumentPrefetchTask::Ready(prefetched) = task
-                    && !prefetched_is_fresh(path, prefetched)
+                    && !prefetched_is_fresh(fs, path, prefetched)
                 {
                     Some(path.clone())
                 } else {
@@ -290,8 +291,9 @@ impl DocumentPrefetchSession {
     fn record_completion(
         &mut self,
         completion: DocumentPrefetchCompletion,
+        fs: &impl DocumentFs,
     ) -> DocumentPrefetchCompletionApplied {
-        let path = normalize_document_path(completion.path);
+        let path = fs.identity(completion.path);
         let Some(DocumentPrefetchTask::Loading { generation: active }) = self.tasks.get(&path)
         else {
             return DocumentPrefetchCompletionApplied::Stale;
@@ -365,8 +367,9 @@ impl DocumentPrefetchTask {
     }
 }
 
-fn prefetched_is_fresh(path: &Path, prefetched: &PrefetchedDocument) -> bool {
-    file_modified_time(path).is_some_and(|mtime| mtime == prefetched.mtime)
+fn prefetched_is_fresh(fs: &impl DocumentFs, path: &Path, prefetched: &PrefetchedDocument) -> bool {
+    fs.modified_time(path)
+        .is_some_and(|mtime| mtime == prefetched.mtime)
 }
 
 const MAX_CONCURRENT_DOCUMENT_LOADS: usize = 2;
@@ -374,22 +377,55 @@ const MAX_PREFETCHED_DOCUMENTS: usize = 8;
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::collections::HashMap;
+    use std::time::{Duration, SystemTime};
 
     use super::*;
-    use crate::domain::{Link, LinkUrl};
+    use crate::domain::{DocumentFs, Link, LinkUrl};
 
-    fn write_temp_markdown(name: &str, content: &str) -> PathBuf {
-        let path =
-            std::env::temp_dir().join(format!("bmd-prefetch-{name}-{}.md", std::process::id()));
-        fs::write(&path, content).unwrap();
-        path
+    struct FakeFs {
+        files: HashMap<PathBuf, SystemTime>,
     }
 
-    #[test]
-    fn visible_prefetch_queues_resolved_files() {
-        let path = normalize_document_path(write_temp_markdown("visible", "# Child\n"));
-        let document = Document {
+    impl FakeFs {
+        fn with_file(path: PathBuf, mtime: SystemTime) -> Self {
+            let mut files = HashMap::new();
+            files.insert(path, mtime);
+            Self { files }
+        }
+    }
+
+    impl DocumentFs for FakeFs {
+        fn identity(&self, path: PathBuf) -> PathBuf {
+            path
+        }
+
+        fn modified_time(&self, path: &Path) -> Option<SystemTime> {
+            self.files.get(path).copied()
+        }
+
+        fn is_file(&self, path: &Path) -> bool {
+            self.files.contains_key(path)
+        }
+    }
+
+    fn epoch(secs: u64) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(secs)
+    }
+
+    fn empty_document() -> Document {
+        Document {
+            blocks: vec![],
+            links: vec![],
+            mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
+        }
+    }
+
+    fn document_with_link(path: &Path) -> Document {
+        Document {
             blocks: vec![],
             links: vec![Link {
                 url: LinkUrl::new(path.display().to_string()).unwrap(),
@@ -400,40 +436,36 @@ mod tests {
             footnotes: vec![],
             footnote_order: vec![],
             front_matter: None,
-        };
+        }
+    }
+
+    fn prefetched(document: Document, mtime: SystemTime) -> PrefetchedDocument {
+        PrefetchedDocument { document, mtime }
+    }
+
+    #[test]
+    fn visible_prefetch_queues_resolved_files() {
+        let path = PathBuf::from("/docs/child.md");
+        let fs = FakeFs::with_file(path.clone(), epoch(1));
+        let document = document_with_link(&path);
         let session = DocumentPrefetchSession::new();
         let (session, spawns) =
-            session.schedule_visible_prefetch(&[LinkId(0)], &document, None, |_| false);
+            session.schedule_visible_prefetch(&[LinkId(0)], &document, None, |_| false, &fs);
         assert_eq!(spawns.len(), 1);
         assert!(matches!(
             session.tasks[&path],
             DocumentPrefetchTask::Loading { .. }
         ));
-        let _ = fs::remove_file(path);
-    }
-
-    fn prefetched(document: Document, path: &Path) -> PrefetchedDocument {
-        PrefetchedDocument {
-            document,
-            mtime: file_modified_time(path).expect("file mtime"),
-        }
     }
 
     #[test]
     fn ready_document_survives_after_scroll_out() {
-        let path = normalize_document_path(write_temp_markdown("ready", "# Child\n"));
-        let document = Document {
-            blocks: vec![],
-            links: vec![],
-            mermaid_diagrams: vec![],
-            footnotes: vec![],
-            footnote_order: vec![],
-            front_matter: None,
-        };
+        let path = PathBuf::from("/docs/child.md");
+        let fs = FakeFs::with_file(path.clone(), epoch(1));
+        let document = empty_document();
         let mut session = DocumentPrefetchSession::new();
-        session.store_ready(path.clone(), prefetched(document.clone(), &path));
-        assert_eq!(session.ready_document(&path), Some(&document));
-        let _ = fs::remove_file(path);
+        session.store_ready(path.clone(), prefetched(document.clone(), epoch(1)));
+        assert_eq!(session.ready_document(&path, &fs), Some(&document));
     }
 
     #[test]
@@ -441,45 +473,18 @@ mod tests {
         let mut session = DocumentPrefetchSession::new();
         let mut paths = Vec::new();
         for index in 0..=MAX_PREFETCHED_DOCUMENTS {
-            let path = normalize_document_path(write_temp_markdown(
-                &format!("evict-{index}"),
-                "# Child\n",
-            ));
+            let path = PathBuf::from(format!("/docs/evict-{index}.md"));
             paths.push(path.clone());
-            session.store_ready(
-                path,
-                prefetched(
-                    Document {
-                        blocks: vec![],
-                        links: vec![],
-                        mermaid_diagrams: vec![],
-                        footnotes: vec![],
-                        footnote_order: vec![],
-                        front_matter: None,
-                    },
-                    &paths[index],
-                ),
-            );
+            session.store_ready(path, prefetched(empty_document(), epoch(1)));
         }
         assert_eq!(session.count_ready(), MAX_PREFETCHED_DOCUMENTS);
-        let oldest = paths[0].clone();
-        assert!(!session.tasks.contains_key(&oldest));
-        for path in paths {
-            let _ = fs::remove_file(path);
-        }
+        assert!(!session.tasks.contains_key(&paths[0]));
     }
 
     #[test]
     fn completion_uses_typed_applied_variant() {
-        let path = normalize_document_path(write_temp_markdown("done", "# Child\n"));
-        let document = Document {
-            blocks: vec![],
-            links: vec![],
-            mermaid_diagrams: vec![],
-            footnotes: vec![],
-            footnote_order: vec![],
-            front_matter: None,
-        };
+        let path = PathBuf::from("/docs/done.md");
+        let fs = FakeFs::with_file(path.clone(), epoch(1));
         let mut session = DocumentPrefetchSession::new();
         session.tasks.insert(
             path.clone(),
@@ -487,11 +492,14 @@ mod tests {
                 generation: DocumentGeneration::INITIAL,
             },
         );
-        let (session, applied, _) = session.apply_completion(DocumentPrefetchCompletion {
-            path: path.clone(),
-            generation: DocumentGeneration::INITIAL,
-            outcome: Ok(prefetched(document, &path)),
-        });
+        let (session, applied, _) = session.apply_completion(
+            DocumentPrefetchCompletion {
+                path: path.clone(),
+                generation: DocumentGeneration::INITIAL,
+                outcome: Ok(prefetched(empty_document(), epoch(1))),
+            },
+            &fs,
+        );
         assert_eq!(
             applied,
             DocumentPrefetchCompletionApplied::Ready { path: path.clone() }
@@ -500,41 +508,24 @@ mod tests {
             session.tasks[&path],
             DocumentPrefetchTask::Ready(_)
         ));
-        let _ = fs::remove_file(path);
     }
 
     #[test]
     fn stale_ready_entries_are_invalidated_on_reschedule() {
-        let path = normalize_document_path(write_temp_markdown("stale", "# v1\n"));
-        let document = Document {
-            blocks: vec![],
-            links: vec![],
-            mermaid_diagrams: vec![],
-            footnotes: vec![],
-            footnote_order: vec![],
-            front_matter: None,
-        };
+        let path = PathBuf::from("/docs/stale.md");
+        let mut fs = FakeFs::with_file(path.clone(), epoch(1));
         let mut session = DocumentPrefetchSession::new();
-        session.store_ready(path.clone(), prefetched(document, &path));
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        fs::write(&path, "# v2\n").unwrap();
-        let empty = Document {
-            blocks: vec![],
-            links: vec![],
-            mermaid_diagrams: vec![],
-            footnotes: vec![],
-            footnote_order: vec![],
-            front_matter: None,
-        };
-        let (session, spawns) = session.schedule_visible_prefetch(&[], &empty, None, |_| false);
-        assert!(session.ready_document(&path).is_none());
+        session.store_ready(path.clone(), prefetched(empty_document(), epoch(1)));
+        fs.files.insert(path.clone(), epoch(2));
+        let (session, spawns) =
+            session.schedule_visible_prefetch(&[], &empty_document(), None, |_| false, &fs);
+        assert!(session.ready_document(&path, &fs).is_none());
         assert_eq!(spawns.len(), 0);
-        let _ = fs::remove_file(path);
     }
 
     #[test]
     fn suspend_and_resume_requeues_loading_tasks() {
-        let path = normalize_document_path(PathBuf::from("/tmp/resume.md"));
+        let path = PathBuf::from("/tmp/resume.md");
         let mut session = DocumentPrefetchSession::new();
         session.tasks.insert(
             path.clone(),

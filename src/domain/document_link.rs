@@ -3,6 +3,25 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+/// Filesystem port for document path identity and freshness.
+///
+/// Domain code must not call `std::fs` directly; adapters implement this trait.
+pub trait DocumentFs {
+    /// Canonical cache key. Falls back to `path` when canonicalization fails.
+    fn identity(&self, path: PathBuf) -> PathBuf;
+
+    /// Last modification time, when the file exists and mtime is readable.
+    fn modified_time(&self, path: &Path) -> Option<SystemTime>;
+
+    fn is_file(&self, path: &Path) -> bool;
+
+    /// `identity` when the path is a readable file.
+    fn existing_file(&self, path: PathBuf) -> Option<PathBuf> {
+        let path = self.identity(path);
+        self.is_file(&path).then_some(path)
+    }
+}
+
 /// Split a link destination into path and optional `#fragment`.
 pub fn document_link_path_part(dest: &str) -> (&str, Option<&str>) {
     match dest.split_once('#') {
@@ -17,20 +36,6 @@ pub fn is_remote_link_dest(dest: &str) -> bool {
     let path_part = dest.split('#').next().unwrap_or(dest);
     let lower = path_part.to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
-}
-
-/// Last modification time for a local file, when available.
-pub fn file_modified_time(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|metadata| metadata.modified().ok())
-}
-
-/// Canonicalize a resolved path for cache keys and prefetch lookup.
-///
-/// Falls back to `path` when canonicalization fails (e.g. the file was removed).
-pub fn normalize_document_path(path: PathBuf) -> PathBuf {
-    std::fs::canonicalize(&path).unwrap_or(path)
 }
 
 /// Resolve a relative or absolute markdown file path against the current file.
@@ -110,17 +115,5 @@ mod tests {
         let base = PathBuf::from("/docs/readme.md");
         let resolved = resolve_document_path(Some(&base), "guide/other.md#section").unwrap();
         assert_eq!(resolved, PathBuf::from("/docs/guide/other.md"));
-    }
-
-    #[test]
-    fn normalize_uses_canonical_path_when_available() {
-        let dir = std::env::temp_dir().join(format!("bmd-norm-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("note.md");
-        std::fs::write(&file, "# note\n").unwrap();
-        let normalized = normalize_document_path(file.clone());
-        assert!(normalized.is_absolute());
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

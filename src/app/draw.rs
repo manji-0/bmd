@@ -30,7 +30,7 @@ impl App {
     {
         terminal.draw(|f| {
             let full_area = f.area();
-            let areas = split_layout(full_area, self.view_state.mode(), self.outline_visible);
+            let areas = split_layout(full_area, self.view_state.mode(), self.outline.visible);
 
             if areas.outline.width > 0 {
                 self.draw_outline_sidebar(f, areas.outline);
@@ -42,7 +42,7 @@ impl App {
                 &self.rendered,
                 &self.document.links,
                 &self.view_state,
-                self.show_terminal_images,
+                self.scroll.show_images,
                 &self.checklist_state,
             );
             let width = self.document_width();
@@ -50,7 +50,7 @@ impl App {
                 .ensure(&self.document, &ctx, &self.view_state, width);
             let widget = CachedMarkdownView {
                 cache: &self.document_cache,
-                scroll: self.scroll_visual,
+                scroll: self.scroll.visual,
             };
             f.render_widget(widget, areas.main);
 
@@ -58,7 +58,7 @@ impl App {
                 paint_selection_overlay(
                     f.buffer_mut(),
                     areas.main,
-                    self.scroll_visual,
+                    self.scroll.visual,
                     selection,
                     self.theme.text_selection,
                 );
@@ -85,8 +85,8 @@ impl App {
                 max_scroll: self.max_scroll(),
                 doc_stack_depth: self.doc_stack.len_frames(),
                 status_message: self.status_message.as_deref(),
-                outline_visible: self.outline_visible,
-                outline_focused: self.outline_focused,
+                outline_visible: self.outline.visible,
+                outline_focused: self.outline.focused,
                 pending_prompt: self.pending_input.prompt(),
             });
             draw_status_bar(f, areas.status, status);
@@ -163,11 +163,13 @@ impl App {
                 area,
             );
 
-            if (self.preview_zoom - 1.0).abs() < f32::EPSILON {
-                self.preview_render_cache
+            if (self.preview.zoom - 1.0).abs() < f32::EPSILON {
+                self.preview
+                    .cache
                     .ensure(link_id, terminal, &title, protocol);
                 if self
-                    .preview_render_cache
+                    .preview
+                    .cache
                     .blit(link_id, terminal, area, frame.buffer_mut())
                 {
                     return;
@@ -182,7 +184,7 @@ impl App {
                 protocol,
                 inner,
                 frame.buffer_mut(),
-                self.preview_zoom,
+                self.preview.zoom,
             );
             return;
         }
@@ -219,7 +221,7 @@ impl App {
             return;
         }
 
-        let selected = self.toc_selected_index;
+        let selected = self.preview.toc_selected;
         let normal_style = self.theme.text;
         let selected_style = self.theme.link_selected;
         let prefix_style = Style::default().add_modifier(Modifier::DIM);

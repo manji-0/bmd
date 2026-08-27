@@ -6,6 +6,7 @@ use acdc_parser::{
     ListItemCheckedStatus, Options, Source, StemContent, Table, TableColumn, TocEntry,
 };
 
+use crate::domain::{anchor_href, normalize_anchor_slug, slugify_heading};
 use crate::parse::dto::{
     ParsedAlignment, ParsedBlock, ParsedCodeBlock, ParsedDefinitionItem, ParsedDefinitionList,
     ParsedDocument, ParsedDocumentParts, ParsedFootnoteDefinition, ParsedFrontMatter,
@@ -14,7 +15,6 @@ use crate::parse::dto::{
 };
 use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
-use crate::parse::slug::{anchor_href, normalize_anchor_slug, slugify_heading};
 
 struct AsciiDocState<'a> {
     parts: ParsedDocumentParts,

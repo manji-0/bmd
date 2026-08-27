@@ -100,8 +100,8 @@ impl App {
             RenderedDocument::new(&self.document, &self.picker, terminal_size, Some(&path))?;
         self.bump_document_revision();
         self.document_cache.invalidate();
-        self.preview_render_cache.clear();
-        self.pending_preview = None;
+        self.preview.cache.clear();
+        self.preview.pending = None;
         self.checklist_state =
             crate::domain::ChecklistState::new(crate::domain::ChecklistStyle::from_env());
         self.help_visible = false;
@@ -113,11 +113,11 @@ impl App {
             .clone()
             .reset_for_reload(scroll_offset, max_scroll);
         let offset = self.view_state.scroll().offset();
-        self.scroll_visual = offset as f32;
-        self.tracked_scroll_position = self.scroll_visual;
-        self.scroll_key_down_at = None;
-        self.images_reenable_at = None;
-        self.show_terminal_images = true;
+        self.scroll.visual = offset as f32;
+        self.scroll.tracked_position = self.scroll.visual;
+        self.scroll.key_down_at = None;
+        self.scroll.images_reenable_at = None;
+        self.scroll.show_images = true;
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
         self.document_prefetch.begin_document();

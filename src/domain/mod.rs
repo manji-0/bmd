@@ -25,6 +25,7 @@ mod nav_target;
 mod navigation;
 mod navigation_limits;
 mod preview_load;
+mod slug;
 mod text_selection;
 mod view;
 
@@ -35,8 +36,8 @@ pub use callout::{Callout, CalloutKind};
 pub use checklist::{ChecklistId, ChecklistState, ChecklistStyle};
 pub use document_generation::DocumentGeneration;
 pub use document_link::{
-    DocumentPathError, document_link_path_part, file_modified_time, is_remote_link_dest,
-    normalize_document_path, resolve_document_path,
+    DocumentFs, DocumentPathError, document_link_path_part, is_remote_link_dest,
+    resolve_document_path,
 };
 pub use document_prefetch::{
     DocumentPrefetchCompletion, DocumentPrefetchCompletionApplied, DocumentPrefetchError,
@@ -75,6 +76,7 @@ pub use navigation_limits::{
 pub use preview_load::{
     PreviewLoadCompletionApplied, PreviewLoadPhase, PreviewLoadStatus, PreviewLoadTask,
 };
+pub use slug::{anchor_href, normalize_anchor_slug, slugify_heading};
 pub use text_selection::{TextPoint, TextSelection};
 pub use view::{
     Scroll, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, SearchTransitionError,

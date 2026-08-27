@@ -27,6 +27,7 @@ mod widget;
 #[cfg(test)]
 mod tests;
 
+pub use crate::domain::slugify_heading;
 pub use cache::{CachedMarkdownView, DocumentRenderCache};
 pub use context::RenderContext;
 pub use footnotes::{
@@ -34,7 +35,7 @@ pub use footnotes::{
 };
 pub use headings::{
     HeadingOffsetCache, collect_heading_offsets, find_heading_line_by_anchor, next_heading_line,
-    prev_heading_line, slugify_heading,
+    prev_heading_line,
 };
 pub(crate) use image::render_markdown_image_from_src;
 pub(crate) use image::{

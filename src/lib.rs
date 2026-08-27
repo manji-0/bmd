@@ -4,6 +4,7 @@ pub mod clipboard;
 pub mod config;
 pub mod domain;
 pub mod error;
+pub(crate) mod fs;
 pub mod github;
 pub mod keymap;
 pub mod parse;

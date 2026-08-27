@@ -84,7 +84,7 @@ impl App {
                     return self.handle_line_scroll_key(key);
                 }
                 if key.kind == KeyEventKind::Press {
-                    self.scroll_key_down_at = None;
+                    self.scroll.key_down_at = None;
                 }
             }
         }
@@ -117,28 +117,28 @@ impl App {
         let now = Instant::now();
         match key.kind {
             KeyEventKind::Press => {
-                self.scroll_key_down_at = Some(now);
+                self.scroll.key_down_at = Some(now);
                 self.handle_command(self.keymap.line_scroll_command(key))?;
                 Ok(true)
             }
             KeyEventKind::Repeat => {
-                let Some(pressed_at) = self.scroll_key_down_at else {
-                    self.scroll_key_down_at = Some(now);
+                let Some(pressed_at) = self.scroll.key_down_at else {
+                    self.scroll.key_down_at = Some(now);
                     self.handle_command(self.keymap.line_scroll_command(key))?;
                     return Ok(true);
                 };
                 if now < pressed_at + SCROLL_REPEAT_DELAY {
                     return Ok(false);
                 }
-                if now < self.last_scroll_repeat + SCROLL_REPEAT_INTERVAL {
+                if now < self.scroll.last_repeat + SCROLL_REPEAT_INTERVAL {
                     return Ok(false);
                 }
                 self.handle_command(self.keymap.line_scroll_command(key))?;
-                self.last_scroll_repeat = now;
+                self.scroll.last_repeat = now;
                 Ok(true)
             }
             KeyEventKind::Release => {
-                self.scroll_key_down_at = None;
+                self.scroll.key_down_at = None;
                 Ok(false)
             }
         }
@@ -273,7 +273,7 @@ impl App {
             Command::NavBack => self.nav_back(),
             Command::NavReset => {
                 self.clear_text_selection();
-                if self.outline_focused {
+                if self.outline.focused {
                     self.unfocus_outline();
                 } else {
                     self.nav_reset();

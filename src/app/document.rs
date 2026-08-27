@@ -4,17 +4,16 @@ use std::path::PathBuf;
 
 use crate::domain::{
     AnchorIdle, ChecklistState, ChecklistStyle, DocumentStackFull, document_link_path_part,
-    document_stack_limit_message, normalize_document_path, plan_document_back, plan_document_reset,
-    resolve_document_path,
+    document_stack_limit_message, plan_document_back, plan_document_reset, resolve_document_path,
 };
 use crate::error::AppError;
+use crate::fs::normalize_document_path;
 use crate::parse::parse_with_path;
 use crate::render::{DocumentRenderCache, RenderedDocument};
 
 use super::App;
 use super::doc_stack::DocumentFrame;
 use super::reload::FileWatch;
-use super::scroll::SCROLL_ANIM_SPEED;
 
 impl App {
     pub(crate) fn open_document_link(&mut self, dest: &str) {
@@ -170,24 +169,19 @@ impl App {
         self.rendered = rendered;
         self.bump_document_revision();
         self.document_cache = DocumentRenderCache::default();
-        self.preview_render_cache.clear();
-        self.pending_preview = None;
+        self.preview.cache.clear();
+        self.preview.pending = None;
         self.view_state = crate::domain::ViewState::new(terminal_size);
         self.nav_stack.clear();
         self.checklist_state = ChecklistState::new(ChecklistStyle::from_env());
         self.base_path = None;
         self.source_label = Some(blob.path.clone());
         self.file_watch = None;
-        self.scroll_visual = 0.0;
-        self.scroll_anim_speed = SCROLL_ANIM_SPEED;
-        self.tracked_scroll_position = 0.0;
-        self.show_terminal_images = true;
-        self.images_reenable_at = None;
-        self.scroll_key_down_at = None;
+        self.scroll.reset_to_top();
         self.help_visible = false;
         self.clear_marks();
         self.pending_input = super::pending::PendingInput::None;
-        self.outline_focused = false;
+        self.outline.focused = false;
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
         self.document_prefetch.begin_document();
@@ -204,13 +198,13 @@ impl App {
             image_session: self.image_render.suspend(),
             document_prefetch_session: self.document_prefetch.suspend(),
             document_cache: self.document_cache.clone(),
-            preview_render_cache: self.preview_render_cache.clone(),
-            pending_preview: self.pending_preview,
+            preview_render_cache: self.preview.cache.clone(),
+            pending_preview: self.preview.pending,
             view_state: self.view_state.clone(),
-            scroll_visual: self.scroll_visual,
-            scroll_anim_speed: self.scroll_anim_speed,
-            tracked_scroll_position: self.tracked_scroll_position,
-            show_terminal_images: self.show_terminal_images,
+            scroll_visual: self.scroll.visual,
+            scroll_anim_speed: self.scroll.anim_speed,
+            tracked_scroll_position: self.scroll.tracked_position,
+            show_terminal_images: self.scroll.show_images,
             checklist_state: self.checklist_state.clone(),
             source_label: self.source_label.clone(),
             base_path: self.base_path.clone(),
@@ -235,8 +229,8 @@ impl App {
         self.rendered = rendered;
         self.bump_document_revision();
         self.document_cache = DocumentRenderCache::default();
-        self.preview_render_cache.clear();
-        self.pending_preview = None;
+        self.preview.cache.clear();
+        self.preview.pending = None;
         self.view_state = crate::domain::ViewState::new(terminal_size);
         self.nav_stack.clear();
         self.checklist_state = ChecklistState::new(ChecklistStyle::from_env());
@@ -245,16 +239,11 @@ impl App {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned());
         self.file_watch = FileWatch::new(path).ok();
-        self.scroll_visual = 0.0;
-        self.scroll_anim_speed = SCROLL_ANIM_SPEED;
-        self.tracked_scroll_position = 0.0;
-        self.show_terminal_images = true;
-        self.images_reenable_at = None;
-        self.scroll_key_down_at = None;
+        self.scroll.reset_to_top();
         self.help_visible = false;
         self.clear_marks();
         self.pending_input = super::pending::PendingInput::None;
-        self.outline_focused = false;
+        self.outline.focused = false;
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
         self.document_prefetch.begin_document();
@@ -279,12 +268,12 @@ impl App {
         self.bump_document_revision();
         self.view_state = frame.view_state;
         self.document_cache = frame.document_cache;
-        self.preview_render_cache = frame.preview_render_cache;
-        self.pending_preview = frame.pending_preview;
-        self.scroll_visual = frame.scroll_visual;
-        self.scroll_anim_speed = frame.scroll_anim_speed;
-        self.tracked_scroll_position = frame.tracked_scroll_position;
-        self.show_terminal_images = frame.show_terminal_images;
+        self.preview.cache = frame.preview_render_cache;
+        self.preview.pending = frame.pending_preview;
+        self.scroll.visual = frame.scroll_visual;
+        self.scroll.anim_speed = frame.scroll_anim_speed;
+        self.scroll.tracked_position = frame.tracked_scroll_position;
+        self.scroll.show_images = frame.show_terminal_images;
         self.checklist_state = frame.checklist_state;
         self.source_label = frame.source_label;
         self.base_path = frame.base_path;
@@ -292,9 +281,9 @@ impl App {
         self.nav_stack = frame.nav_stack;
         self.marks = frame.marks;
         self.pending_input = super::pending::PendingInput::None;
-        self.outline_focused = false;
-        self.images_reenable_at = None;
-        self.scroll_key_down_at = None;
+        self.outline.focused = false;
+        self.scroll.images_reenable_at = None;
+        self.scroll.key_down_at = None;
         self.help_visible = false;
         let terminal_size = self.view_state.terminal_size();
         self.mermaid_render.resume(

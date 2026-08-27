@@ -9,7 +9,7 @@
 2. vim キーバインドでの操作。
 3. マークアップリッチなテキスト表示 + ASCII を使わないネイティブな mermaid レンダリング。
 4. 画面サイズによってカラムが適切に wrap されるテーブル。
-5. リンク上で特定のキーを押すことで macOS `open` によるブラウザ表示。
+5. リンク上で特定のキーを押すことで macOS `open` / Linux `xdg-open` によるブラウザ表示。
 
 ## 技術選定
 
@@ -17,14 +17,21 @@
 |---|---|---|
 | TUI フレームワーク | `ratatui` + `crossterm` | 事実上の標準。immediate-mode でイベント駆動。 |
 | Markdown パース | `pulldown-cmark` | CommonMark + テーブル / 脚注 / タスクリスト対応。 |
+| reStructuredText パース | `parserst` | RST → 共有 DTO。 |
+| AsciiDoc パース | `acdc-parser` | AsciiDoc → 共有 DTO。 |
 | シンタックスハイライト | `syntect` | コードブロックをリッチに着色。 |
 | mermaid ネイティブレンダリング | `merman` (`raster` feature) | ブラウザ / JS エンジン不要の Rust ネイティブ実装。SVG → PNG 出力。 |
 | ターミナル画像表示 | `ratatui-image` | Kitty / iTerm2 / Sixel / ハーフブロックへの自動フォールバック。 |
 | 画像ロード | `image` | PNG バイト列を `DynamicImage` に変換。 |
 | エラー合成 | `thiserror` | ドメイン・ユースケース・UI 層の型付きエラー。 |
-| テキスト幅 / wrap | `unicode-width`, `textwrap` | CJK 対応の幅計算と単語単位の折り返し。 |
+| テキスト幅 | `unicode-width`, `unicode-segmentation` | CJK 対応の幅計算。 |
+| 設定 | `toml` + `serde` | `~/.config/bmd/config.toml`。 |
+| クリップボード | `arboard` | yank。 |
+| GitHub fetch | `ureq` | blob / PR を HTTP で取得。 |
 
 ### mermaid 表示戦略
+
+<!-- dagayn: implemented-by src/render/mermaid.rs::RenderedDocument -->
 
 ` ```mermaid ` コードブロックを検出 → `merman::render::HeadlessRenderer::render_png_sync` で PNG バイト列を生成 → `image::load_from_memory` → `ratatui_image::Picker::new_protocol` → `ratatui_image::Image` ウィジェットとして描画。
 
@@ -32,83 +39,69 @@
 
 ## モジュール構成
 
+<!-- constrained-by ./src/lib.rs -->
+<!-- dagayn: implemented-by src/lib.rs -->
+
+依存は内側へ向ける。`domain` は `app` / `parse` / `render` / `github` / `config` / `keymap` を import しない。
+
 ```text
 src/
-├── main.rs        # エントリポイント：引数読み込み、初期化、TUI ループ
-├── app.rs         # App 状態とイベントハンドラ
-├── domain.rs      # ドメインモデル・値オブジェクト・状態遷移
-├── error.rs       # 層別エラー型
-├── parse.rs       # pulldown-cmark → ドメインモデル変換（mermaid 分離含む）
-├── render.rs      # ドメインモデル → ratatui Line/Widget 描画
-├── keymap.rs      # vim キー → Command 変換
-└── browser.rs     # macOS `open` アダプタ
+├── main.rs          # CLI: 引数、stdin、GitHub URL、TUI 初期化
+├── lib.rs           # クレート境界
+├── domain/          # 値オブジェクト、Document、状態遷移、slug
+├── parse/           # Markdown / RST / AsciiDoc → DTO → domain
+├── render/          # domain → ratatui widgets（parse は import しない）
+├── app/             # イベントループ、合成ルート
+├── fs.rs            # DocumentFs の std::fs アダプタ
+├── keymap.rs        # Command とキー解決（config を import しない）
+├── config.rs        # TOML → Theme + Keymap
+├── github/          # url（純粋）/ fetch（HTTP）/ listing / rewrite
+├── browser.rs       # open / xdg-open
+├── clipboard.rs     # yank アダプタ
+└── error.rs         # AppError
 ```
+
+## 層ルール
+
+<!-- derived-from #モジュール構成 -->
+
+| から | 向いてよい先 |
+|---|---|
+| `parse` | `domain` |
+| `render` | `domain` |
+| `keymap` | `domain`, `error` |
+| `config` | `keymap`, `render`, `error` |
+| `github/url` | なし（純粋） |
+| `github` その他 | `domain`, `parse` |
+| `fs` | `domain` |
+| `app` | `domain`, `parse`, `render`, `keymap`, `config`, `github`, `browser`, `clipboard`, `fs` |
+| `main` | `app`, `parse`, `github`, `error` |
+
+禁止: `domain` → 外側、`keymap` → `config`、`render` → `parse`。見出し slug は `domain::slugify_heading` が正本。
 
 ## ドメインモデル
 
-### 主要型
+<!-- dagayn: implemented-by src/domain/markdown.rs::Document -->
+<!-- dagayn: implemented-by src/domain/view.rs::ViewState -->
 
-```rust
-pub struct Document {
-    pub blocks: Vec<Block>,
-    pub links: Vec<Link>,
-}
-
-pub enum Block {
-    Heading(Heading),
-    Paragraph(Vec<Inline>),
-    CodeBlock(CodeBlock),
-    BlockQuote(Vec<Block>),
-    List(List),
-    Table(Table),
-    Mermaid(MermaidDiagram),
-    Rule,
-}
-
-pub enum Inline {
-    Text(String),
-    Strong(Vec<Inline>),
-    Emphasis(Vec<Inline>),
-    Code(String),
-    Link(LinkId),
-    HardBreak,
-    SoftBreak,
-}
-
-pub struct Link {
-    pub url: LinkUrl,
-    pub title: Option<String>,
-}
-```
+`Document` のフィールドは `pub(crate)`。構築は `Document::new` のみ（dangling link / mermaid / footnote を検証）。リンクは `Inline::Link(LinkId)` でフラットな `links` を参照する。
 
 ### 値オブジェクト・状態
 
 - `LinkUrl`: 空文字列を許さない newtype。
 - `TerminalSize`: width/height が 0 でないことを不変条件に持つ。
 - `Scroll`: スクロール offset を newtype で包む。
-- `ViewState`: `Scroll` + 選択中リンク + `TerminalSize`。
-
-### 状態遷移
-
-`ViewState` は所有権を消費するメソッドで遷移する（Kamae 推奨）。
-
-- `scroll_down(self, n, max_scroll) -> Self`
-- `scroll_up(self, n) -> Self`
-- `half_page_down(self, max_scroll) -> Self`
-- `half_page_up(self) -> Self`
-- `jump_to_top(self) -> Self`
-- `jump_to_bottom(self, max_scroll) -> Self`
-- `resize(self, TerminalSize) -> Self`
-- `select_next_link(self, &Document) -> Self`
-- `select_prev_link(self, &Document) -> Self`
+- `ViewState`: `Scroll` + 選択中リンク + `TerminalSize`。遷移は `self` を消費する。
+- `NavStack` / `LinkJumpStack`: リンクジャンプ時に prior を固定。ライブな現在位置はスタックの外。
+- `MermaidRenderSession` / `ImageRenderSession`: プレビューを `Idle → Queued → Rendering → Ready | Failed` で追跡。
 
 ## レンダリングパイプライン
 
-1. `parse.rs` で Markdown を `Document` に変換。同時にリンクをフラットな `links` ベクタに集約し、`Inline::Link(LinkId)` で参照。
-2. `render.rs` は `Document` + `ViewState` を受け取り、スクロールに応じて可視ブロックを `Vec<Line>` / ウィジェットに変換。
-3. テーブルは独自のカラム幅計算 + `textwrap` による折り返しを行うカスタムウィジェット。
-4. mermaid ブロックは初回描画時（または初期化時）に `RenderedDocument` 内の `HashMap<block_index, Protocol>` へキャッシュ。
-5. 選択中リンクは青色 + 下線 + 反転ハイライトで表示。
+1. `parse` が markup を `ParsedDocument` に落とし、`into_domain` で `Document` にする。
+2. `render` は `Document` + `ViewState` を受け取り、スクロールに応じて可視ブロックを描画する。
+3. テーブルは独自のカラム幅計算で折り返す。
+4. mermaid / 画像は `RenderedDocument` にキャッシュし、スクロール中は描画を止める。
+5. 選択中リンクは反転ハイライト。
 
 ## テーブル折り返しアルゴリズム
 
@@ -119,39 +112,18 @@ pub struct Link {
 
 ## vim キーバインド
 
-| キー | 動作 |
-|---|---|
-| `j` / `↓` | 1 行下へ |
-| `k` / `↑` | 1 行上へ |
-| `d` / `Ctrl-d` | 半ページ下へ |
-| `u` / `Ctrl-u` | 半ページ上へ |
-| `g` `g` | 先頭へ |
-| `G` | 末尾へ |
-| `Tab` / `n` | 次のリンクへ |
-| `Shift-Tab` / `N` | 前のリンクへ |
-| `o` / `Enter` | 選択中リンクを `open` で開く |
-| `q` / `Ctrl-c` | 終了 |
+<!-- constrained-by ./README.md#keybindings -->
+
+キーの正本は [README の Keybindings](./README.md#keybindings)。`keymap` は入力を `Command` に変換する。TOML オーバーライドのパースも `keymap` が所有し、`config` はファイル読み込みだけ行う。
 
 ## エラー戦略
 
-- ドメイン層は `Result<T, DomainError>` を返す。
+- ドメイン層は型付きの小さな error enum を返す。
 - ユースケース / UI 層はインフラエラーを `#[from]` で合成した `AppError` に変換。
 - `unwrap()` / `expect()` はドメイン・ユースケースコードでは禁止。起動時のターミナル初期化失敗のみ許容。
 
-## macOS 固有の考慮
+## 残作業
 
-- ブラウザ起動は `std::process::Command::new("open").arg(url)`。
-- `ratatui-image` の `Picker::from_query_stdio()` はターミナル画像プロトコルを検出。検出失敗時はハーフブロックにフォールバック。
-- iTerm2 / Kitty / WezTerm / Ghostty ではネイティブ画像プロトコルが使用される。
+<!-- derived-from #層ルール -->
 
-## 実装フェーズ
-
-1. `Cargo.toml` 依存追加とビルド確認。
-2. `domain.rs` + `error.rs` 実装。
-3. `parse.rs`: pulldown-cmark → `Document`。
-4. `render.rs`: ブロック → `Line` + テーブルカスタム描画。
-5. `browser.rs`: `open` ラッパー。
-6. `keymap.rs`: 入力 → `Command`。
-7. `app.rs`: 状態 + イベントループ + mermaid 画像キャッシュ。
-8. `main.rs`: 初期化と実行。
-9. `cargo build / clippy` 確認。
+合意した層整理は完了。`Document` と `RenderedDocument` は split-borrow のため `App` 上に残している。

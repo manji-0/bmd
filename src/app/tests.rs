@@ -3,8 +3,9 @@ use crate::config::Config;
 use crate::domain::{
     ANCHOR_STACK_MAX_FRAMES, AnchorIdle, Block, DOCUMENT_STACK_MAX_LAYERS, Document, Heading,
     HeadingLevel, Inline, Link, LinkKind, LinkUrl, SearchDirection, TerminalSize,
-    anchor_stack_limit_message, document_stack_limit_message, normalize_document_path,
+    anchor_stack_limit_message, document_stack_limit_message,
 };
+use crate::fs::normalize_document_path;
 use crate::keymap::{Command, Keymap};
 use crate::parse::parse;
 use crate::render::{CachedMarkdownView, DocumentRenderCache, RenderContext};
@@ -85,7 +86,7 @@ fn preview_opens_and_closes() {
     app.next_link();
     app.open_current_link();
     let deadline = Instant::now() + Duration::from_secs(5);
-    while app.pending_preview.is_some() && Instant::now() < deadline {
+    while app.preview.pending.is_some() && Instant::now() < deadline {
         app.poll_preview_renders();
         std::thread::sleep(Duration::from_millis(5));
     }
@@ -114,7 +115,7 @@ fn renders_document_to_test_backend() {
                 &app.rendered,
                 &app.document.links,
                 &app.view_state,
-                app.show_terminal_images,
+                app.scroll.show_images,
                 &app.checklist_state,
             );
             let width = app.view_state.terminal_size().width();
@@ -142,7 +143,7 @@ fn half_page_scroll_uses_faster_animation() {
 
     app.half_page_down();
     assert_eq!(
-        app.scroll_anim_speed,
+        app.scroll.anim_speed,
         super::scroll::HALF_PAGE_SCROLL_ANIM_SPEED
     );
 }
@@ -158,16 +159,16 @@ fn jump_commands_snap_visual_scroll() {
 
     app.scroll_down(50);
     assert_ne!(app.view_state.scroll().offset(), 0);
-    assert_ne!(app.scroll_visual.round() as usize, 0);
+    assert_ne!(app.scroll.visual.round() as usize, 0);
 
     app.jump_to_top();
     assert_eq!(app.view_state.scroll().offset(), 0);
-    assert_eq!(app.scroll_visual.round() as usize, 0);
+    assert_eq!(app.scroll.visual.round() as usize, 0);
 
     app.jump_to_bottom();
     let max = app.max_scroll();
     assert_eq!(app.view_state.scroll().offset(), max);
-    assert_eq!(app.scroll_visual.round() as usize, max);
+    assert_eq!(app.scroll.visual.round() as usize, max);
 }
 
 #[test]
@@ -182,19 +183,19 @@ fn terminal_images_defer_until_scroll_idle() {
     }
     let doc = parse(&input).unwrap();
     let mut app = new_test_app(doc);
-    assert!(app.show_terminal_images);
+    assert!(app.scroll.show_images);
 
     let t0 = Instant::now();
     app.scroll_down(4);
     assert!(app.update_terminal_image_visibility(t0));
-    assert!(!app.show_terminal_images);
+    assert!(!app.scroll.show_images);
 
     assert!(!app.update_terminal_image_visibility(t0));
-    assert!(!app.show_terminal_images);
+    assert!(!app.scroll.show_images);
 
     let after_idle = t0 + IMAGE_REENABLE_DELAY + Duration::from_millis(1);
     assert!(app.update_terminal_image_visibility(after_idle));
-    assert!(app.show_terminal_images);
+    assert!(app.scroll.show_images);
 }
 
 #[test]
@@ -1083,13 +1084,13 @@ fn prefetched_child_navigation_round_trip_restores_parent() {
 fn toggle_outline_opens_and_focuses() {
     let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
     let mut app = new_test_app(doc);
-    assert!(!app.outline_visible);
+    assert!(!app.outline.visible);
     app.toggle_outline();
-    assert!(app.outline_visible);
-    assert!(app.outline_focused);
+    assert!(app.outline.visible);
+    assert!(app.outline.focused);
     app.toggle_outline();
-    assert!(!app.outline_visible);
-    assert!(!app.outline_focused);
+    assert!(!app.outline.visible);
+    assert!(!app.outline.focused);
 }
 
 #[test]
@@ -1101,8 +1102,8 @@ fn outline_jump_follows_heading() {
     let before = app.view_state.scroll().offset();
     app.jump_to_outline_heading();
     assert!(app.view_state.scroll().offset() >= before);
-    assert!(!app.outline_focused);
-    assert!(app.outline_visible);
+    assert!(!app.outline.focused);
+    assert!(app.outline.visible);
 }
 
 #[test]

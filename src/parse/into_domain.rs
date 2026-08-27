@@ -3,7 +3,7 @@
 use crate::domain::{
     Alignment, Block, Callout, ChecklistId, CodeBlock, DefinitionItem, DefinitionList, Document,
     FootnoteDefinition, FootnoteId, FrontMatter, FrontMatterKind, Heading, HeadingLevel, Inline,
-    Link, LinkId, LinkUrl, List, ListItem, MathBlock, MermaidDiagram, Table,
+    Link, LinkId, LinkUrl, List, ListItem, MathBlock, MermaidDiagram, Table, normalize_anchor_slug,
 };
 
 use super::dto::{
@@ -12,7 +12,6 @@ use super::dto::{
     ParsedFrontMatterKind, ParsedHeading, ParsedInline, ParsedLink, ParsedList, ParsedListItem,
     ParsedMathBlock, ParsedTable,
 };
-use crate::parse::normalize_anchor_slug;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IntoDomainError {

@@ -1,12 +1,31 @@
 //! Preview open timing and popup buffer warming.
 
 use crate::domain::{LinkId, LinkKind, PreviewLoadStatus};
+use crate::render::PreviewRenderCache;
 
 use super::App;
 
 pub(crate) const PREVIEW_ZOOM_MIN: f32 = 0.25;
 pub(crate) const PREVIEW_ZOOM_MAX: f32 = 4.0;
 pub(crate) const PREVIEW_ZOOM_STEP: f32 = 1.15;
+
+pub(crate) struct PreviewUi {
+    pub pending: Option<LinkId>,
+    pub cache: PreviewRenderCache,
+    pub zoom: f32,
+    pub toc_selected: usize,
+}
+
+impl Default for PreviewUi {
+    fn default() -> Self {
+        Self {
+            pending: None,
+            cache: PreviewRenderCache::default(),
+            zoom: 1.0,
+            toc_selected: 0,
+        }
+    }
+}
 
 impl App {
     pub(crate) fn preview_load_status(&self, link_id: LinkId) -> PreviewLoadStatus {
@@ -77,7 +96,8 @@ impl App {
             .unwrap_or(link.url.as_str())
             .to_string();
         let terminal = self.view_state.terminal_size();
-        self.preview_render_cache
+        self.preview
+            .cache
             .ensure(link_id, terminal, &title, protocol);
     }
 
@@ -88,19 +108,19 @@ impl App {
     }
 
     pub(crate) fn try_complete_pending_preview(&mut self) -> bool {
-        let Some(link_id) = self.pending_preview else {
+        let Some(link_id) = self.preview.pending else {
             return false;
         };
         if !self.preview_ready_to_open(link_id) {
             return false;
         }
-        self.pending_preview = None;
+        self.preview.pending = None;
         self.open_preview_now(link_id);
         true
     }
 
     pub(crate) fn invalidate_preview_caches(&mut self) {
-        self.preview_render_cache.clear();
+        self.preview.cache.clear();
         self.rendered.mermaid_images.clear();
         self.rendered.markdown_images.clear();
         self.mermaid_render.begin_document();
@@ -114,15 +134,15 @@ impl App {
         if self.view_state.mode().preview_link().is_none() {
             return;
         }
-        let next = (self.preview_zoom * factor).clamp(PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX);
-        if (next - self.preview_zoom).abs() < f32::EPSILON {
+        let next = (self.preview.zoom * factor).clamp(PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX);
+        if (next - self.preview.zoom).abs() < f32::EPSILON {
             return;
         }
-        self.preview_zoom = next;
+        self.preview.zoom = next;
     }
 
     pub(crate) fn reset_preview_zoom(&mut self) {
-        self.preview_zoom = 1.0;
+        self.preview.zoom = 1.0;
     }
 }
 

@@ -86,7 +86,7 @@ impl App {
     }
 
     fn try_outline_click(&mut self, column: u16, row: u16) -> bool {
-        if !self.outline_visible || !self.view_state.mode().is_normal() || self.help_visible {
+        if !self.outline.visible || !self.view_state.mode().is_normal() || self.help_visible {
             return false;
         }
         let terminal = self.view_state.terminal_size();
@@ -100,8 +100,8 @@ impl App {
         let Some(index) = self.outline_hit_index(column, row, areas.outline) else {
             return false;
         };
-        self.outline_selected_index = index;
-        self.outline_focused = true;
+        self.outline.selected = index;
+        self.outline.focused = true;
         self.jump_to_outline_heading();
         true
     }
@@ -133,7 +133,7 @@ impl App {
         }
 
         let (main_area, _) =
-            split_main_and_prompt(full_area, self.view_state.mode(), self.outline_visible);
+            split_main_and_prompt(full_area, self.view_state.mode(), self.outline.visible);
 
         if column < main_area.x
             || column >= main_area.x + main_area.width
@@ -145,7 +145,7 @@ impl App {
 
         let local_col = (column - main_area.x) as usize;
         let local_row = (row - main_area.y) as usize;
-        let logical_row = self.scroll_visual.floor() as usize + local_row;
+        let logical_row = self.scroll.visual.floor() as usize + local_row;
         let ctx = self.render_context();
         let width = self.document_width();
 
@@ -180,7 +180,7 @@ impl App {
             height: terminal.height(),
         };
         let (main_area, _) =
-            split_main_and_prompt(full_area, self.view_state.mode(), self.outline_visible);
+            split_main_and_prompt(full_area, self.view_state.mode(), self.outline.visible);
         if column < main_area.x
             || column >= main_area.x + main_area.width
             || row < main_area.y
@@ -191,7 +191,7 @@ impl App {
 
         let local_col = (column - main_area.x) as usize;
         let local_row = (row - main_area.y) as usize;
-        let logical_row = self.scroll_visual.floor() as usize + local_row;
+        let logical_row = self.scroll.visual.floor() as usize + local_row;
         Some(TextPoint::new(logical_row, local_col))
     }
 
@@ -223,7 +223,7 @@ impl App {
             return;
         }
 
-        let logical_row = self.scroll_visual.floor() as usize;
+        let logical_row = self.scroll.visual.floor() as usize;
         let ctx = self.render_context();
         let width = self.document_width();
 
