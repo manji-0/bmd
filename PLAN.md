@@ -126,4 +126,4 @@ src/
 
 <!-- derived-from #層ルール -->
 
-合意した層整理は完了。`Document` と `RenderedDocument` は split-borrow のため `App` 上に残している。追加で切るなら `domain/markdown.rs`。
+合意した層整理は完了。`Document` と `RenderedDocument` は split-borrow のため `App` 上に残している。
