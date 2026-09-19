@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::domain::{
     AnchorIdle, ChecklistState, ChecklistStyle, DocumentStackFull, document_link_path_part,
-    document_stack_limit_message, plan_document_back, plan_document_reset, resolve_document_path,
+    document_stack_limit_message, resolve_document_path,
 };
 use crate::error::AppError;
 use crate::fs::normalize_document_path;
@@ -116,23 +116,14 @@ impl App {
         if AnchorIdle::from_stack(&self.nav_stack) != Some(idle) {
             return;
         }
-        let Some(()) = plan_document_back(idle, self.doc_stack.len_frames()) else {
-            self.set_status_message("document stack empty".into());
-            return;
-        };
         let Some(frame) = self.doc_stack.pop() else {
             self.set_status_message("document stack empty".into());
             return;
         };
-        match self.try_restore_document_frame(frame) {
-            Ok(()) => {}
-            Err(err) => {
-                let (e, frame) = *err;
-                self.set_status_message(e.to_string());
-                self.doc_stack
-                    .fix_prior_on_link_jump(super::doc_stack::FixedDocumentPrior::fix(frame))
-                    .expect("restore rollback");
-            }
+        if let Err(err) = self.try_restore_document_frame(frame) {
+            let (e, frame) = *err;
+            self.set_status_message(e.to_string());
+            self.doc_stack.restore_frames(vec![frame]);
         }
     }
 
@@ -140,21 +131,18 @@ impl App {
         if AnchorIdle::from_stack(&self.nav_stack) != Some(idle) {
             return;
         }
-        let Some(()) = plan_document_reset(idle, self.doc_stack.len_frames()) else {
+        let mut frames = self.doc_stack.take_all_frames().into_iter();
+        let Some(root) = frames.next() else {
             return;
         };
-        let Some(root) = self.doc_stack.take_root_prior() else {
-            return;
-        };
-        match self.try_restore_document_frame(root) {
-            Ok(()) => {}
-            Err(err) => {
-                let (e, frame) = *err;
-                self.set_status_message(e.to_string());
-                self.doc_stack
-                    .fix_prior_on_link_jump(super::doc_stack::FixedDocumentPrior::fix(frame))
-                    .expect("restore rollback");
-            }
+        let rest: Vec<_> = frames.collect();
+        if let Err(err) = self.try_restore_document_frame(root) {
+            let (e, root) = *err;
+            self.set_status_message(e.to_string());
+            let mut frames = Vec::with_capacity(rest.len() + 1);
+            frames.push(root);
+            frames.extend(rest);
+            self.doc_stack.restore_frames(frames);
         }
     }
 

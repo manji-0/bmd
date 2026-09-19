@@ -2,8 +2,8 @@
 
 use crate::browser::open_link;
 use crate::domain::{
-    AnchorIdle, AnchorStackEmpty, AnchorStackFull, FixedScrollPrior, NavBackPlan, NavResetPlan,
-    anchor_stack_limit_message, plan_back, plan_document_back, plan_document_reset, plan_reset,
+    AnchorStackEmpty, AnchorStackFull, FixedScrollPrior, NavBackPlan, NavResetPlan,
+    anchor_stack_limit_message, plan_back, plan_reset,
 };
 use crate::render::{find_heading_line_by_anchor, next_heading_line, prev_heading_line};
 
@@ -195,18 +195,9 @@ impl App {
 
     /// Pop one scroll position from the anchor stack, or the previous document.
     pub(crate) fn nav_back(&mut self) {
-        let document_depth = self.doc_stack.len_frames();
-        match plan_back(&self.nav_stack, document_depth) {
+        match plan_back(&self.nav_stack, self.doc_stack.len_frames()) {
             NavBackPlan::AnchorStep => self.apply_anchor_back(),
-            NavBackPlan::DocumentStep => {
-                let Some(idle) = AnchorIdle::from_stack(&self.nav_stack) else {
-                    return;
-                };
-                let Some(()) = plan_document_back(idle, document_depth) else {
-                    return;
-                };
-                self.doc_back(idle);
-            }
+            NavBackPlan::DocumentStep(idle) => self.doc_back(idle),
             NavBackPlan::Idle => self.set_status_message("navigation stack empty".into()),
         }
     }
@@ -215,18 +206,9 @@ impl App {
     ///
     /// Anchor jumps must be fully reset before the document stack is consulted.
     pub(crate) fn nav_reset(&mut self) {
-        let document_depth = self.doc_stack.len_frames();
-        match plan_reset(&self.nav_stack, document_depth) {
+        match plan_reset(&self.nav_stack, self.doc_stack.len_frames()) {
             NavResetPlan::AnchorReset => self.apply_anchor_reset(),
-            NavResetPlan::DocumentReset => {
-                let Some(idle) = AnchorIdle::from_stack(&self.nav_stack) else {
-                    return;
-                };
-                let Some(()) = plan_document_reset(idle, document_depth) else {
-                    return;
-                };
-                self.doc_reset(idle);
-            }
+            NavResetPlan::DocumentReset(idle) => self.doc_reset(idle),
             NavResetPlan::Idle => {}
         }
     }

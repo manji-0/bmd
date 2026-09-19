@@ -654,6 +654,51 @@ fn doc_reset_preserves_stack_when_restore_fails() {
 }
 
 #[test]
+fn doc_reset_preserves_all_frames_when_restore_fails() {
+    let dir = temp_markdown_dir("doc-reset-fail-nested");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    let c = dir.join("c.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\n[open c](c.md)\n").unwrap();
+    std::fs::write(&c, "# C\n\ncontent\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+        Config::default(),
+    )
+    .unwrap();
+
+    app.open_document_link("b.md");
+    app.open_document_link("c.md");
+    assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    assert_eq!(app.doc_stack.len_frames(), 2);
+
+    app.fail_document_restore = true;
+    app.doc_reset(anchor_idle(&app));
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    assert_eq!(app.doc_stack.len_frames(), 2);
+
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert_eq!(app.doc_stack.len_frames(), 1);
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert!(app.doc_stack.is_empty());
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn nav_reset_drains_anchor_before_returning_to_root_document() {
     let dir = temp_markdown_dir("doc-anchor-drain");
     let _ = std::fs::remove_dir_all(&dir);

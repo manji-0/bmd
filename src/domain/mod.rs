@@ -64,10 +64,7 @@ pub use mermaid_render::{
 pub use mode::{ActiveSearch, NormalSearch, PreviewKind, UiMode};
 pub use nav_stack::{AnchorStackEmpty, FixedScrollPrior, NavStack};
 pub use nav_target::NavTarget;
-pub use navigation::{
-    AnchorIdle, NavBackPlan, NavLayer, NavResetPlan, plan_back, plan_document_back,
-    plan_document_reset, plan_reset,
-};
+pub use navigation::{AnchorIdle, NavBackPlan, NavResetPlan, plan_back, plan_reset};
 pub use navigation_limits::{
     ANCHOR_STACK_MAX_FRAMES, ANCHOR_STACK_MAX_LAYERS, AnchorStackFull, DOCUMENT_STACK_MAX_FRAMES,
     DOCUMENT_STACK_MAX_LAYERS, DocumentStackFull, anchor_stack_limit_message,

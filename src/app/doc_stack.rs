@@ -86,9 +86,14 @@ impl DocStack {
         self.stack.restore_latest_prior().ok()
     }
 
-    /// Take the root document frame without cloning it; clears remaining priors.
-    pub fn take_root_prior(&mut self) -> Option<DocumentFrame> {
-        self.stack.take_oldest_prior().ok()
+    /// Take every stored document frame, oldest (root) first.
+    pub fn take_all_frames(&mut self) -> Vec<DocumentFrame> {
+        self.stack.take_all_priors()
+    }
+
+    /// Put frames back after a failed restore, oldest first.
+    pub fn restore_frames(&mut self, frames: Vec<DocumentFrame>) {
+        self.stack.restore_priors(frames);
     }
 
     pub fn len_frames(&self) -> usize {
