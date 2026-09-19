@@ -37,10 +37,18 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 merman = { version = "0.6.2", features = ["raster"] }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 ratatui = "0.30"
-ratatui-image = { version = "11.0", default-features = false, features = ["crossterm", "image-defaults"] }
+ratatui-image = { version = "11.1", default-features = false, features = ["crossterm", "image-defaults"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
-syntect = "5.3"
+# Default syntect pulls yaml-load (unmaintained yaml-rust). bmd only uses dumped
+# default syntaxes/themes via load_defaults_newlines / load_defaults.
+syntect = { version = "5.3", default-features = false, features = [
+    "parsing",
+    "default-syntaxes",
+    "default-themes",
+    "dump-load",
+    "regex-onig",
+] }
 thiserror = "2.0"
 toml = "1.1"
 unicode-width = "0.2"
