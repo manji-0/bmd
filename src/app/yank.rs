@@ -47,13 +47,11 @@ impl App {
 
     fn current_heading_slug(&mut self) -> Option<String> {
         let scroll = self.view_state.scroll().offset();
-        let headings = self.heading_offsets();
-        let index = headings
-            .iter()
-            .rposition(|(offset, _)| *offset <= scroll)
-            .or_else(|| headings.first().map(|_| 0))?;
-        let entries = self.collect_toc_entries();
-        entries.get(index).map(|(_, _, slug)| slug.clone())
+        let index = self.heading_index_at_scroll(scroll)?;
+        self.heading_cache
+            .entries()
+            .get(index)
+            .map(|entry| entry.slug.clone())
     }
 
     fn code_block_in_viewport(&self) -> Option<String> {

@@ -6,7 +6,7 @@ use super::measure::measure_code_block_height;
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
 use super::{
     DocumentRenderCache, MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme,
-    checklist, collect_footnote_hits, collect_heading_offsets, collect_visible_links,
+    checklist, collect_footnote_hits, collect_heading_catalog, collect_visible_links,
     collect_visible_nav_targets, find_footnote_definition_line_offset,
     find_footnote_ref_line_offset, find_heading_line_by_anchor, find_search_matches,
     footnote_preview_title, measure_block_height, measure_document_height, next_heading_line,
@@ -708,13 +708,13 @@ fn render_table_row_width_matches_frame_when_content_overflows() {
 }
 
 #[test]
-fn collect_heading_offsets_finds_each_heading() {
+fn collect_heading_catalog_finds_each_heading() {
     let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
     let ctx = test_render_context();
-    let headings = collect_heading_offsets(&doc, 80, &ctx);
+    let headings = collect_heading_catalog(&doc, 80, &ctx);
     assert_eq!(headings.len(), 2);
-    assert_eq!(headings[0].1, HeadingLevel::H1);
-    assert!(headings[1].0 > headings[0].0);
+    assert_eq!(headings[0].level, HeadingLevel::H1);
+    assert!(headings[1].line_offset > headings[0].line_offset);
 }
 
 #[test]
@@ -741,11 +741,14 @@ fn heading_navigation_picks_adjacent_sections() {
     )
     .unwrap();
     let ctx = test_render_context();
-    let headings = collect_heading_offsets(&doc, 80, &ctx);
-    assert_eq!(next_heading_line(&headings, 0), Some(headings[1].0));
+    let headings = collect_heading_catalog(&doc, 80, &ctx);
     assert_eq!(
-        prev_heading_line(&headings, headings[1].0),
-        Some(headings[0].0)
+        next_heading_line(&headings, 0),
+        Some(headings[1].line_offset)
+    );
+    assert_eq!(
+        prev_heading_line(&headings, headings[1].line_offset),
+        Some(headings[0].line_offset)
     );
 }
 
@@ -756,7 +759,7 @@ fn find_heading_line_by_anchor_matches_slug() {
     assert_eq!(slugify_heading("Hello World"), "hello-world");
     assert_eq!(
         find_heading_line_by_anchor(&doc, 80, &ctx, "foo-bar"),
-        Some(collect_heading_offsets(&doc, 80, &ctx)[1].0)
+        Some(collect_heading_catalog(&doc, 80, &ctx)[1].line_offset)
     );
 }
 
@@ -766,7 +769,7 @@ fn find_heading_line_by_anchor_uses_explicit_id() {
     let ctx = test_render_context();
     assert_eq!(
         find_heading_line_by_anchor(&doc, 80, &ctx, "custom-anchor"),
-        Some(collect_heading_offsets(&doc, 80, &ctx)[0].0)
+        Some(collect_heading_catalog(&doc, 80, &ctx)[0].line_offset)
     );
     assert_eq!(
         find_heading_line_by_anchor(&doc, 80, &ctx, "hello-world"),

@@ -294,7 +294,7 @@ impl App {
         self.document_revision = self.document_revision.wrapping_add(1);
     }
 
-    pub(crate) fn heading_offsets(&mut self) -> Vec<(usize, crate::domain::HeadingLevel)> {
+    pub(crate) fn refresh_heading_catalog(&mut self) {
         let document_revision = self.document_revision;
         let width = self.document_width();
         let checklist_revision = self.checklist_state.revision();
@@ -307,15 +307,13 @@ impl App {
             self.scroll.show_images,
             &self.checklist_state,
         );
-        self.heading_cache
-            .get_or_collect(
-                document_revision,
-                width,
-                checklist_revision,
-                &self.document,
-                &ctx,
-            )
-            .to_vec()
+        self.heading_cache.refresh(
+            document_revision,
+            width,
+            checklist_revision,
+            &self.document,
+            &ctx,
+        );
     }
 
     /// Content width available for document wrapping (excludes outline sidebar).

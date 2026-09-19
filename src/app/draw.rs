@@ -204,8 +204,13 @@ impl App {
         }
     }
 
-    fn draw_toc_preview(&self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
-        let entries = self.collect_toc_entries();
+    fn draw_toc_preview(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+        self.refresh_heading_catalog();
+        let selected = self.preview.toc_selected;
+        let normal_style = self.theme.text;
+        let selected_style = self.theme.link_selected;
+        let prefix_style = Style::default().add_modifier(Modifier::DIM);
+        let entries = self.heading_cache.entries();
         let popup = crate::render::centered_rect(
             crate::render::PREVIEW_POPUP_PERCENT,
             crate::render::PREVIEW_POPUP_PERCENT,
@@ -221,26 +226,21 @@ impl App {
             return;
         }
 
-        let selected = self.preview.toc_selected;
-        let normal_style = self.theme.text;
-        let selected_style = self.theme.link_selected;
-        let prefix_style = Style::default().add_modifier(Modifier::DIM);
-
         let lines: Vec<Line> = entries
             .iter()
             .enumerate()
-            .map(|(i, (level, text, _slug))| {
-                let indent = "  ".repeat(level.as_u8().saturating_sub(1) as usize);
-                let prefix = level.prefix();
+            .map(|(i, entry)| {
+                let indent = "  ".repeat(entry.level.as_u8().saturating_sub(1) as usize);
+                let prefix = entry.level.prefix();
                 if i == selected {
                     Line::from(vec![
                         Span::styled(format!("{indent}{prefix}"), selected_style),
-                        Span::styled(text.as_str(), selected_style),
+                        Span::styled(entry.text.as_str(), selected_style),
                     ])
                 } else {
                     Line::from(vec![
                         Span::styled(format!("{indent}{prefix}"), prefix_style),
-                        Span::styled(text.as_str(), normal_style),
+                        Span::styled(entry.text.as_str(), normal_style),
                     ])
                 }
             })

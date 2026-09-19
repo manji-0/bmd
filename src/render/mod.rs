@@ -34,8 +34,8 @@ pub use footnotes::{
     find_footnote_definition_line_offset, footnote_preview_title, render_footnote_preview,
 };
 pub use headings::{
-    HeadingOffsetCache, collect_heading_offsets, find_heading_line_by_anchor, next_heading_line,
-    prev_heading_line,
+    HeadingEntry, HeadingOffsetCache, collect_heading_catalog, find_heading_line_by_anchor,
+    next_heading_line, prev_heading_line,
 };
 pub(crate) use image::render_markdown_image_from_src;
 pub(crate) use image::{

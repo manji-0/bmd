@@ -74,19 +74,23 @@ impl App {
     }
 
     pub(crate) fn next_heading(&mut self) {
-        let headings = self.heading_offsets();
+        self.refresh_heading_catalog();
         let scroll = self.view_state.scroll().offset();
-        if let Some(line) = next_heading_line(&headings, scroll) {
+        let line = {
+            let headings = self.heading_cache.entries();
+            next_heading_line(headings, scroll)
+                .or_else(|| headings.last().map(|heading| heading.line_offset))
+        };
+        if let Some(line) = line {
             self.scroll_to_line(line);
-        } else if let Some((line, _)) = headings.last() {
-            self.scroll_to_line(*line);
         }
     }
 
     pub(crate) fn prev_heading(&mut self) {
-        let headings = self.heading_offsets();
+        self.refresh_heading_catalog();
         let scroll = self.view_state.scroll().offset();
-        if let Some(line) = prev_heading_line(&headings, scroll) {
+        let line = prev_heading_line(self.heading_cache.entries(), scroll);
+        if let Some(line) = line {
             self.scroll_to_line(line);
         }
     }
@@ -250,41 +254,23 @@ impl App {
         self.scroll_to_line(line);
     }
 
-    pub(crate) fn collect_toc_entries(&self) -> Vec<(crate::domain::HeadingLevel, String, String)> {
-        use crate::domain::{Block, Heading, Inline, slugify_heading};
-        let mut entries = Vec::new();
-        for block in &self.document.blocks {
-            if let Block::Heading(Heading {
-                level,
-                content,
-                anchor,
-            }) = block
-            {
-                let text = Inline::plain_text(content);
-                let slug = match anchor {
-                    Some(a) if !a.is_empty() => a.clone(),
-                    _ => slugify_heading(&text),
-                };
-                if !text.is_empty() {
-                    entries.push((*level, text, slug));
-                }
-            }
-        }
-        entries
-    }
-
     pub(crate) fn jump_to_toc_heading(&mut self) {
-        let entries = self.collect_toc_entries();
-        let Some((_, _, slug)) = entries.get(self.preview.toc_selected) else {
+        self.refresh_heading_catalog();
+        let slug = self
+            .heading_cache
+            .entries()
+            .get(self.preview.toc_selected)
+            .map(|entry| entry.slug.clone());
+        let Some(slug) = slug else {
             return;
         };
-        let slug = slug.clone();
         self.close_preview();
         self.follow_anchor(&slug);
     }
 
     pub(crate) fn toc_select_next(&mut self) {
-        let count = self.collect_toc_entries().len();
+        self.refresh_heading_catalog();
+        let count = self.heading_cache.entries().len();
         if count == 0 {
             return;
         }
@@ -292,7 +278,8 @@ impl App {
     }
 
     pub(crate) fn toc_select_prev(&mut self) {
-        let count = self.collect_toc_entries().len();
+        self.refresh_heading_catalog();
+        let count = self.heading_cache.entries().len();
         if count == 0 {
             return;
         }

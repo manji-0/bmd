@@ -57,15 +57,17 @@ impl App {
     }
 
     pub(crate) fn heading_index_at_scroll(&mut self, scroll: usize) -> Option<usize> {
-        let headings = self.heading_offsets();
+        self.refresh_heading_catalog();
+        let headings = self.heading_cache.entries();
         headings
             .iter()
-            .rposition(|(offset, _)| *offset <= scroll)
+            .rposition(|heading| heading.line_offset <= scroll)
             .or_else(|| headings.first().map(|_| 0))
     }
 
     pub(crate) fn outline_select_next(&mut self) {
-        let count = self.collect_toc_entries().len();
+        self.refresh_heading_catalog();
+        let count = self.heading_cache.entries().len();
         if count == 0 {
             return;
         }
@@ -74,7 +76,8 @@ impl App {
     }
 
     pub(crate) fn outline_select_prev(&mut self) {
-        let count = self.collect_toc_entries().len();
+        self.refresh_heading_catalog();
+        let count = self.heading_cache.entries().len();
         if count == 0 {
             return;
         }
@@ -87,11 +90,15 @@ impl App {
     }
 
     pub(crate) fn jump_to_outline_heading(&mut self) {
-        let entries = self.collect_toc_entries();
-        let Some((_, _, slug)) = entries.get(self.outline.selected) else {
+        self.refresh_heading_catalog();
+        let slug = self
+            .heading_cache
+            .entries()
+            .get(self.outline.selected)
+            .map(|entry| entry.slug.clone());
+        let Some(slug) = slug else {
             return;
         };
-        let slug = slug.clone();
         self.follow_anchor(&slug);
         self.outline.focused = false;
     }
@@ -137,7 +144,7 @@ impl App {
     }
 
     pub(crate) fn outline_hit_index(
-        &self,
+        &mut self,
         column: u16,
         row: u16,
         outline_area: Rect,
@@ -152,8 +159,9 @@ impl App {
         {
             return None;
         }
-        let entries = self.collect_toc_entries();
-        if entries.is_empty() {
+        self.refresh_heading_catalog();
+        let count = self.heading_cache.entries().len();
+        if count == 0 {
             return None;
         }
         let inner_y = outline_area.y.saturating_add(1);
@@ -162,18 +170,14 @@ impl App {
             return None;
         }
         let local_row = (row - inner_y) as usize;
-        let selected = self.outline.selected.min(entries.len() - 1);
+        let selected = self.outline.selected.min(count - 1);
         let scroll_y = if inner_height > 0 && selected >= inner_height as usize {
             selected - inner_height as usize + 1
         } else {
             0
         };
         let index = scroll_y + local_row;
-        if index < entries.len() {
-            Some(index)
-        } else {
-            None
-        }
+        if index < count { Some(index) } else { None }
     }
 
     pub(crate) fn draw_outline_sidebar(&mut self, frame: &mut ratatui::Frame, area: Rect) {
@@ -184,10 +188,19 @@ impl App {
 
         let current_scroll = self.view_state.scroll().offset();
         let current_idx = self.heading_index_at_scroll(current_scroll);
-        let entries = self.collect_toc_entries();
+        let focused = self.outline.focused;
+        let selected_raw = self.outline.selected;
+        let normal_style = self.theme.text;
+        let selected_style = if focused {
+            self.theme.link_selected
+        } else {
+            Style::default().add_modifier(Modifier::BOLD)
+        };
+        let prefix_style = Style::default().add_modifier(Modifier::DIM);
+        let entries = self.heading_cache.entries();
 
         frame.render_widget(Clear, area);
-        let title = if self.outline.focused {
+        let title = if focused {
             "Outline (focused)"
         } else {
             "Outline"
@@ -201,21 +214,14 @@ impl App {
             return;
         }
 
-        let selected = self.outline.selected.min(entries.len() - 1);
-        let normal_style = self.theme.text;
-        let selected_style = if self.outline.focused {
-            self.theme.link_selected
-        } else {
-            Style::default().add_modifier(Modifier::BOLD)
-        };
-        let prefix_style = Style::default().add_modifier(Modifier::DIM);
+        let selected = selected_raw.min(entries.len() - 1);
 
         let lines: Vec<Line> = entries
             .iter()
             .enumerate()
-            .map(|(i, (level, text, _slug))| {
-                let indent = "  ".repeat(level.as_u8().saturating_sub(1) as usize);
-                let prefix = level.prefix();
+            .map(|(i, entry)| {
+                let indent = "  ".repeat(entry.level.as_u8().saturating_sub(1) as usize);
+                let prefix = entry.level.prefix();
                 let is_selected = i == selected;
                 let is_current = current_idx == Some(i);
                 let style = if is_selected {
@@ -232,7 +238,7 @@ impl App {
                 };
                 Line::from(vec![
                     Span::styled(format!("{indent}{prefix}"), marker_style),
-                    Span::styled(text.as_str(), style),
+                    Span::styled(entry.text.as_str(), style),
                 ])
             })
             .collect();
