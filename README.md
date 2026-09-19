@@ -91,7 +91,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 
 ## Requirements
 
-- [devbox](https://www.jetify.com/devbox) (recommended; provides Rust 1.92, clang, sccache, prek)
+- [devbox](https://www.jetify.com/devbox) (recommended; provides Rust 1.98, clang, sccache, prek)
 - macOS for opening web links via `open`; Linux uses `xdg-open`
 - Kitty, Ghostty, iTerm2, WezTerm, or similar for inline Mermaid and image rendering
 

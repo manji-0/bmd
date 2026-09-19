@@ -817,24 +817,27 @@ dependencies = [
 
 [[package]]
 name = "dugong"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a6170733f3de44de3cf86a6b2ce4a6adfa2d0fcc546d0298896c36b4675c783"
+checksum = "8182775cd5c441f69e5be06b29f1452503568c4270168cef67a557cd8fbcaba0"
 dependencies = [
  "dugong-graphlib",
  "rustc-hash",
  "serde",
  "serde_json",
+ "web-time",
 ]
 
 [[package]]
 name = "dugong-graphlib"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5620a3975d89a161bbb99c2e6cf5fbfb692de86499cc1bea3e570db2e7637394"
+checksum = "faffb9e2480ff1c6901e6376f143614df5331052e60e0dd5086f12399a18c61d"
 dependencies = [
  "hashbrown 0.16.1",
  "rustc-hash",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1918,14 +1921,15 @@ dependencies = [
 
 [[package]]
 name = "manatee"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6edb0293fd8cd549e79426a441354ee13e7b9b2136d2aa30ccba99861b229f14"
+checksum = "85f575aa9013f7fc6f6804dcc8fc47299ee61692c2a7cb017573dc5f3a85a5a4"
 dependencies = [
  "indexmap",
  "nalgebra",
  "rustc-hash",
  "thiserror 2.0.20",
+ "web-time",
 ]
 
 [[package]]
@@ -1980,10 +1984,11 @@ dependencies = [
 
 [[package]]
 name = "merman"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7f9f0f65e455090527adc4bcc6b7c917fa2fb3d29c7d8f8fe180ae8a1295d76"
+checksum = "316af7de4c273fb450fa7db94441df29bd09d5dcc5fd7f31f946766dea7272b3"
 dependencies = [
+ "chrono",
  "image",
  "merman-core",
  "merman-render",
@@ -1996,9 +2001,9 @@ dependencies = [
 
 [[package]]
 name = "merman-core"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7975b707ca62dc6e0585e89c6e45c4d788b277d13c2501197d00d9b9c52350bc"
+checksum = "4b7ca468603ca22bad2578b3d3fbc0b436e28b5ccb726e2cf99d7bb75fa8c167"
 dependencies = [
  "chrono",
  "euclid",
@@ -2019,13 +2024,14 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
 name = "merman-render"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e155e441addf61cbdd00c1a6e4e59a199aab6401110b46ae621b035673455c2b"
+checksum = "46cda864705a73dd80ec8985463d4bf735e991954d5bf63ca5604bf59287582a"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2034,7 +2040,6 @@ dependencies = [
  "manatee",
  "merman-core",
  "pulldown-cmark 0.12.2",
- "regex",
  "roughr-merman",
  "rustc-hash",
  "ryu-js",
@@ -2044,6 +2049,7 @@ dependencies = [
  "thiserror 2.0.20",
  "unicode-width",
  "url",
+ "web-time",
 ]
 
 [[package]]
@@ -4621,6 +4627,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81941cd78d0c92026c33e5e01312845a4cb1e9af3407f9134b100dd03144103e"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "web-time"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
