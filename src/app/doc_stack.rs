@@ -82,10 +82,10 @@ impl DocStack {
     pub fn fix_prior_on_link_jump(
         &mut self,
         prior: FixedDocumentPrior,
-    ) -> Result<(), (DocumentStackFull, DocumentFrame)> {
+    ) -> Result<(), (DocumentStackFull, Box<DocumentFrame>)> {
         self.stack
             .fix_prior_on_link_jump(prior)
-            .map_err(|(LinkJumpStackFull, prior)| (DocumentStackFull, prior.into_inner()))
+            .map_err(|(LinkJumpStackFull, prior)| (DocumentStackFull, Box::new(prior.into_inner())))
     }
 
     pub fn pop(&mut self) -> Option<DocumentFrame> {

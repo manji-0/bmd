@@ -182,6 +182,7 @@ impl App {
         match self.doc_stack.fix_prior_on_link_jump(prior) {
             Ok(()) => Ok(()),
             Err((DocumentStackFull, prior)) => {
+                let prior = *prior;
                 self.resume_worker_sessions(
                     prior.mermaid_session,
                     prior.image_session,
