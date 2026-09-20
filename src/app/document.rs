@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 
 use crate::domain::{
-    AnchorIdle, ChecklistState, ChecklistStyle, DocumentStackFull, document_link_path_part,
+    AnchorIdle, ChecklistState, ChecklistStyle, DocumentPrefetchSessionSnapshot, DocumentStackFull,
+    ImageSessionSnapshot, MermaidSessionSnapshot, document_link_path_part,
     document_stack_limit_message, resolve_document_path,
 };
 use crate::error::AppError;
@@ -49,15 +50,14 @@ impl App {
         };
 
         let anchor = document_link_path_part(dest).1;
-        let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
-        if let Err(DocumentStackFull) = self.doc_stack.fix_prior_on_link_jump(prior) {
+        if self.push_document_prior().is_err() {
             self.set_status_message(document_stack_limit_message());
             return;
         }
 
         if let Err(e) = self.apply_document(resolved, document) {
             self.set_status_message(e.to_string());
-            self.doc_stack.pop();
+            self.abort_document_jump();
             return;
         }
 
@@ -95,15 +95,14 @@ impl App {
 
         crate::github::rewrite_relative_links(&mut document, blob);
 
-        let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
-        if let Err(DocumentStackFull) = self.doc_stack.fix_prior_on_link_jump(prior) {
+        if self.push_document_prior().is_err() {
             self.set_status_message(document_stack_limit_message());
             return;
         }
 
         if let Err(e) = self.apply_github_document(blob, document) {
             self.set_status_message(e.to_string());
-            self.doc_stack.pop();
+            self.abort_document_jump();
             return;
         }
 
@@ -178,7 +177,57 @@ impl App {
         Ok(())
     }
 
-    fn capture_document_frame(&self) -> DocumentFrame {
+    fn push_document_prior(&mut self) -> Result<(), DocumentStackFull> {
+        let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
+        match self.doc_stack.fix_prior_on_link_jump(prior) {
+            Ok(()) => Ok(()),
+            Err((DocumentStackFull, prior)) => {
+                self.resume_worker_sessions(
+                    prior.mermaid_session,
+                    prior.image_session,
+                    prior.document_prefetch_session,
+                );
+                Err(DocumentStackFull)
+            }
+        }
+    }
+
+    fn abort_document_jump(&mut self) {
+        if let Some(frame) = self.doc_stack.pop() {
+            self.resume_worker_sessions(
+                frame.mermaid_session,
+                frame.image_session,
+                frame.document_prefetch_session,
+            );
+        }
+    }
+
+    fn resume_worker_sessions(
+        &mut self,
+        mermaid_session: MermaidSessionSnapshot,
+        image_session: ImageSessionSnapshot,
+        document_prefetch_session: DocumentPrefetchSessionSnapshot,
+    ) {
+        let terminal_size = self.view_state.terminal_size();
+        self.mermaid_render.resume(
+            mermaid_session,
+            &self.document,
+            &self.rendered,
+            &self.picker,
+            terminal_size,
+        );
+        self.image_render.resume(
+            image_session,
+            &self.document,
+            &self.rendered,
+            self.base_path.as_ref(),
+            &self.picker,
+            terminal_size,
+        );
+        self.document_prefetch.resume(document_prefetch_session);
+    }
+
+    fn capture_document_frame(&mut self) -> DocumentFrame {
         DocumentFrame {
             document: self.document.clone(),
             rendered: self.rendered.clone(),
@@ -289,24 +338,11 @@ impl App {
         self.scroll.key_down_at = None;
         self.help_visible = false;
         self.invalidate_prefetch_viewport();
-        let terminal_size = self.view_state.terminal_size();
-        self.mermaid_render.resume(
+        self.resume_worker_sessions(
             frame.mermaid_session,
-            &self.document,
-            &self.rendered,
-            &self.picker,
-            terminal_size,
-        );
-        self.image_render.resume(
             frame.image_session,
-            &self.document,
-            &self.rendered,
-            self.base_path.as_ref(),
-            &self.picker,
-            terminal_size,
+            frame.document_prefetch_session,
         );
-        self.document_prefetch
-            .resume(frame.document_prefetch_session);
         Ok(())
     }
 }

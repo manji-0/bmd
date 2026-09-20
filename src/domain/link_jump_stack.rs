@@ -70,12 +70,15 @@ impl<T> LinkJumpStack<T> {
     }
 
     /// Store the position/document fixed at this link jump.
+    ///
+    /// On overflow the prior is returned so callers that moved unique state
+    /// into it can put that state back.
     pub fn fix_prior_on_link_jump(
         &mut self,
         prior: PriorAtLinkJump<T>,
-    ) -> Result<(), LinkJumpStackFull> {
+    ) -> Result<(), (LinkJumpStackFull, PriorAtLinkJump<T>)> {
         if self.fixed_prior_count() >= self.max_frames {
-            return Err(LinkJumpStackFull);
+            return Err((LinkJumpStackFull, prior));
         }
         self.priors.push(prior);
         Ok(())
@@ -174,7 +177,7 @@ mod tests {
         assert_eq!(stack.max_frames(), 0);
         assert_eq!(
             stack.fix_prior_on_link_jump(PriorAtLinkJump::fix(1)),
-            Err(LinkJumpStackFull)
+            Err((LinkJumpStackFull, PriorAtLinkJump::fix(1)))
         );
     }
 
@@ -208,7 +211,7 @@ mod tests {
         assert_eq!(stack.current_layer(), 3);
         assert_eq!(
             stack.fix_prior_on_link_jump(PriorAtLinkJump::fix(3)),
-            Err(LinkJumpStackFull)
+            Err((LinkJumpStackFull, PriorAtLinkJump::fix(3)))
         );
     }
 }

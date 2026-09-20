@@ -41,8 +41,13 @@ impl DocumentPrefetchPool {
         self.session = session.begin_document();
     }
 
-    pub fn suspend(&self) -> DocumentPrefetchSessionSnapshot {
-        self.session.clone().suspend()
+    /// Consume the live session into a snapshot and leave an empty session at
+    /// the next generation so in-flight completions for this document are stale.
+    pub fn suspend(&mut self) -> DocumentPrefetchSessionSnapshot {
+        let session = mem::take(&mut self.session);
+        let (live, snapshot) = session.detach_snapshot();
+        self.session = live;
+        snapshot
     }
 
     pub fn resume(&mut self, snapshot: DocumentPrefetchSessionSnapshot) {

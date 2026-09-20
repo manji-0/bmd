@@ -557,6 +557,34 @@ fn open_document_link_rolls_back_stack_on_apply_failure() {
 }
 
 #[test]
+fn open_document_link_restores_prefetch_session_on_apply_failure() {
+    let dir = temp_markdown_dir("doc-apply-fail-prefetch");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child\n\n").unwrap();
+
+    let mut app = file_backed_app(&dir, "parent.md", "# Parent\n\n[open child](child.md)\n");
+    let child_path = normalize_document_path(dir.join("child.md"));
+
+    wait_for_background_work(&mut app);
+    assert!(app.prefetched_document_ready(&child_path));
+
+    app.fail_apply_document = true;
+    app.open_document_link("child.md");
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("parent.md"));
+    assert_eq!(app.doc_stack.len_frames(), 0);
+    assert!(app.prefetched_document_ready(&child_path));
+
+    app.open_document_link("child.md");
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+    assert_eq!(first_heading_text(&app.document).as_deref(), Some("Child"));
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn doc_back_preserves_stack_when_restore_fails() {
     let dir = temp_markdown_dir("doc-back-fail");
     let _ = std::fs::remove_dir_all(&dir);

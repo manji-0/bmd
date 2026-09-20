@@ -99,6 +99,18 @@ impl ImageRenderSession {
         }
     }
 
+    /// Move this session into a snapshot and leave an empty session at the next
+    /// generation so in-flight completions for the captured document are stale.
+    pub fn detach_snapshot(self) -> (Self, ImageSessionSnapshot) {
+        let live = Self {
+            generation: self.generation.next(),
+            tasks: HashMap::new(),
+            queue: VecDeque::new(),
+            queued: HashSet::new(),
+        };
+        (live, self.suspend())
+    }
+
     pub fn schedule_prefetch(
         self,
         document: &Document,
@@ -403,5 +415,35 @@ mod tests {
         let (session, _) = session.request(LinkId(0), &document, None, false).unwrap();
         let snapshot = session.suspend();
         assert_eq!(snapshot.tasks[&LinkId(0)].phase(), PreviewLoadPhase::Queued);
+    }
+
+    #[test]
+    fn detach_snapshot_makes_in_flight_completions_stale_until_resume() {
+        let document = image_document(1);
+        let session = ImageRenderSession::new();
+        let (session, spawns) = session.request(LinkId(0), &document, None, false).unwrap();
+        let generation = spawns[0].generation;
+        assert_eq!(session.generation, generation);
+
+        let (live, snapshot) = session.detach_snapshot();
+        assert_eq!(live.generation, generation.next());
+        assert!(!live.has_in_flight());
+
+        let (_, applied, _) = live.apply_completion(
+            ImageCompletion {
+                link_id: LinkId(0),
+                generation,
+                outcome: Ok(()),
+            },
+            &document,
+            None,
+        );
+        assert_eq!(applied, PreviewLoadCompletionApplied::Stale);
+
+        let (restored, resume_spawns) =
+            ImageRenderSession::resume(snapshot, &document, None, |_| false);
+        assert_eq!(restored.generation, generation);
+        assert_eq!(resume_spawns.len(), 1);
+        assert_eq!(resume_spawns[0].generation, generation);
     }
 }

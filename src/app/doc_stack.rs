@@ -76,13 +76,16 @@ impl DocStack {
     }
 
     /// Fix the current document and store it before following a document link.
+    ///
+    /// On overflow the prior frame is returned so worker sessions consumed
+    /// into it can be restored onto the live pools.
     pub fn fix_prior_on_link_jump(
         &mut self,
         prior: FixedDocumentPrior,
-    ) -> Result<(), DocumentStackFull> {
+    ) -> Result<(), (DocumentStackFull, DocumentFrame)> {
         self.stack
             .fix_prior_on_link_jump(prior)
-            .map_err(|LinkJumpStackFull| DocumentStackFull)
+            .map_err(|(LinkJumpStackFull, prior)| (DocumentStackFull, prior.into_inner()))
     }
 
     pub fn pop(&mut self) -> Option<DocumentFrame> {

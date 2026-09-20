@@ -63,7 +63,7 @@ mod tests {
         assert_eq!(stack.current_layer(), ANCHOR_STACK_MAX_LAYERS);
         assert_eq!(
             stack.fix_prior_on_link_jump(PriorAtLinkJump::fix(0)),
-            Err(LinkJumpStackFull)
+            Err((LinkJumpStackFull, PriorAtLinkJump::fix(0)))
         );
     }
 }

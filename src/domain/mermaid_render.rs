@@ -172,6 +172,18 @@ impl MermaidRenderSession {
         }
     }
 
+    /// Move this session into a snapshot and leave an empty session at the next
+    /// generation so in-flight completions for the captured document are stale.
+    pub fn detach_snapshot(self) -> (Self, MermaidSessionSnapshot) {
+        let live = Self {
+            generation: self.generation.next(),
+            tasks: HashMap::new(),
+            queue: VecDeque::new(),
+            queued: HashSet::new(),
+        };
+        (live, self.suspend())
+    }
+
     /// Queue every uncached mermaid link in document order.
     pub fn schedule_prefetch(
         mut self,
@@ -526,6 +538,35 @@ mod tests {
     fn begin_document_invalidates_generation() {
         let session = MermaidRenderSession::new().begin_document();
         assert_eq!(session.generation(), DocumentGeneration(1));
+    }
+
+    #[test]
+    fn detach_snapshot_makes_in_flight_completions_stale_until_resume() {
+        let document = mermaid_document(1);
+        let session = MermaidRenderSession::new();
+        let (session, spawns) = session.request(LinkId(0), &document, false).unwrap();
+        let generation = spawns[0].generation;
+        assert_eq!(session.generation(), generation);
+
+        let (live, snapshot) = session.detach_snapshot();
+        assert_eq!(live.generation(), generation.next());
+        assert!(!live.has_in_flight());
+
+        let (_, applied, _) = live.apply_completion(
+            MermaidCompletion {
+                link_id: LinkId(0),
+                generation,
+                outcome: Ok(()),
+            },
+            &document,
+        );
+        assert_eq!(applied, MermaidCompletionApplied::Stale);
+
+        let (restored, resume_spawns) =
+            MermaidRenderSession::resume(snapshot, &document, |_| false);
+        assert_eq!(restored.generation(), generation);
+        assert_eq!(resume_spawns.len(), 1);
+        assert_eq!(resume_spawns[0].generation, generation);
     }
 
     #[test]

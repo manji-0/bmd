@@ -107,6 +107,19 @@ impl DocumentPrefetchSession {
         }
     }
 
+    /// Move this session into a snapshot and leave an empty session at the next
+    /// generation so in-flight completions for the captured document are stale.
+    pub fn detach_snapshot(self) -> (Self, DocumentPrefetchSessionSnapshot) {
+        let live = Self {
+            generation: self.generation.next(),
+            tasks: HashMap::new(),
+            queue: VecDeque::new(),
+            queued: HashSet::new(),
+            ready_order: VecDeque::new(),
+        };
+        (live, self.suspend())
+    }
+
     /// Queue visible document links that resolve to readable files.
     pub fn schedule_visible_prefetch(
         mut self,
@@ -544,5 +557,24 @@ mod tests {
             session.tasks[&path],
             DocumentPrefetchTask::Loading { .. }
         ));
+    }
+
+    #[test]
+    fn detach_snapshot_keeps_ready_cache_for_resume() {
+        let path = PathBuf::from("/tmp/ready.md");
+        let fs = FakeFs::with_file(path.clone(), epoch(1));
+        let mut session = DocumentPrefetchSession::new();
+        session.store_ready(path.clone(), prefetched(empty_document(), epoch(1)));
+        let generation = session.generation;
+
+        let (live, snapshot) = session.detach_snapshot();
+        assert_eq!(live.generation, generation.next());
+        assert!(live.ready_document(&path, &fs).is_none());
+
+        let (session, spawns) = DocumentPrefetchSession::resume(snapshot);
+        let expected = empty_document();
+        assert!(spawns.is_empty());
+        assert_eq!(session.generation, generation);
+        assert_eq!(session.ready_document(&path, &fs), Some(&expected));
     }
 }
