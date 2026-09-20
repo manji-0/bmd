@@ -115,7 +115,6 @@ fn renders_document_to_test_backend() {
                 &app.rendered,
                 &app.document.links,
                 &app.view_state,
-                app.scroll.show_images,
                 &app.checklist_state,
             );
             let width = app.view_state.terminal_size().width();
@@ -169,33 +168,6 @@ fn jump_commands_snap_visual_scroll() {
     let max = app.max_scroll();
     assert_eq!(app.view_state.scroll().offset(), max);
     assert_eq!(app.scroll.visual.round() as usize, max);
-}
-
-#[test]
-fn terminal_images_defer_until_scroll_idle() {
-    use std::time::{Duration, Instant};
-
-    use super::scroll::IMAGE_REENABLE_DELAY;
-
-    let mut input = String::from("# Title\n\n");
-    for i in 0..50 {
-        input.push_str(&format!("paragraph {}\n\n", i));
-    }
-    let doc = parse(&input).unwrap();
-    let mut app = new_test_app(doc);
-    assert!(app.scroll.show_images);
-
-    let t0 = Instant::now();
-    app.scroll_down(4);
-    assert!(app.update_terminal_image_visibility(t0));
-    assert!(!app.scroll.show_images);
-
-    assert!(!app.update_terminal_image_visibility(t0));
-    assert!(!app.scroll.show_images);
-
-    let after_idle = t0 + IMAGE_REENABLE_DELAY + Duration::from_millis(1);
-    assert!(app.update_terminal_image_visibility(after_idle));
-    assert!(app.scroll.show_images);
 }
 
 #[test]
@@ -1213,4 +1185,48 @@ fn document_width_shrinks_when_outline_open() {
     app.toggle_outline();
     let shrunk = app.document_width();
     assert!(shrunk < full);
+}
+
+#[test]
+fn document_jump_restores_outline_and_text_selection() {
+    use crate::domain::{TextPoint, TextSelection};
+
+    let dir = temp_markdown_dir("uc-frame-chrome");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child\n\n").unwrap();
+
+    let mut app = file_backed_app(&dir, "parent.md", "# Parent\n\n[open child](child.md)\n");
+    app.toggle_outline();
+    assert!(app.outline.visible);
+    assert!(app.outline.focused);
+    app.text_selection = Some(TextSelection::new(
+        TextPoint::new(0, 0),
+        TextPoint::new(0, 3),
+    ));
+    app.preview.zoom = 2.0;
+    app.preview.toc_selected = 7;
+
+    app.open_document_link("child.md");
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+    assert!(app.outline.visible);
+    assert!(!app.outline.focused);
+    assert!(app.text_selection.is_none());
+    assert!((app.preview.zoom - 1.0).abs() < f32::EPSILON);
+    assert_eq!(app.preview.toc_selected, 0);
+
+    app.toggle_outline();
+    assert!(!app.outline.visible);
+
+    app.doc_back(anchor_idle(&app));
+    assert_eq!(app.source_label.as_deref(), Some("parent.md"));
+    assert!(app.outline.visible);
+    assert!(app.outline.focused);
+    let selection = app.text_selection.expect("restored selection");
+    assert_eq!(selection.anchor, TextPoint::new(0, 0));
+    assert_eq!(selection.cursor, TextPoint::new(0, 3));
+    assert!((app.preview.zoom - 2.0).abs() < f32::EPSILON);
+    assert_eq!(app.preview.toc_selected, 7);
+
+    let _ = std::fs::remove_dir_all(dir);
 }

@@ -129,15 +129,7 @@ mod tests {
         };
         let view_state = ViewState::new(crate::domain::TerminalSize::new(40, 24).unwrap());
         let checklist = ChecklistState::new(ChecklistStyle::Unicode);
-        let ctx = RenderContext::new(
-            &theme,
-            &syntax,
-            &rendered,
-            &[],
-            &view_state,
-            true,
-            &checklist,
-        );
+        let ctx = RenderContext::new(&theme, &syntax, &rendered, &[], &view_state, &checklist);
         let mut cache = DocumentRenderCache::default();
         cache.ensure(&document, &ctx, &view_state, 40);
         cache

@@ -37,8 +37,10 @@ pub struct LinkJumpStack<T> {
 }
 
 impl<T> LinkJumpStack<T> {
+    /// `max_layers` counts the live current item as layer 1. Values below 1
+    /// are treated as 1 (origin only, no stored priors).
     pub fn with_max_layers(max_layers: usize) -> Self {
-        let max_frames = max_layers.saturating_sub(1);
+        let max_frames = max_layers.max(1).saturating_sub(1);
         Self {
             priors: Vec::with_capacity(max_frames),
             max_frames,
@@ -95,17 +97,26 @@ impl<T> LinkJumpStack<T> {
             .collect()
     }
 
-    /// Replace the stored priors. `values` must already fit in [`Self::max_frames`].
+    /// Replace the stored priors. Extra values beyond [`Self::max_frames`] are dropped
+    /// (oldest kept). Callers should pass a list previously taken from this stack.
     pub fn restore_priors(&mut self, values: Vec<T>) {
         debug_assert!(
             values.len() <= self.max_frames,
             "restored prior count exceeds stack capacity"
         );
-        self.priors = values.into_iter().map(PriorAtLinkJump::fix).collect();
+        self.priors = values
+            .into_iter()
+            .take(self.max_frames)
+            .map(PriorAtLinkJump::fix)
+            .collect();
     }
 
-    /// Take the oldest fixed prior and drop the rest without cloning or shifting.
-    pub fn take_oldest_prior(&mut self) -> Result<T, LinkJumpStackEmpty> {
+    /// Take the oldest (origin) prior and discard every newer prior.
+    ///
+    /// Used for reset-to-origin of Copy-sized stacks. Do not use this for
+    /// nested-file restore — that must keep intermediate frames via
+    /// [`Self::take_all_priors`].
+    pub fn take_origin_prior(&mut self) -> Result<T, LinkJumpStackEmpty> {
         let mut iter = std::mem::take(&mut self.priors).into_iter();
         let origin = iter.next().ok_or(LinkJumpStackEmpty)?;
         Ok(origin.into_inner())
@@ -144,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn take_oldest_prior_moves_without_clone() {
+    fn take_origin_prior_discards_newer_priors() {
         let mut stack = LinkJumpStack::with_max_layers(4);
         stack
             .fix_prior_on_link_jump(PriorAtLinkJump::fix(10))
@@ -152,8 +163,19 @@ mod tests {
         stack
             .fix_prior_on_link_jump(PriorAtLinkJump::fix(20))
             .unwrap();
-        assert_eq!(stack.take_oldest_prior(), Ok(10));
+        assert_eq!(stack.take_origin_prior(), Ok(10));
         assert!(stack.is_at_origin());
+    }
+
+    #[test]
+    fn zero_max_layers_is_origin_only() {
+        let mut stack = LinkJumpStack::with_max_layers(0);
+        assert_eq!(stack.max_layers(), 1);
+        assert_eq!(stack.max_frames(), 0);
+        assert_eq!(
+            stack.fix_prior_on_link_jump(PriorAtLinkJump::fix(1)),
+            Err(LinkJumpStackFull)
+        );
     }
 
     #[test]

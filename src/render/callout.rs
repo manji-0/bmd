@@ -74,7 +74,6 @@ pub(crate) fn render_callout(
         selected_search_match: ctx.selected_search_match,
         selected_match_line_offset: ctx.selected_match_line_offset,
         checklist_state: ctx.checklist_state,
-        show_terminal_images: ctx.show_terminal_images,
     };
 
     let mut body_line_offset = line_offset + 1;

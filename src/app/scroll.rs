@@ -9,7 +9,6 @@ use crate::render::{RenderContext, measure_document_height};
 
 use super::App;
 
-pub(crate) const IMAGE_REENABLE_DELAY: Duration = Duration::from_millis(100);
 pub(crate) const SCROLL_REPEAT_DELAY: Duration = Duration::from_millis(180);
 pub(crate) const SCROLL_REPEAT_INTERVAL: Duration = Duration::from_millis(33);
 pub(crate) const ACTIVE_FRAME_INTERVAL: Duration = Duration::from_millis(16);
@@ -25,9 +24,6 @@ pub(crate) struct ScrollUi {
     pub anim_speed: f32,
     pub key_down_at: Option<Instant>,
     pub last_repeat: Instant,
-    pub tracked_position: f32,
-    pub images_reenable_at: Option<Instant>,
-    pub show_images: bool,
 }
 
 impl ScrollUi {
@@ -37,18 +33,12 @@ impl ScrollUi {
             anim_speed: SCROLL_ANIM_SPEED,
             key_down_at: None,
             last_repeat: now,
-            tracked_position: visual,
-            images_reenable_at: None,
-            show_images: true,
         }
     }
 
     pub(crate) fn reset_to_top(&mut self) {
         self.visual = 0.0;
         self.anim_speed = SCROLL_ANIM_SPEED;
-        self.tracked_position = 0.0;
-        self.show_images = true;
-        self.images_reenable_at = None;
         self.key_down_at = None;
     }
 }
@@ -74,38 +64,8 @@ impl App {
             &self.rendered,
             &self.document.links,
             &self.view_state,
-            self.scroll.show_images,
             &self.checklist_state,
         )
-    }
-
-    /// Hide terminal images while scroll position changes; show again after idle.
-    ///
-    /// Returns `true` when image visibility toggled and the frame should redraw.
-    pub(crate) fn update_terminal_image_visibility(&mut self, now: Instant) -> bool {
-        let scroll_pos = self.scroll.visual;
-        let mut dirty = false;
-
-        if (scroll_pos - self.scroll.tracked_position).abs() >= SUBPIXEL_SNAP {
-            self.scroll.tracked_position = scroll_pos;
-            self.scroll.images_reenable_at = None;
-            if self.scroll.show_images {
-                self.scroll.show_images = false;
-                dirty = true;
-            }
-        } else if !self.scroll.show_images && self.scroll.images_reenable_at.is_none() {
-            self.scroll.images_reenable_at = Some(now + IMAGE_REENABLE_DELAY);
-        }
-
-        if let Some(deadline) = self.scroll.images_reenable_at
-            && now >= deadline
-        {
-            self.scroll.images_reenable_at = None;
-            self.scroll.show_images = true;
-            dirty = true;
-        }
-
-        dirty
     }
 
     pub(crate) fn snap_scroll_visual(&mut self) {

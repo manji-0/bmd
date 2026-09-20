@@ -40,7 +40,7 @@ use crate::domain::{
 use crate::error::AppError;
 use crate::keymap::Keymap;
 use crate::render::{
-    DocumentRenderCache, HeadingOffsetCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
+    DocumentRenderCache, HeadingCatalogCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
 };
 
 use doc_stack::DocStack;
@@ -99,7 +99,7 @@ pub struct App {
     selection_drag: Option<checklist::SelectionDrag>,
     last_prefetch_viewport: Option<PrefetchViewportKey>,
     document_revision: u64,
-    heading_cache: HeadingOffsetCache,
+    heading_cache: HeadingCatalogCache,
     pub(crate) github_auth: Option<crate::github::GitHubAuth>,
     should_quit: bool,
     #[cfg(test)]
@@ -195,7 +195,7 @@ impl App {
             selection_drag: None,
             last_prefetch_viewport: None,
             document_revision: 0,
-            heading_cache: HeadingOffsetCache::default(),
+            heading_cache: HeadingCatalogCache::default(),
             github_auth: None,
             should_quit: false,
             #[cfg(test)]
@@ -304,7 +304,6 @@ impl App {
             &self.rendered,
             &self.document.links,
             &self.view_state,
-            self.scroll.show_images,
             &self.checklist_state,
         );
         self.heading_cache.refresh(
@@ -387,19 +386,17 @@ impl App {
             }
 
             let animating = self.tick_scroll_animation(dt);
-            let image_dirty = self.update_terminal_image_visibility(now);
             self.maybe_prefetch_visible_links();
             let mermaid_dirty = self.poll_preview_renders();
-            let awaiting_images = self.scroll.images_reenable_at.is_some();
             let awaiting_preview = self.preview_work_pending();
             self.tick_status_message(now);
 
-            if dirty || animating || image_dirty || mermaid_dirty {
+            if dirty || animating || mermaid_dirty {
                 self.draw_frame(terminal)?;
                 last_draw = now;
             }
 
-            let frame_budget = if animating || awaiting_images || awaiting_preview {
+            let frame_budget = if animating || awaiting_preview {
                 ACTIVE_FRAME_INTERVAL
             } else {
                 IDLE_POLL_INTERVAL
@@ -408,7 +405,7 @@ impl App {
             if event::poll(wait)? {
                 continue;
             }
-            if animating || awaiting_images || awaiting_preview {
+            if animating || awaiting_preview {
                 continue;
             }
         }

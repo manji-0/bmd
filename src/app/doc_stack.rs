@@ -5,10 +5,11 @@ use std::path::PathBuf;
 use crate::domain::{
     ChecklistState, DOCUMENT_STACK_MAX_LAYERS, Document, DocumentPrefetchSessionSnapshot,
     DocumentStackFull, ImageSessionSnapshot, LinkId, LinkJumpStack, LinkJumpStackFull, Marks,
-    MermaidSessionSnapshot, NavStack, PriorAtLinkJump, ViewState,
+    MermaidSessionSnapshot, NavStack, PriorAtLinkJump, TextSelection, ViewState,
 };
 use crate::render::{DocumentRenderCache, PreviewRenderCache, RenderedDocument};
 
+use super::outline::OutlineUi;
 use super::reload::FileWatch;
 
 /// Full viewing state fixed at a document link jump, including render caches.
@@ -26,17 +27,19 @@ pub(crate) struct DocumentFrame {
     pub document_cache: DocumentRenderCache,
     pub preview_render_cache: PreviewRenderCache,
     pub pending_preview: Option<LinkId>,
+    pub preview_zoom: f32,
+    pub toc_selected: usize,
     pub view_state: ViewState,
     pub scroll_visual: f32,
     pub scroll_anim_speed: f32,
-    pub tracked_scroll_position: f32,
-    pub show_terminal_images: bool,
     pub checklist_state: ChecklistState,
     pub source_label: Option<String>,
     pub base_path: Option<PathBuf>,
     pub file_watch: Option<FileWatch>,
     pub nav_stack: NavStack,
     pub marks: Marks,
+    pub outline: OutlineUi,
+    pub text_selection: Option<TextSelection>,
 }
 
 /// Document state fixed at the moment before a document link jump.

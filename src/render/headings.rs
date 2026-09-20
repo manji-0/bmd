@@ -18,19 +18,19 @@ pub struct HeadingEntry {
 
 /// Cached heading catalog. Line offsets depend on wrap width and checklist height.
 #[derive(Clone, Default)]
-pub struct HeadingOffsetCache {
-    key: Option<HeadingOffsetCacheKey>,
+pub struct HeadingCatalogCache {
+    key: Option<HeadingCatalogCacheKey>,
     headings: Vec<HeadingEntry>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
-struct HeadingOffsetCacheKey {
+struct HeadingCatalogCacheKey {
     document_revision: u64,
     width: u16,
     checklist_revision: u64,
 }
 
-impl HeadingOffsetCache {
+impl HeadingCatalogCache {
     pub fn refresh(
         &mut self,
         document_revision: u64,
@@ -39,7 +39,7 @@ impl HeadingOffsetCache {
         document: &Document,
         ctx: &RenderContext,
     ) {
-        let key = HeadingOffsetCacheKey {
+        let key = HeadingCatalogCacheKey {
             document_revision,
             width,
             checklist_revision,
@@ -107,6 +107,10 @@ pub fn prev_heading_line(headings: &[HeadingEntry], scroll: usize) -> Option<usi
 }
 
 /// Find a heading line offset matching a markdown anchor slug (`#section`).
+///
+/// This walks every heading block, including headings whose plain text is empty.
+/// The outline catalog omits those, so a fragment can still land on an explicit
+/// id that `[` / `]` / yank never see.
 pub fn find_heading_line_by_anchor(
     document: &Document,
     width: u16,
@@ -146,7 +150,7 @@ mod tests {
     use crate::render::{RenderContext, RenderedDocument, SyntaxAssets, Theme};
 
     #[test]
-    fn heading_offset_cache_reuses_collected_offsets() {
+    fn heading_catalog_cache_reuses_collected_entries() {
         let document = Document {
             blocks: vec![
                 crate::domain::Block::Heading(crate::domain::Heading {
@@ -183,10 +187,9 @@ mod tests {
             &rendered,
             &document.links,
             &view_state,
-            true,
             &checklist_state,
         );
-        let mut cache = HeadingOffsetCache::default();
+        let mut cache = HeadingCatalogCache::default();
         cache.refresh(0, 80, checklist_state.revision(), &document, &ctx);
         let first = cache.entries().to_vec();
         cache.refresh(0, 80, checklist_state.revision(), &document, &ctx);
@@ -204,7 +207,7 @@ mod tests {
                 crate::domain::Block::Heading(crate::domain::Heading {
                     level: crate::domain::HeadingLevel::H1,
                     content: vec![],
-                    anchor: None,
+                    anchor: Some("empty-id".into()),
                 }),
                 crate::domain::Block::Heading(crate::domain::Heading {
                     level: crate::domain::HeadingLevel::H2,
@@ -235,12 +238,15 @@ mod tests {
             &rendered,
             &document.links,
             &view_state,
-            true,
             &checklist_state,
         );
         let catalog = collect_heading_catalog(&document, 80, &ctx);
         assert_eq!(catalog.len(), 1);
         assert_eq!(catalog[0].text, "Kept");
+        assert_eq!(
+            find_heading_line_by_anchor(&document, 80, &ctx, "empty-id"),
+            Some(0)
+        );
     }
 
     #[test]

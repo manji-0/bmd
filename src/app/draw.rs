@@ -42,7 +42,6 @@ impl App {
                 &self.rendered,
                 &self.document.links,
                 &self.view_state,
-                self.scroll.show_images,
                 &self.checklist_state,
             );
             let width = self.document_width();

@@ -48,7 +48,7 @@ impl NavStack {
     }
 
     pub fn step_reset(&mut self) -> Result<usize, AnchorStackEmpty> {
-        self.0.take_oldest_prior()
+        self.0.take_origin_prior()
     }
 
     pub fn clear(&mut self) {

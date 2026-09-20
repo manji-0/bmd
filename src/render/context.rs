@@ -27,8 +27,6 @@ pub struct RenderContext<'a> {
     pub selected_search_match: Option<usize>,
     pub selected_match_line_offset: Option<usize>,
     pub checklist_state: &'a ChecklistState,
-    /// When false, mermaid and markdown images render as blank space (scroll perf).
-    pub show_terminal_images: bool,
 }
 
 impl<'a> RenderContext<'a> {
@@ -38,7 +36,6 @@ impl<'a> RenderContext<'a> {
         rendered: &'a RenderedDocument,
         links: &'a [Link],
         view_state: &'a ViewState,
-        show_terminal_images: bool,
         checklist_state: &'a ChecklistState,
     ) -> Self {
         Self {
@@ -52,7 +49,6 @@ impl<'a> RenderContext<'a> {
             search_query: active_search_query(view_state.normal_search()),
             selected_search_match: active_search_match_index(view_state.normal_search()),
             selected_match_line_offset: active_search_match_line_offset(view_state.normal_search()),
-            show_terminal_images,
             checklist_state,
         }
     }

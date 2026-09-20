@@ -169,7 +169,7 @@ impl App {
         self.help_visible = false;
         self.clear_marks();
         self.pending_input = super::pending::PendingInput::None;
-        self.outline.focused = false;
+        self.reset_transient_view_ui();
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
         self.document_prefetch.begin_document();
@@ -188,17 +188,19 @@ impl App {
             document_cache: self.document_cache.clone(),
             preview_render_cache: self.preview.cache.clone(),
             pending_preview: self.preview.pending,
+            preview_zoom: self.preview.zoom,
+            toc_selected: self.preview.toc_selected,
             view_state: self.view_state.clone(),
             scroll_visual: self.scroll.visual,
             scroll_anim_speed: self.scroll.anim_speed,
-            tracked_scroll_position: self.scroll.tracked_position,
-            show_terminal_images: self.scroll.show_images,
             checklist_state: self.checklist_state.clone(),
             source_label: self.source_label.clone(),
             base_path: self.base_path.clone(),
             file_watch: self.file_watch.clone(),
             nav_stack: self.nav_stack.clone(),
             marks: self.marks.clone(),
+            outline: self.outline,
+            text_selection: self.text_selection,
         }
     }
 
@@ -231,13 +233,25 @@ impl App {
         self.help_visible = false;
         self.clear_marks();
         self.pending_input = super::pending::PendingInput::None;
-        self.outline.focused = false;
+        self.reset_transient_view_ui();
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
         self.document_prefetch.begin_document();
         self.invalidate_prefetch_viewport();
         self.maybe_prefetch_visible_links();
         Ok(())
+    }
+
+    /// Reset UI that must not leak into a newly opened document.
+    ///
+    /// Outline visibility is kept so a sidebar stays open across file jumps;
+    /// selection index is cleared and will resync from scroll on the next draw.
+    fn reset_transient_view_ui(&mut self) {
+        self.clear_text_selection();
+        self.outline.selected = 0;
+        self.outline.focused = false;
+        self.reset_preview_zoom();
+        self.preview.toc_selected = 0;
     }
 
     fn try_restore_document_frame(
@@ -258,21 +272,23 @@ impl App {
         self.document_cache = frame.document_cache;
         self.preview.cache = frame.preview_render_cache;
         self.preview.pending = frame.pending_preview;
+        self.preview.zoom = frame.preview_zoom;
+        self.preview.toc_selected = frame.toc_selected;
         self.scroll.visual = frame.scroll_visual;
         self.scroll.anim_speed = frame.scroll_anim_speed;
-        self.scroll.tracked_position = frame.tracked_scroll_position;
-        self.scroll.show_images = frame.show_terminal_images;
         self.checklist_state = frame.checklist_state;
         self.source_label = frame.source_label;
         self.base_path = frame.base_path;
         self.file_watch = frame.file_watch;
         self.nav_stack = frame.nav_stack;
         self.marks = frame.marks;
+        self.outline = frame.outline;
+        self.text_selection = frame.text_selection;
+        self.selection_drag = None;
         self.pending_input = super::pending::PendingInput::None;
-        self.outline.focused = false;
-        self.scroll.images_reenable_at = None;
         self.scroll.key_down_at = None;
         self.help_visible = false;
+        self.invalidate_prefetch_viewport();
         let terminal_size = self.view_state.terminal_size();
         self.mermaid_render.resume(
             frame.mermaid_session,

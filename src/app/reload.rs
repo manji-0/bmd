@@ -114,10 +114,9 @@ impl App {
             .reset_for_reload(scroll_offset, max_scroll);
         let offset = self.view_state.scroll().offset();
         self.scroll.visual = offset as f32;
-        self.scroll.tracked_position = self.scroll.visual;
         self.scroll.key_down_at = None;
-        self.scroll.images_reenable_at = None;
-        self.scroll.show_images = true;
+        self.clear_marks();
+        self.clear_text_selection();
         self.mermaid_render.begin_document();
         self.image_render.begin_document();
         self.document_prefetch.begin_document();
@@ -190,6 +189,44 @@ mod tests {
         assert_eq!(app.view_state.scroll().offset(), before);
         assert!(!app.view_state.is_search_active());
         assert!(app.view_state.mode().is_normal());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn reload_clears_marks_and_text_selection() {
+        use crate::domain::{MarkName, TextPoint, TextSelection};
+
+        let path = temp_markdown_path("reload-marks");
+        let _ = std::fs::remove_file(&path);
+        let body = "# Title\n\nparagraph\n";
+        std::fs::write(&path, body).unwrap();
+
+        let document = parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let size = TerminalSize::new(80, 24).unwrap();
+        let mut app = App::new_with_terminal_size(
+            document,
+            Picker::halfblocks(),
+            Some(path.clone()),
+            Some("sample.md".into()),
+            size,
+            crate::config::Config::default(),
+        )
+        .unwrap();
+
+        let name = MarkName::new('a').unwrap();
+        app.set_mark(name);
+        app.text_selection = Some(TextSelection::new(
+            TextPoint::new(0, 0),
+            TextPoint::new(0, 2),
+        ));
+        assert!(app.marks.get(name).is_some());
+
+        thread::sleep(Duration::from_millis(1100));
+        std::fs::write(&path, "# Title\n\nparagraph\nupdated\n").unwrap();
+        app.file_watch.as_mut().unwrap().poll_changed().unwrap();
+        assert!(app.reload_from_disk().unwrap());
+        assert!(app.marks.get(name).is_none());
+        assert!(app.text_selection.is_none());
         let _ = std::fs::remove_file(path);
     }
 }

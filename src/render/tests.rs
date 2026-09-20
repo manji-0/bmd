@@ -53,7 +53,6 @@ fn test_render_context() -> RenderContext<'static> {
         selected_search_match: None,
         selected_match_line_offset: None,
         checklist_state,
-        show_terminal_images: true,
     }
 }
 
@@ -386,7 +385,6 @@ fn selected_search_match_renders_selected_style_in_buffer() {
         ctx_base.rendered,
         ctx_base.links,
         &view_state,
-        true,
         ctx_base.checklist_state,
     );
 
