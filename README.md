@@ -151,7 +151,7 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | Left click on link | Open link / preview |
 | Left click on checkbox | Toggle task-list item (normal mode) |
 | Left click on outline | Jump to heading |
-| Drag | Select text (copied to clipboard on release) |
+| Drag | Select text (highlight only; press `y` to copy) |
 
 ### Search input mode
 

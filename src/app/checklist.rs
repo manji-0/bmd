@@ -77,7 +77,6 @@ impl App {
             } else {
                 self.text_selection = Some(TextSelection::new(drag.anchor, drag.cursor));
             }
-            self.copy_text_selection()?;
             return Ok(true);
         }
 

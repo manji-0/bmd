@@ -1405,3 +1405,92 @@ fn document_jump_restores_outline_and_text_selection() {
 
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn drag_select_highlights_without_auto_copy() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let doc = parse("# Hello World\n\nSome selectable body text here.\n").unwrap();
+    let mut app = new_test_app(doc);
+    let backend = ratatui::backend::TestBackend::new(80, 30);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    app.draw_frame(&mut terminal).unwrap();
+
+    assert!(
+        app.handle_mouse_event(0, 0, MouseEventKind::Down(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(8, 0, MouseEventKind::Drag(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(8, 0, MouseEventKind::Up(MouseButton::Left))
+            .unwrap()
+    );
+
+    let selection = app.text_selection.expect("drag should leave a selection");
+    assert!(!selection.is_empty());
+    assert!(
+        app.status_message.is_none(),
+        "drag release must not auto-copy (got {:?})",
+        app.status_message
+    );
+
+    app.copy_text_selection().unwrap();
+    assert!(
+        app.status_message
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("copied "),
+        "explicit yank/copy should still work (got {:?})",
+        app.status_message
+    );
+}
+
+#[test]
+fn click_without_drag_toggles_checklist() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let doc = parse("- [ ] task\n").unwrap();
+    let mut app = new_test_app(doc);
+    let before = app.checklist_state.revision();
+
+    assert!(
+        app.handle_mouse_event(0, 0, MouseEventKind::Down(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(0, 0, MouseEventKind::Up(MouseButton::Left))
+            .unwrap()
+    );
+
+    assert!(app.text_selection.is_none());
+    assert_eq!(app.checklist_state.revision(), before + 1);
+}
+
+#[test]
+fn click_without_drag_opens_document_link() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let dir = temp_markdown_dir("click-open-link");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child\n\n").unwrap();
+
+    // "Click [here](child.md) now" — link text "here" starts at column 7 (matches render hit test).
+    let mut app = file_backed_app(&dir, "parent.md", "Click [here](child.md) now\n");
+    assert!(
+        app.handle_mouse_event(7, 0, MouseEventKind::Down(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(7, 0, MouseEventKind::Up(MouseButton::Left))
+            .unwrap()
+    );
+
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+    assert!(app.text_selection.is_none());
+
+    let _ = std::fs::remove_dir_all(dir);
+}
