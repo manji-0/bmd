@@ -1278,10 +1278,7 @@ fn outline_open_leaves_document_keys_to_keymap() {
             app.view_state.normal_search(),
         )
     };
-    assert_eq!(
-        map(KeyEvent::from(KeyCode::Char('j'))),
-        Command::ScrollDown
-    );
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('j'))), Command::ScrollDown);
     assert_eq!(map(KeyEvent::from(KeyCode::Char('k'))), Command::ScrollUp);
     assert_eq!(map(KeyEvent::from(KeyCode::Char('n'))), Command::NextLink);
     assert_eq!(
