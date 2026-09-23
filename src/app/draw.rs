@@ -80,6 +80,7 @@ impl App {
 
             let status = format_status_bar(StatusBarInput {
                 source_label: self.source_label.as_deref(),
+                document: &self.document,
                 view_state: &self.view_state,
                 max_scroll: self.max_scroll(),
                 doc_stack_depth: self.doc_stack.len_frames(),
