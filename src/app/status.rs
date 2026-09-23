@@ -16,7 +16,7 @@ use super::layout::content_height;
 const SELECTED_URL_MAX_CHARS: usize = 48;
 
 const HELP_TEXT: &str = "\
-bmd — Markdown viewer (press H or Esc to close)
+bmd — Markdown viewer (press Esc to close)
 
 Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   wheel scroll
 Headings      [/] prev/next section   #anchor links jump in-document
@@ -29,7 +29,7 @@ Search        / forward   ? backward   live count + highlight while typing   Ent
 Yank          y then l link / h heading / c code / y selection   (y alone copies active selection)
 Preview       Ctrl+pinch or +/- zoom   0 reset zoom   Esc/o/O close   click outside to close
 Selection     drag to select (highlight only)   y copy when selected
-Other         click checkbox (session)   h help   H close help   q/Ctrl-c quit";
+Other         click checkbox (session)   h help   Esc close help   q/Ctrl-c quit";
 
 /// Inputs for the bottom status line.
 pub(crate) struct StatusBarInput<'a> {
