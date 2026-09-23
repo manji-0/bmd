@@ -77,6 +77,7 @@ pub fn command_from_name(name: &str) -> Option<Command> {
         "prev_heading" => Some(Command::PrevHeading),
         "open_link" => Some(Command::OpenLink),
         "nav_back" => Some(Command::NavBack),
+        "nav_reset" => Some(Command::NavReset),
         "start_search_forward" => Some(Command::StartSearchForward),
         "start_search_backward" => Some(Command::StartSearchBackward),
         "toggle_help" => Some(Command::ToggleHelp),
@@ -359,8 +360,9 @@ impl Keymap {
             return Command::SearchCancel;
         }
 
+        // Esc matches browser/cancel muscle memory: one dismiss/back step (same as O).
         if key.code == KeyCode::Esc && key.modifiers.is_empty() {
-            return Command::NavReset;
+            return Command::NavBack;
         }
 
         let resolved = resolve_key(&key);
@@ -477,6 +479,7 @@ fn default_preview_bindings() -> Vec<(KeySpec, Command)> {
     vec![
         k("esc", Command::ClosePreview),
         k("o", Command::ClosePreview),
+        k("O", Command::ClosePreview),
         k("+", Command::PreviewZoomIn),
         k("=", Command::PreviewZoomIn),
         k("-", Command::PreviewZoomOut),
@@ -627,20 +630,34 @@ mod tests {
     }
 
     #[test]
-    fn inactive_search_esc_resets_navigation() {
+    fn inactive_search_esc_steps_back_one() {
         assert_eq!(
             map_event(
                 Event::Key(KeyEvent::from(KeyCode::Esc)),
                 &UiMode::Normal,
                 &NormalSearch::inactive()
             ),
-            Command::NavReset
+            Command::NavBack
         );
     }
 
     #[test]
     fn shift_o_navigates_back() {
         assert_eq!(map(shift('O')), Command::NavBack);
+    }
+
+    #[test]
+    fn preview_shift_o_closes_overlay() {
+        assert_eq!(
+            map_event(
+                Event::Key(shift('O')),
+                &UiMode::Preview {
+                    kind: crate::domain::PreviewKind::Link(crate::domain::LinkId(0))
+                },
+                &NormalSearch::inactive()
+            ),
+            Command::ClosePreview
+        );
     }
 
     #[test]

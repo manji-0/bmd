@@ -232,7 +232,10 @@ impl App {
 
         if self.help_visible && self.view_state.mode().is_normal() {
             match command {
-                Command::CloseHelp | Command::SearchCancel | Command::NavReset => {
+                Command::CloseHelp
+                | Command::SearchCancel
+                | Command::NavBack
+                | Command::NavReset => {
                     self.help_visible = false;
                 }
                 Command::Quit => self.should_quit = true,
@@ -270,7 +273,14 @@ impl App {
             Command::PreviewZoomIn => self.adjust_preview_zoom(PREVIEW_ZOOM_STEP),
             Command::PreviewZoomOut => self.adjust_preview_zoom(1.0 / PREVIEW_ZOOM_STEP),
             Command::PreviewZoomReset => self.reset_preview_zoom(),
-            Command::NavBack => self.nav_back(),
+            Command::NavBack => {
+                self.clear_text_selection();
+                if self.outline.focused {
+                    self.unfocus_outline();
+                } else {
+                    self.nav_back();
+                }
+            }
             Command::NavReset => {
                 self.clear_text_selection();
                 if self.outline.focused {

@@ -206,22 +206,26 @@ impl App {
     }
 
     /// Pop one scroll position from the anchor stack, or the previous document.
+    ///
+    /// Esc and `O` share this one-step back model. Status reports the destination
+    /// (`back → file.md` / `back → previous position`).
     pub(crate) fn nav_back(&mut self) {
         match plan_back(&self.nav_stack, self.doc_stack.len_frames()) {
             NavBackPlan::AnchorStep => self.apply_anchor_back(),
             NavBackPlan::DocumentStep(idle) => self.doc_back(idle),
-            NavBackPlan::Idle => self.set_status_message("navigation stack empty".into()),
+            NavBackPlan::Idle => self.set_status_message("nothing to go back to".into()),
         }
     }
 
     /// Reset the anchor stack, or return to the root document on the file stack.
     ///
-    /// Anchor jumps must be fully reset before the document stack is consulted.
+    /// Not bound by default (Esc/`O` step back one layer). Remap `nav_reset` in
+    /// config when a full drain is wanted. Anchor jumps reset before documents.
     pub(crate) fn nav_reset(&mut self) {
         match plan_reset(&self.nav_stack, self.doc_stack.len_frames()) {
             NavResetPlan::AnchorReset => self.apply_anchor_reset(),
             NavResetPlan::DocumentReset(idle) => self.doc_reset(idle),
-            NavResetPlan::Idle => {}
+            NavResetPlan::Idle => self.set_status_message("nothing to reset".into()),
         }
     }
 
@@ -231,20 +235,23 @@ impl App {
                 let max = self.max_scroll();
                 self.view_state = self.view_state.clone().scroll_to(offset, max);
                 self.snap_scroll_visual();
+                self.set_status_message("back → previous position".into());
             }
             Err(AnchorStackEmpty) => {
-                self.set_status_message("navigation stack empty".into());
+                self.set_status_message("nothing to go back to".into());
             }
         }
     }
 
     fn apply_anchor_reset(&mut self) {
         let Ok(origin) = self.nav_stack.step_reset() else {
+            self.set_status_message("nothing to reset".into());
             return;
         };
         let max = self.max_scroll();
         self.view_state = self.view_state.clone().scroll_to(origin, max);
         self.snap_scroll_visual();
+        self.set_status_message("reset → previous position".into());
     }
 
     pub(crate) fn follow_anchor(&mut self, anchor: &str) {

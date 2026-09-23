@@ -41,7 +41,7 @@ devbox run run -- docs/func-check/00-index.md
 |---|-------------|----------|
 | 10 | [08-links-anchors.md](./08-links-anchors.md) | Web / アンカー / ドキュメントリンク |
 | 11 | [09-search-targets.md](./09-search-targets.md) | `/` `?` 検索、`n` `N` マッチ移動 |
-| 12 | [12-document-navigation.md](./12-document-navigation.md) | ファイルスタック、`O` / `Esc` 戻り |
+| 12 | [12-document-navigation.md](./12-document-navigation.md) | ファイルスタック、`O` / `Esc` 1 ステップ戻り |
 | 13 | [13-scroll-long.md](./13-scroll-long.md) | `j` `k` `d` `u` `g` `G`、マウスホイール |
 
 ### リッチコンテンツ
@@ -71,8 +71,8 @@ devbox run run -- docs/func-check/00-index.md
 | `/` / `?` | 前方 / 後方検索 |
 | `n` / `N` | 次 / 前のリンク（検索中はマッチ） |
 | `o` / `Enter` | リンクを開く / プレビュー |
-| `O` | アンカーまたは前のファイルへ戻る |
-| `Esc` | 検索解除 / プレビュー閉じる / スタックリセット |
+| `O` / `Esc` | 1 ステップ戻る（プレビュー閉じる / アウトライン解除 / 前のジャンプ・ファイル） |
+| `Esc`（検索中） | 検索解除 |
 | `x` | 画面上部のタスク項目をトグル |
 | `h` | ヘルプ |
 | `q` | 終了 |
