@@ -84,7 +84,8 @@ fn read_input() -> Result<ReadInputResult, AppError> {
     let mut args: Vec<String> = env::args().skip(1).collect();
     let pr_listing = github::take_pr_listing_flag(&mut args);
 
-    match args.as_slice() {
+    let positional: Vec<&str> = args.iter().map(String::as_str).collect();
+    match positional.as_slice() {
         [] | ["-"] => {
             if pr_listing {
                 return Err(AppError::UnsupportedInput(format!(
