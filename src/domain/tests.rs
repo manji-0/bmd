@@ -52,17 +52,17 @@ fn scroll_up_saturates() {
 }
 
 #[test]
-fn link_selection_wraps_within_visible_set() {
-    let visible = [LinkId(1), LinkId(3), LinkId(5)];
+fn link_selection_wraps_within_set() {
+    let targets = [LinkId(1), LinkId(3), LinkId(5)];
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size);
-    let state = state.select_next_link_in(&visible);
+    let state = state.select_next_link_in(&targets);
     assert_eq!(state.selected_link(), Some(LinkId(1)));
-    let state = state.select_next_link_in(&visible);
+    let state = state.select_next_link_in(&targets);
     assert_eq!(state.selected_link(), Some(LinkId(3)));
-    let state = state.select_next_link_in(&visible);
+    let state = state.select_next_link_in(&targets);
     assert_eq!(state.selected_link(), Some(LinkId(5)));
-    let state = state.select_next_link_in(&visible);
+    let state = state.select_next_link_in(&targets);
     assert_eq!(state.selected_link(), Some(LinkId(1)));
 }
 
@@ -445,12 +445,12 @@ fn link_kind_preview_flag() {
 }
 
 #[test]
-fn link_selection_prev_wraps_within_visible_set() {
-    let visible = [LinkId(1), LinkId(3)];
+fn link_selection_prev_wraps_within_set() {
+    let targets = [LinkId(1), LinkId(3)];
     let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size).select_prev_link_in(&visible);
+    let state = ViewState::new(size).select_prev_link_in(&targets);
     assert_eq!(state.selected_link(), Some(LinkId(3)));
-    let state = state.select_prev_link_in(&visible);
+    let state = state.select_prev_link_in(&targets);
     assert_eq!(state.selected_link(), Some(LinkId(1)));
 }
 

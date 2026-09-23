@@ -48,29 +48,37 @@ impl App {
     }
 
     pub(crate) fn next_link(&mut self) {
-        let visible = self.visible_nav_targets();
-        self.view_state = self.view_state.clone().select_next_nav_in(&visible);
+        let targets = self.document_nav_targets();
+        self.view_state = self.view_state.clone().select_next_nav_in(&targets);
+        self.scroll_to_selected_nav();
         self.maybe_warm_selected_preview();
     }
 
     pub(crate) fn prev_link(&mut self) {
-        let visible = self.visible_nav_targets();
-        self.view_state = self.view_state.clone().select_prev_nav_in(&visible);
+        let targets = self.document_nav_targets();
+        self.view_state = self.view_state.clone().select_prev_nav_in(&targets);
+        self.scroll_to_selected_nav();
         self.maybe_warm_selected_preview();
     }
 
-    fn visible_nav_targets(&self) -> Vec<crate::domain::NavTarget> {
+    fn document_nav_targets(&self) -> Vec<crate::domain::NavTarget> {
         let ctx = self.render_context();
         let width = self.document_width();
-        let scroll = self.view_state.scroll().offset();
-        let visible_lines = self.content_height() as usize;
-        crate::render::collect_visible_nav_targets(
-            &self.document,
-            width,
-            &ctx,
-            scroll,
-            visible_lines,
-        )
+        crate::render::collect_nav_targets(&self.document, width, &ctx)
+    }
+
+    fn scroll_to_selected_nav(&mut self) {
+        let Some(target) = self.view_state.selected_nav() else {
+            return;
+        };
+        let ctx = self.render_context();
+        let width = self.document_width();
+        let Some(line) =
+            crate::render::find_nav_target_line_offset(&self.document, width, &ctx, target)
+        else {
+            return;
+        };
+        self.scroll_to_line(line);
     }
 
     pub(crate) fn next_heading(&mut self) {

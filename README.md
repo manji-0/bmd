@@ -50,7 +50,7 @@ Press `/` for forward search or `?` for backward search. A prompt appears at the
 
 ### Links and preview
 
-Cycle through links in the document with `n` / `N` / `p`. Only links currently visible on screen are included; pressing `n` wraps within that set without scrolling.
+Cycle through links and footnote references in the document with `n` / `N` / `p` (or `Tab` / `Shift-Tab`). Selection walks the whole document in order, scrolls to each target, and wraps from last to first (and vice versa).
 
 | Type | Example | `o` / `Enter` |
 |------|---------|---------------|
@@ -138,8 +138,8 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `t` | Toggle outline sidebar (j/k navigate when focused; Enter/o jump; Esc unfocus) |
 | `m` then `a`–`z` | Set scroll mark |
 | `'` then `a`–`z` | Jump to scroll mark |
-| `Tab` / `n` | Next visible link (or next search match when search is active) |
-| `Shift-Tab` / `N` / `p` | Previous visible link (or previous search match) |
+| `Tab` / `n` | Next link / footnote in the document, scrolling to it (or next search match when search is active) |
+| `Shift-Tab` / `N` / `p` | Previous link / footnote in the document, scrolling to it (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
 | `O` | Close an open preview, or step back one navigation level |
 | `/` / `?` | Start forward / backward search |
