@@ -28,9 +28,8 @@ Back          Esc / O  one step: close preview or back one jump
 Search        / forward   ? backward   live count + highlight while typing   Enter jump   n/N next/prev   Esc clear
 Yank          y then l link / h heading / c code / y selection   (y alone copies active selection)
 Preview       Ctrl+pinch or +/- zoom   0 reset zoom   Esc/o/O close   click outside to close
-Tasks         click checkbox   x toggle at top line
 Selection     drag to select (highlight only)   y copy when selected
-Other         h help   H close help   q/Ctrl-c quit";
+Other         click checkbox (session)   h help   H close help   q/Ctrl-c quit";
 
 /// Inputs for the bottom status line.
 pub(crate) struct StatusBarInput<'a> {
