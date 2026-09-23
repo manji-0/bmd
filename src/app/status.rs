@@ -8,9 +8,12 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph, Wrap},
 };
 
-use crate::domain::{NormalSearch, ViewState};
+use crate::domain::{Document, NavTarget, NormalSearch, ViewState};
 
 use super::layout::content_height;
+
+/// Max characters for a selected link URL in the status bar.
+const SELECTED_URL_MAX_CHARS: usize = 48;
 
 const HELP_TEXT: &str = "\
 bmd — Markdown viewer (press H or Esc to close)
@@ -31,6 +34,7 @@ Other         h help   H close help   q/Ctrl-c quit";
 /// Inputs for the bottom status line.
 pub(crate) struct StatusBarInput<'a> {
     pub source_label: Option<&'a str>,
+    pub document: &'a Document,
     pub view_state: &'a ViewState,
     pub max_scroll: usize,
     pub doc_stack_depth: usize,
@@ -99,12 +103,8 @@ fn trailing_status(input: &StatusBarInput<'_>) -> String {
         ));
     }
 
-    if let Some(id) = input.view_state.selected_link() {
-        parts.push(format!("link #{}", id.0));
-    }
-
-    if let Some(id) = input.view_state.selected_footnote() {
-        parts.push(format!("footnote #{}", id.0));
+    if let Some(selected) = selected_nav_status(input.document, input.view_state) {
+        parts.push(selected);
     }
 
     if input.doc_stack_depth > 0 {
@@ -112,6 +112,29 @@ fn trailing_status(input: &StatusBarInput<'_>) -> String {
     }
 
     parts.join("  |  ")
+}
+
+/// Human-readable status text for the selected link or footnote.
+fn selected_nav_status(document: &Document, view_state: &ViewState) -> Option<String> {
+    match view_state.selected_nav()? {
+        NavTarget::Link(id) => {
+            let link = document.links().get(id.0)?;
+            Some(truncate_status(link.url.as_str(), SELECTED_URL_MAX_CHARS))
+        }
+        NavTarget::Footnote(id) => {
+            let footnote = document.footnotes().get(id.0)?;
+            Some(format!("footnote [{}]", footnote.label))
+        }
+    }
+}
+
+fn truncate_status(text: &str, max_chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= max_chars {
+        return text.to_string();
+    }
+    let truncated: String = text.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{truncated}…")
 }
 
 fn dim_style() -> Style {
@@ -147,4 +170,75 @@ pub(crate) fn scroll_link_target(
     let visible = content_height(view_state.terminal_size().height(), view_state.mode()) as usize;
     let margin = visible / 4;
     line_offset.saturating_sub(margin).min(max_scroll)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{FootnoteId, LinkId, TerminalSize};
+    use crate::parse::parse;
+
+    fn status_text(document: &Document, view_state: &ViewState) -> String {
+        format_status_bar(StatusBarInput {
+            source_label: Some("doc.md"),
+            document,
+            view_state,
+            max_scroll: 0,
+            doc_stack_depth: 0,
+            status_message: None,
+            outline_visible: false,
+            outline_focused: false,
+            pending_prompt: None,
+        })
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect()
+    }
+
+    #[test]
+    fn status_shows_selected_link_url_not_opaque_id() {
+        let document = parse("[docs](https://example.com/path)\n").unwrap();
+        let view_state =
+            ViewState::new(TerminalSize::new(80, 24).unwrap()).with_selected_link(LinkId(0));
+        let text = status_text(&document, &view_state);
+        assert!(
+            text.contains("https://example.com/path"),
+            "expected URL in status, got: {text}"
+        );
+        assert!(
+            !text.contains("link #0"),
+            "opaque link id should not appear: {text}"
+        );
+    }
+
+    #[test]
+    fn status_truncates_long_selected_link_url() {
+        let long = format!("https://example.com/{}", "a".repeat(80));
+        let document = parse(&format!("[x]({long})\n")).unwrap();
+        let view_state =
+            ViewState::new(TerminalSize::new(80, 24).unwrap()).with_selected_link(LinkId(0));
+        let text = status_text(&document, &view_state);
+        assert!(text.contains('…'), "expected truncated URL: {text}");
+        assert!(
+            !text.contains(&long),
+            "full long URL should not appear: {text}"
+        );
+    }
+
+    #[test]
+    fn status_shows_footnote_label_not_opaque_id() {
+        let document = parse("See note.[^note]\n\n[^note]: Footnote body.\n").unwrap();
+        let view_state = ViewState::new(TerminalSize::new(80, 24).unwrap())
+            .with_selected_footnote(FootnoteId(0));
+        let text = status_text(&document, &view_state);
+        assert!(
+            text.contains("footnote [note]"),
+            "expected footnote label in status, got: {text}"
+        );
+        assert!(
+            !text.contains("footnote #0"),
+            "opaque footnote id should not appear: {text}"
+        );
+    }
 }
