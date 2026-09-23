@@ -114,7 +114,7 @@ impl App {
             return;
         }
         let Some(id) = self.view_state.selected_link() else {
-            self.set_status_message("no link or footnote selected — press n to select".into());
+            self.set_status_message("no link selected — press n to select".into());
             return;
         };
         let Some(link) = self.document.links.get(id.0).cloned() else {

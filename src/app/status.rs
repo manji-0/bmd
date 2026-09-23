@@ -22,14 +22,14 @@ Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   whe
 Headings      [/] prev/next section   #anchor links jump in-document
 Outline       t toggle sidebar   tracks scroll   click entry to jump
 Marks         ma set mark   'a jump to mark
-Links         n/N next/prev (scrolls)   Tab/Shift-Tab   o/Enter open   click link
+Links         n/N next/prev link (scrolls)   Tab/Shift-Tab   o/Enter open   click link
 Back          Esc / O  one step: close preview or back one jump
               status: back → file.md  or  back → previous position   (repeat to go further)
 Search        / forward   ? backward   live count + highlight while typing   Enter jump   n/N next/prev   Esc clear
 Yank          y then l link / h heading / c code / y selection   (y alone copies active selection)
 Preview       Ctrl+pinch or +/- zoom   0 reset zoom   Esc/o/O close   click outside to close
 Selection     drag to select (highlight only)   y copy when selected
-Other         click checkbox (session)   h help   Esc close help   q/Ctrl-c quit";
+Other         click checkbox (session)   click footnote preview   h help   Esc close help   q/Ctrl-c quit";
 
 /// Inputs for the bottom status line.
 pub(crate) struct StatusBarInput<'a> {

@@ -10,9 +10,12 @@ use super::context::RenderContext;
 pub use hits::{collect_footnote_hits, collect_link_hits};
 pub use locate::find_link_line_offset;
 
-/// Collect all navigation targets in document order (links and footnotes).
+/// Collect link navigation targets in document order.
+///
+/// Footnote references are intentionally excluded from `n`/`N` cycling so
+/// link hopping is not interrupted; open footnotes via click instead.
 pub fn collect_nav_targets(document: &Document, width: u16, ctx: &RenderContext) -> Vec<NavTarget> {
-    ordered_nav_targets(document, width, ctx)
+    ordered_link_nav_targets(document, width, ctx)
         .into_iter()
         .map(|(_, target)| target)
         .collect()
@@ -29,14 +32,14 @@ pub fn collect_visible_nav_targets(
         return Vec::new();
     }
     let viewport_end = scroll.saturating_add(visible_lines);
-    ordered_nav_targets(document, width, ctx)
+    ordered_link_nav_targets(document, width, ctx)
         .into_iter()
         .filter(|(line, _)| *line >= scroll && *line < viewport_end)
         .map(|(_, target)| target)
         .collect()
 }
 
-fn ordered_nav_targets(
+fn ordered_link_nav_targets(
     document: &Document,
     width: u16,
     ctx: &RenderContext,
@@ -48,9 +51,6 @@ fn ordered_nav_targets(
 
     for hit in collect_link_hits(document, width, ctx) {
         ordered.push((hit.line, hit.x, NavTarget::Link(hit.id)));
-    }
-    for hit in collect_footnote_hits(document, width, ctx) {
-        ordered.push((hit.line, hit.x, NavTarget::Footnote(hit.id)));
     }
     ordered.sort_by_key(|(line, x, _)| (*line, *x));
 
@@ -73,6 +73,20 @@ pub fn link_at_click(
     local_col: usize,
 ) -> Option<LinkId> {
     collect_link_hits(document, width, ctx)
+        .into_iter()
+        .find(|hit| hit.line == logical_row && local_col >= hit.x && local_col < hit.x + hit.width)
+        .map(|hit| hit.id)
+}
+
+/// Find a footnote reference marker whose rendered text contains the click.
+pub fn footnote_at_click(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext<'_>,
+    logical_row: usize,
+    local_col: usize,
+) -> Option<FootnoteId> {
+    collect_footnote_hits(document, width, ctx)
         .into_iter()
         .find(|hit| hit.line == logical_row && local_col >= hit.x && local_col < hit.x + hit.width)
         .map(|hit| hit.id)

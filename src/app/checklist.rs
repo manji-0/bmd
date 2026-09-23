@@ -7,7 +7,9 @@ use crate::clipboard::copy_to_clipboard;
 use crate::domain::{TextPoint, TextSelection};
 use crate::error::AppError;
 use crate::render::checklist::checklist_at_click;
-use crate::render::{PREVIEW_POPUP_PERCENT, centered_rect, extract_selected_text, link_at_click};
+use crate::render::{
+    PREVIEW_POPUP_PERCENT, centered_rect, extract_selected_text, footnote_at_click, link_at_click,
+};
 
 use super::App;
 use super::layout::{split_layout, split_main_and_prompt};
@@ -156,6 +158,13 @@ impl App {
 
         if let Some(link_id) = link_at_click(&self.document, width, &ctx, logical_row, local_col) {
             self.open_link_by_id(link_id);
+            return Ok(true);
+        }
+
+        if let Some(footnote_id) =
+            footnote_at_click(&self.document, width, &ctx, logical_row, local_col)
+        {
+            self.open_footnote(footnote_id);
             return Ok(true);
         }
 

@@ -49,7 +49,7 @@ Press `/` for forward search or `?` for backward search. A prompt appears at the
 
 ### Links and preview
 
-Cycle through links and footnote references in the document with `n` / `N` (or `Tab` / `Shift-Tab`). Selection walks the whole document in order, scrolls to each target, and wraps from last to first (and vice versa).
+Cycle through links in the document with `n` / `N` (or `Tab` / `Shift-Tab`). Selection walks the whole document in order, scrolls to each link, and wraps from last to first (and vice versa). Footnote markers are not in that cycle — click a `[^ref]` marker to open its preview.
 
 | Type | Example | `o` / `Enter` |
 |------|---------|---------------|
@@ -126,8 +126,8 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `t` | Toggle outline sidebar (tracks scroll; click entry to jump) |
 | `m` then `a`–`z` | Set scroll mark |
 | `'` then `a`–`z` | Jump to scroll mark |
-| `Tab` / `n` | Next link / footnote in the document, scrolling to it (or next search match when search is active) |
-| `Shift-Tab` / `N` | Previous link / footnote in the document, scrolling to it (or previous search match) |
+| `Tab` / `n` | Next link in the document, scrolling to it (or next search match when search is active) |
+| `Shift-Tab` / `N` | Previous link in the document, scrolling to it (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
 | `O` / `Esc` | One step back: close preview or previous jump/file (status: `back → …`) |
 | `/` / `?` | Start forward / backward search |
@@ -136,6 +136,7 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | Mouse wheel | Scroll up / down |
 | `q` / `Ctrl-c` | Quit (`Esc` clears search when active; otherwise same one-step back as `O`) |
 | Left click on link | Open link / preview |
+| Left click on footnote marker | Open footnote preview |
 | Left click on checkbox | Toggle task marker for this session (not saved) |
 | Left click on outline | Jump to heading |
 | Drag | Select text (highlight only; press `y` to copy) |

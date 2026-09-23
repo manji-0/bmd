@@ -235,6 +235,28 @@ fn prev_link_wraps_to_last_and_scrolls() {
 }
 
 #[test]
+fn next_link_skips_footnote_references() {
+    let doc =
+        parse("See[^note] and [site](https://example.com).\n\n[^note]: Footnote body.\n").unwrap();
+    let mut app = new_test_app(doc);
+
+    app.next_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(0))
+    );
+    assert_eq!(app.view_state.selected_footnote(), None);
+
+    app.next_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(0)),
+        "only one link; wrap should stay on the link, never a footnote"
+    );
+    assert_eq!(app.view_state.selected_footnote(), None);
+}
+
+#[test]
 fn next_heading_scrolls_to_later_section() {
     let mut input = String::from("# Top\n\n");
     for i in 0..80 {
@@ -1493,4 +1515,32 @@ fn click_without_drag_opens_document_link() {
     assert!(app.text_selection.is_none());
 
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn click_footnote_marker_opens_preview() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let doc = parse("x[^note]\n\n[^note]: Footnote body.\n").unwrap();
+    let mut app = new_test_app(doc);
+    let ctx = app.render_context();
+    let width = app.document_width();
+    let hits = crate::render::collect_footnote_hits(&app.document, width, &ctx);
+    assert_eq!(hits.len(), 1);
+    let col = hits[0].x as u16;
+    let row = hits[0].line as u16;
+
+    assert!(
+        app.handle_mouse_event(col, row, MouseEventKind::Down(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(col, row, MouseEventKind::Up(MouseButton::Left))
+            .unwrap()
+    );
+
+    assert_eq!(
+        app.view_state.mode().preview_footnote(),
+        Some(crate::domain::FootnoteId(0))
+    );
 }
