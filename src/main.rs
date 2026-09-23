@@ -81,9 +81,24 @@ type ReadInputResult = (
 );
 
 fn read_input() -> Result<ReadInputResult, AppError> {
-    match env::args().nth(1) {
-        Some(arg) if arg != "-" => {
-            if let Some(github_url) = github::parse_github_url(&arg) {
+    let mut args: Vec<String> = env::args().skip(1).collect();
+    let pr_listing = github::take_pr_listing_flag(&mut args);
+
+    match args.as_slice() {
+        [] | ["-"] => {
+            if pr_listing {
+                return Err(AppError::UnsupportedInput(format!(
+                    "{flag} requires a GitHub pull request URL",
+                    flag = github::PR_LISTING_FLAG
+                )));
+            }
+            let mut buffer = String::new();
+            io::stdin().read_to_string(&mut buffer)?;
+            let document = parse_with_path(None, &buffer)?;
+            Ok((document, None, None, None))
+        }
+        [arg] => {
+            if let Some(github_url) = github::parse_github_url(arg) {
                 let auth = github::resolve_auth();
                 match github_url {
                     GitHubUrl::Blob(blob) => {
@@ -98,6 +113,11 @@ fn read_input() -> Result<ReadInputResult, AppError> {
                         Ok((document, None, source_label, Some(auth)))
                     }
                     GitHubUrl::PullRequest(pr) => {
+                        if !pr_listing {
+                            return Err(AppError::UnsupportedInput(
+                                github::pr_listing_opt_in_required_message(&pr),
+                            ));
+                        }
                         eprintln!("fetching PR #{}...", pr.number);
                         let info = github::fetch_pr_info(&pr, &auth)
                             .map_err(|e| AppError::GitHubFetch(e.to_string()))?;
@@ -108,7 +128,7 @@ fn read_input() -> Result<ReadInputResult, AppError> {
                     }
                 }
             } else {
-                let path = PathBuf::from(&arg);
+                let path = PathBuf::from(arg);
                 let content = fs::read_to_string(&path).map_err(AppError::Io)?;
                 let document = parse_with_path(Some(&path), &content)?;
                 let source_label = path
@@ -117,12 +137,9 @@ fn read_input() -> Result<ReadInputResult, AppError> {
                 Ok((document, Some(path), source_label, None))
             }
         }
-        _ => {
-            let mut buffer = String::new();
-            io::stdin().read_to_string(&mut buffer)?;
-            let document = parse_with_path(None, &buffer)?;
-            Ok((document, None, None, None))
-        }
+        _ => Err(AppError::UnsupportedInput(
+            "expected a single file path, GitHub blob URL, or stdin (`-`)".into(),
+        )),
     }
 }
 
