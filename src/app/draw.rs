@@ -86,7 +86,6 @@ impl App {
                 doc_stack_depth: self.doc_stack.len_frames(),
                 status_message: self.status_message.as_deref(),
                 outline_visible: self.outline.visible,
-                outline_focused: self.outline.focused,
                 pending_prompt: self.pending_input.prompt(),
             });
             draw_status_bar(f, areas.status, status);

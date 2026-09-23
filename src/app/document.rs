@@ -312,7 +312,6 @@ impl App {
     fn reset_transient_view_ui(&mut self) {
         self.clear_text_selection();
         self.outline.selected = 0;
-        self.outline.focused = false;
         self.reset_preview_zoom();
         self.preview.toc_selected = 0;
     }

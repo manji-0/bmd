@@ -101,7 +101,6 @@ impl App {
             return false;
         };
         self.outline.selected = index;
-        self.outline.focused = true;
         self.jump_to_outline_heading();
         true
     }

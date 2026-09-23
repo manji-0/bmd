@@ -68,12 +68,6 @@ impl App {
             }
 
             if (key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat)
-                && let Some(handled) = self.handle_outline_key(key)
-            {
-                return Ok(handled);
-            }
-
-            if (key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat)
                 && let Some(handled) = self.handle_mark_prefix_key(key)
             {
                 return Ok(handled);
@@ -275,19 +269,11 @@ impl App {
             Command::PreviewZoomReset => self.reset_preview_zoom(),
             Command::NavBack => {
                 self.clear_text_selection();
-                if self.outline.focused {
-                    self.unfocus_outline();
-                } else {
-                    self.nav_back();
-                }
+                self.nav_back();
             }
             Command::NavReset => {
                 self.clear_text_selection();
-                if self.outline.focused {
-                    self.unfocus_outline();
-                } else {
-                    self.nav_reset();
-                }
+                self.nav_reset();
             }
             Command::StartSearchForward => {
                 self.pending_input = PendingInput::None;
@@ -333,7 +319,7 @@ impl App {
                 self.toc_select_next();
                 Some(true)
             }
-            KeyCode::Char('N') | KeyCode::Char('p') | KeyCode::BackTab | KeyCode::Up => {
+            KeyCode::Char('N') | KeyCode::BackTab | KeyCode::Up => {
                 self.toc_select_prev();
                 Some(true)
             }

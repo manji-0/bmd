@@ -33,7 +33,7 @@ Scroll position is tracked in logical lines; the on-screen position is animated 
 
 ### Outline
 
-Press `t` to pin a heading outline on the left. Opening the outline focuses it: `j` / `k` (or `n` / `p`) move the selection, `Enter` / `o` jumps to that heading, `Esc` returns focus to the document while keeping the sidebar, and `t` closes it. Click an outline entry to jump. While unfocused, the selection tracks the heading under the current scroll position.
+Press `t` to pin a heading outline on the left. The sidebar stays visible while you scroll the document (`j` / `k` and other keys keep working on the document). Selection tracks the heading under the current scroll position; click an outline entry to jump. Press `t` again to close it.
 
 ### Yank
 
@@ -45,12 +45,12 @@ Press `/` for forward search or `?` for backward search. A prompt appears at the
 
 - Case-insensitive substring matching
 - Searches plain text across paragraphs, code blocks, lists, block quotes, and tables
-- After confirming, `n` / `N` / `p` (or `Tab` / `Shift-Tab`) move between matches and scroll to the matching line
+- After confirming, `n` / `N` (or `Tab` / `Shift-Tab`) move between matches and scroll to the matching line
 - `Esc` while search is active clears the search (does not quit)
 
 ### Links and preview
 
-Cycle through links and footnote references in the document with `n` / `N` / `p` (or `Tab` / `Shift-Tab`). Selection walks the whole document in order, scrolls to each target, and wraps from last to first (and vice versa).
+Cycle through links and footnote references in the document with `n` / `N` (or `Tab` / `Shift-Tab`). Selection walks the whole document in order, scrolls to each target, and wraps from last to first (and vice versa).
 
 | Type | Example | `o` / `Enter` |
 |------|---------|---------------|
@@ -60,7 +60,7 @@ Cycle through links and footnote references in the document with `n` / `N` / `p`
 | Image | `![alt](path.png)` | Floating in-terminal preview |
 | Mermaid | Link from a mermaid code block | Floating preview of the rendered diagram |
 
-Close the preview overlay with `Esc`, `o`, or `O`. **One back model:** `Esc` and `O` always dismiss one layer — close an open preview, unfocus the outline, or step back one navigation jump (in-document `#anchor` first, then the previous file). The status bar shows where you went (`back → README.md` or `back → previous position`). Press again to continue stepping; there is no separate “reset both stacks” key by default (bind `nav_reset` in config if you want a full drain). Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
+Close the preview overlay with `Esc`, `o`, or `O`. **One back model:** `Esc` and `O` always dismiss one layer — close an open preview, or step back one navigation jump (in-document `#anchor` first, then the previous file). The status bar shows where you went (`back → README.md` or `back → previous position`). Press again to continue stepping; there is no separate “reset both stacks” key by default (bind `nav_reset` in config if you want a full drain). Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
 
 ### Task lists
 
@@ -135,13 +135,13 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `u` / `PageUp` | Half page up |
 | `g` / `G` | Jump to top / bottom |
 | `[` / `]` | Previous / next heading |
-| `t` | Toggle outline sidebar (j/k navigate when focused; Enter/o jump; Esc unfocus) |
+| `t` | Toggle outline sidebar (tracks scroll; click entry to jump) |
 | `m` then `a`–`z` | Set scroll mark |
 | `'` then `a`–`z` | Jump to scroll mark |
 | `Tab` / `n` | Next link / footnote in the document, scrolling to it (or next search match when search is active) |
-| `Shift-Tab` / `N` / `p` | Previous link / footnote in the document, scrolling to it (or previous search match) |
+| `Shift-Tab` / `N` | Previous link / footnote in the document, scrolling to it (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
-| `O` / `Esc` | One step back: close preview, unfocus outline, or previous jump/file (status: `back → …`) |
+| `O` / `Esc` | One step back: close preview or previous jump/file (status: `back → …`) |
 | `/` / `?` | Start forward / backward search |
 | `h` / `H` | Show help overlay / close help overlay |
 | `x` | Toggle task-list item on top visible line |
@@ -221,7 +221,7 @@ Bindings are grouped by mode. Each command accepts one key string or an array of
 ```toml
 [keymap.normal]
 scroll_down = ["j", "down"]
-prev_link = ["N", "backtab", "p"]
+prev_link = ["N", "backtab"]
 prev_heading = "["
 next_heading = "]"
 toggle_help = "h"
