@@ -131,7 +131,7 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
 | `O` / `Esc` | One step back: close preview or previous jump/file (status: `back → …`) |
 | `/` / `?` | Start forward / backward search |
-| `h` / `H` | Show help overlay / close help overlay |
+| `h` | Show help overlay (`Esc` closes) |
 | `y` | Copy text selection, or start yank (`yl` link, `yh` heading, `yc` code, `yy` selection) |
 | Mouse wheel | Scroll up / down |
 | `q` / `Ctrl-c` | Quit (`Esc` clears search when active; otherwise same one-step back as `O`) |
@@ -205,7 +205,6 @@ prev_link = ["N", "backtab"]
 prev_heading = "["
 next_heading = "]"
 toggle_help = "h"
-close_help = "H"
 toggle_outline = "t"
 yank_prefix = "y"
 
@@ -219,7 +218,7 @@ Available commands:
 
 | Mode | Commands |
 |------|----------|
-| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `nav_reset`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` (optional: `toggle_checklist`, unbound by default) |
+| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `nav_reset`, `start_search_forward`, `start_search_backward`, `toggle_help`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` (optional: `close_help`, `toggle_checklist`, unbound by default) |
 | `preview` | `close_preview`, `preview_zoom_in`, `preview_zoom_out`, `preview_zoom_reset`, `quit` |
 | `search` | `search_confirm`, `search_cancel`, `search_backspace` |
 

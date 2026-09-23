@@ -461,7 +461,8 @@ fn default_normal_bindings() -> Vec<(KeySpec, Command)> {
         k("/", Command::StartSearchForward),
         k("?", Command::StartSearchBackward),
         k("h", Command::ToggleHelp),
-        k("H", Command::CloseHelp),
+        // CloseHelp is intentionally unbound: Esc (nav_back) already dismisses
+        // the help overlay; a separate H close key is noise (or bind close_help).
         // ToggleChecklist is intentionally unbound: top-visible-line toggle is
         // undiscoverable; click a checkbox instead (or bind toggle_checklist).
         k("t", Command::ToggleOutline),
@@ -533,8 +534,9 @@ mod tests {
     }
 
     #[test]
-    fn help_close_uses_shift_h() {
-        assert_eq!(map(shift('H')), Command::CloseHelp);
+    fn help_close_unbound_by_default() {
+        assert_eq!(map(shift('H')), Command::None);
+        assert_eq!(map(key('h')), Command::ToggleHelp);
     }
 
     #[test]
