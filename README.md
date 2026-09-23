@@ -166,31 +166,24 @@ Optional settings live in `~/.config/bmd/config.toml` (or `$XDG_CONFIG_HOME/bmd/
 
 ### Theme
 
-Pick a built-in preset, then override individual roles on top of that preset:
+Pick one of the three built-in presets, then override individual roles for a custom palette:
 
 ```toml
 [theme]
-preset = "nord"   # see table below
+preset = "dark"   # or light / cursor-midnight (default when omitted)
 ```
 
 | Preset | Description |
 |--------|-------------|
-| `dark` | High-contrast classic terminal palette |
 | `cursor-midnight` | Application default (`DEFAULT_PRESET`; used when `preset` is omitted) |
+| `dark` | High-contrast classic terminal palette |
 | `light` | Dark text for light terminal backgrounds |
-| `solarized-dark` | Ethan Schoonover Solarized (dark) |
-| `solarized-light` | Ethan Schoonover Solarized (light) |
-| `nord` | Nord frost / aurora palette |
-| `gruvbox-dark` | Warm Gruvbox dark |
-| `dracula` | Dracula purple-pink accents |
-| `tokyo-night` | Tokyo Night editor colors |
-| `hackerman-omarchy` | Omarchy Hackerman neon cyan/green on `#0B0C16` |
 
-Each `[theme.<role>]` section overrides only the fields you set on the chosen preset; omitted fields keep the preset value. Set a boolean modifier to `false` to turn it off.
+Further skins are not shipped as presets — use `[theme.<role>]` overrides on top of a base. Each override section replaces only the fields you set; omitted fields keep the preset value. Set a boolean modifier to `false` to turn it off.
 
 ```toml
 [theme]
-preset = "nord"
+preset = "dark"
 
 [theme.link]
 fg = "cyan"        # overrides preset link foreground only
