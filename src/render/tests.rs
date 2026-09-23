@@ -6,11 +6,11 @@ use super::measure::measure_code_block_height;
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
 use super::{
     DocumentRenderCache, MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme,
-    checklist, collect_footnote_hits, collect_heading_catalog, collect_visible_links,
-    collect_visible_nav_targets, find_footnote_definition_line_offset,
-    find_footnote_ref_line_offset, find_heading_line_by_anchor, find_search_matches,
-    footnote_preview_title, measure_block_height, measure_document_height, next_heading_line,
-    prev_heading_line, render_footnote_preview, slugify_heading,
+    checklist, collect_footnote_hits, collect_heading_catalog, collect_nav_targets,
+    collect_visible_links, collect_visible_nav_targets, find_footnote_definition_line_offset,
+    find_footnote_ref_line_offset, find_heading_line_by_anchor, find_nav_target_line_offset,
+    find_search_matches, footnote_preview_title, measure_block_height, measure_document_height,
+    next_heading_line, prev_heading_line, render_footnote_preview, slugify_heading,
 };
 use crate::domain::{
     Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, FootnoteDefinition,
@@ -868,7 +868,7 @@ fn footnote_nav_collects_reference_and_definition_lines() {
 }
 
 #[test]
-fn collect_visible_nav_targets_orders_links_and_footnotes() {
+fn collect_nav_targets_orders_links_and_footnotes() {
     let doc = Document::new(
         vec![Block::Paragraph(vec![
             Inline::FootnoteReference(FootnoteId(0), 1),
@@ -890,14 +890,64 @@ fn collect_visible_nav_targets_orders_links_and_footnotes() {
     )
     .unwrap();
     let ctx = test_render_context();
-    let visible = collect_visible_nav_targets(&doc, 80, &ctx, 0, 10);
+    let targets = collect_nav_targets(&doc, 80, &ctx);
     assert_eq!(
-        visible,
+        targets,
         vec![
             NavTarget::Footnote(FootnoteId(0)),
             NavTarget::Link(LinkId(0))
         ]
     );
+    let visible = collect_visible_nav_targets(&doc, 80, &ctx, 0, 10);
+    assert_eq!(visible, targets);
+}
+
+#[test]
+fn collect_nav_targets_includes_offscreen_links() {
+    let doc = Document::new(
+        vec![
+            Block::Paragraph(vec![Inline::Link(
+                LinkId(0),
+                vec![Inline::Text("top".into())],
+            )]),
+            Block::Paragraph(vec![Inline::Text("filler".into())]),
+            Block::Paragraph(vec![Inline::Link(
+                LinkId(1),
+                vec![Inline::Text("bottom".into())],
+            )]),
+        ],
+        vec![
+            Link {
+                url: LinkUrl::new("https://a".into()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            },
+            Link {
+                url: LinkUrl::new("https://b".into()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            },
+        ],
+        vec![],
+        vec![],
+        vec![],
+        None,
+    )
+    .unwrap();
+    let ctx = test_render_context();
+    let top_line = find_nav_target_line_offset(&doc, 80, &ctx, NavTarget::Link(LinkId(0))).unwrap();
+    let bottom_line =
+        find_nav_target_line_offset(&doc, 80, &ctx, NavTarget::Link(LinkId(1))).unwrap();
+    assert!(bottom_line > top_line);
+
+    let all = collect_nav_targets(&doc, 80, &ctx);
+    assert_eq!(
+        all,
+        vec![NavTarget::Link(LinkId(0)), NavTarget::Link(LinkId(1))]
+    );
+
+    let visible = collect_visible_nav_targets(&doc, 80, &ctx, top_line, 1);
+    assert_eq!(visible, vec![NavTarget::Link(LinkId(0))]);
 }
 
 #[test]

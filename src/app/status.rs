@@ -19,7 +19,7 @@ Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   whe
 Headings      [/] prev/next section   #anchor links jump in-document
 Outline       t toggle sidebar   j/k when focused   Enter/o jump   Esc unfocus   click entry
 Marks         ma set mark   'a jump to mark
-Links         n/p/N next/prev in viewport   o/Enter open   click link   O step back or close preview   Esc reset stack
+Links         n/p/N next/prev (scrolls)   o/Enter open   click link   O step back or close preview   Esc reset stack
 Open/close    o opens links and previews   O closes what o opened (preview overlay) or steps back one navigation level
 Search        / forward   ? backward   n/p/N next/prev match   Esc clear
 Yank          y then l link / h heading / c code / y selection   (y alone copies active selection)

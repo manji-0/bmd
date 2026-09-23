@@ -439,30 +439,30 @@ impl ViewState {
         }
     }
 
-    /// Select the next link within `visible`, wrapping at the ends.
-    pub fn select_next_link_in(self, visible: &[LinkId]) -> Self {
-        let targets: Vec<NavTarget> = visible.iter().map(|&id| NavTarget::Link(id)).collect();
+    /// Select the next link within `targets`, wrapping at the ends.
+    pub fn select_next_link_in(self, targets: &[LinkId]) -> Self {
+        let targets: Vec<NavTarget> = targets.iter().map(|&id| NavTarget::Link(id)).collect();
         self.select_next_nav_in(&targets)
     }
 
-    /// Select the previous link within `visible`, wrapping at the ends.
-    pub fn select_prev_link_in(self, visible: &[LinkId]) -> Self {
-        let targets: Vec<NavTarget> = visible.iter().map(|&id| NavTarget::Link(id)).collect();
+    /// Select the previous link within `targets`, wrapping at the ends.
+    pub fn select_prev_link_in(self, targets: &[LinkId]) -> Self {
+        let targets: Vec<NavTarget> = targets.iter().map(|&id| NavTarget::Link(id)).collect();
         self.select_prev_nav_in(&targets)
     }
 
-    /// Select the next navigation target within `visible`, wrapping at the ends.
-    pub fn select_next_nav_in(self, visible: &[NavTarget]) -> Self {
-        if visible.is_empty() {
+    /// Select the next navigation target within `targets`, wrapping at the ends.
+    pub fn select_next_nav_in(self, targets: &[NavTarget]) -> Self {
+        if targets.is_empty() {
             return self;
         }
         let next = match self.selected_nav {
-            None => visible[0],
-            Some(current) => visible
+            None => targets[0],
+            Some(current) => targets
                 .iter()
                 .position(|&id| id == current)
-                .map(|idx| visible[(idx + 1) % visible.len()])
-                .unwrap_or(visible[0]),
+                .map(|idx| targets[(idx + 1) % targets.len()])
+                .unwrap_or(targets[0]),
         };
         Self {
             selected_nav: Some(next),
@@ -470,24 +470,24 @@ impl ViewState {
         }
     }
 
-    /// Select the previous navigation target within `visible`, wrapping at the ends.
-    pub fn select_prev_nav_in(self, visible: &[NavTarget]) -> Self {
-        if visible.is_empty() {
+    /// Select the previous navigation target within `targets`, wrapping at the ends.
+    pub fn select_prev_nav_in(self, targets: &[NavTarget]) -> Self {
+        if targets.is_empty() {
             return self;
         }
         let prev = match self.selected_nav {
-            None => *visible.last().expect("visible is non-empty"),
-            Some(current) => visible
+            None => *targets.last().expect("targets is non-empty"),
+            Some(current) => targets
                 .iter()
                 .position(|&id| id == current)
                 .map(|idx| {
                     if idx == 0 {
-                        *visible.last().expect("visible is non-empty")
+                        *targets.last().expect("targets is non-empty")
                     } else {
-                        visible[idx - 1]
+                        targets[idx - 1]
                     }
                 })
-                .unwrap_or(*visible.last().expect("visible is non-empty")),
+                .unwrap_or(*targets.last().expect("targets is non-empty")),
         };
         Self {
             selected_nav: Some(prev),

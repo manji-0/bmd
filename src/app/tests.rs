@@ -179,7 +179,7 @@ fn short_document_cannot_scroll() {
 }
 
 #[test]
-fn next_link_only_selects_links_in_viewport() {
+fn next_link_selects_offscreen_and_scrolls() {
     let mut input = String::from("# Top\n\n[visible link](https://example.com/a)\n\n");
     for i in 0..80 {
         input.push_str(&format!("paragraph {}\n\n", i));
@@ -190,10 +190,41 @@ fn next_link_only_selects_links_in_viewport() {
     let scroll_before = app.view_state.scroll().offset();
 
     app.next_link();
-    assert_eq!(app.view_state.scroll().offset(), scroll_before);
     assert_eq!(
         app.view_state.selected_link(),
         Some(crate::domain::LinkId(0))
+    );
+    assert_eq!(app.view_state.scroll().offset(), scroll_before);
+
+    app.next_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(1))
+    );
+    assert!(
+        app.view_state.scroll().offset() > scroll_before,
+        "next link should scroll to the off-screen target"
+    );
+}
+
+#[test]
+fn prev_link_wraps_to_last_and_scrolls() {
+    let mut input = String::from("# Top\n\n[first link](https://example.com/a)\n\n");
+    for i in 0..80 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    input.push_str("[last link](https://example.com/b)\n");
+    let doc = parse(&input).unwrap();
+    let mut app = new_test_app(doc);
+
+    app.prev_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(1))
+    );
+    assert!(
+        app.view_state.scroll().offset() > 0,
+        "prev from none should select the last target and scroll to it"
     );
 
     app.next_link();
