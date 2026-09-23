@@ -71,6 +71,37 @@ fn find_matches(document: &Document, width: u16, query: &str) -> Vec<SearchMatch
 }
 
 #[test]
+fn render_context_highlights_while_typing_search_input() {
+    let theme = Theme::default();
+    let syntax_assets = SyntaxAssets::new();
+    let rendered = RenderedDocument {
+        mermaid_images: HashMap::new(),
+        markdown_images: HashMap::new(),
+    };
+    let links: &[Link] = &[];
+    let checklist_state = ChecklistState::new(ChecklistStyle::Unicode);
+    let size = TerminalSize::new(80, 24).unwrap();
+    let view_state = ViewState::new(size)
+        .start_search(SearchDirection::Forward)
+        .append_search_input('n')
+        .unwrap()
+        .append_search_input('e')
+        .unwrap();
+
+    let ctx = RenderContext::new(
+        &theme,
+        &syntax_assets,
+        &rendered,
+        links,
+        &view_state,
+        &checklist_state,
+    );
+    assert_eq!(ctx.search_query.as_deref(), Some("ne"));
+    assert_eq!(ctx.selected_search_match, None);
+    assert_eq!(ctx.selected_match_line_offset, None);
+}
+
+#[test]
 fn document_render_cache_blits_fractional_scroll() {
     let ctx = test_render_context();
     let blocks: Vec<Block> = (0..20)

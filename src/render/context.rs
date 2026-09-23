@@ -7,7 +7,7 @@ use crate::domain::{ChecklistState, FootnoteId, LinkId, ViewState};
 
 use super::mermaid::RenderedDocument;
 use super::search_state::{
-    active_search_match_index, active_search_match_line_offset, active_search_query,
+    active_search_match_index, active_search_match_line_offset, render_search_query,
 };
 use super::syntax::SyntaxAssets;
 use super::theme::Theme;
@@ -46,9 +46,19 @@ impl<'a> RenderContext<'a> {
             links,
             selected_link: view_state.selected_link(),
             selected_footnote: view_state.selected_footnote(),
-            search_query: active_search_query(view_state.normal_search()),
-            selected_search_match: active_search_match_index(view_state.normal_search()),
-            selected_match_line_offset: active_search_match_line_offset(view_state.normal_search()),
+            // Live `/`/`?` input highlights matches while typing; selected emphasis
+            // only applies after Enter confirms into NormalSearch::Active.
+            search_query: render_search_query(view_state),
+            selected_search_match: if view_state.mode().is_search_input() {
+                None
+            } else {
+                active_search_match_index(view_state.normal_search())
+            },
+            selected_match_line_offset: if view_state.mode().is_search_input() {
+                None
+            } else {
+                active_search_match_line_offset(view_state.normal_search())
+            },
             checklist_state,
         }
     }

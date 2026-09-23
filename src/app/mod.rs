@@ -79,6 +79,8 @@ pub struct App {
     help_visible: bool,
     status_message: Option<String>,
     status_message_until: Option<Instant>,
+    /// Live match count while typing `/`/`?` (`None` when not applicable).
+    live_search_match_count: Option<usize>,
     picker: Picker,
     pub(crate) file_watch: Option<FileWatch>,
     next_reload_poll: Instant,
@@ -179,6 +181,7 @@ impl App {
             help_visible: false,
             status_message: None,
             status_message_until: None,
+            live_search_match_count: None,
             picker,
             file_watch,
             next_reload_poll: now,
