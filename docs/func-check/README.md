@@ -29,7 +29,7 @@ devbox run run -- docs/func-check/00-index.md
 | 2 | [01-headings.md](./01-headings.md) | H1–H6 スタイル、`{` `}` 見出しジャンプ |
 | 3 | [02-text-formatting.md](./02-text-formatting.md) | 太字・斜体・インラインコード・改行 |
 | 4 | [03-lists.md](./03-lists.md) | 順序付き・順序なし・ネストリスト |
-| 5 | [04-task-lists.md](./04-task-lists.md) | チェックボックス表示・クリック/`x` トグル |
+| 5 | [04-task-lists.md](./04-task-lists.md) | チェックボックス表示・クリックでセッション内トグル |
 | 6 | [05-code-blocks.md](./05-code-blocks.md) | 言語ラベル・シンタックスハイライト |
 | 7 | [06-tables.md](./06-tables.md) | 列幅調整・セル内折り返し |
 | 8 | [07-blockquotes.md](./07-blockquotes.md) | 引用・ネスト引用 |
@@ -73,6 +73,5 @@ devbox run run -- docs/func-check/00-index.md
 | `o` / `Enter` | リンクを開く / プレビュー |
 | `O` / `Esc` | 1 ステップ戻る（プレビュー閉じる / アウトライン解除 / 前のジャンプ・ファイル） |
 | `Esc`（検索中） | 検索解除 |
-| `x` | 画面上部のタスク項目をトグル |
 | `h` | ヘルプ |
 | `q` | 終了 |

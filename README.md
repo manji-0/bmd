@@ -1,6 +1,6 @@
 # bmd
 
-A terminal TUI for reading Markdown. Vim-style keybindings, rich markup rendering, native Mermaid diagrams, in-document search, sticky outline, scroll marks, yank, and interactive task lists.
+A terminal TUI for reading Markdown. Vim-style keybindings, rich markup rendering, native Mermaid diagrams, in-document search, sticky outline, scroll marks, and yank.
 
 ## Features
 
@@ -12,8 +12,7 @@ Documents parsed with [pulldown-cmark](https://github.com/raphlinus/pulldown-cma
 - **Paragraphs** — bold, italic, inline code, hard breaks
 - **Code blocks** — syntax highlighting via [syntect](https://github.com/trishume/syntect) with a language label
 - **Block quotes** — nested block quotes supported
-- **Lists** — ordered and unordered, including nested lists
-- **Task lists** — GitHub-style `- [ ]` / `- [x]` checklists; click a checkbox to toggle (session-only, not saved to disk)
+- **Lists** — ordered and unordered, including nested lists and GFM task markers (`- [ ]` / `- [x]`)
 - **Tables** — column widths adapt to terminal width; cells wrap internally
 - **Horizontal rules** — `---` and similar rule lines
 
@@ -62,18 +61,6 @@ Cycle through links and footnote references in the document with `n` / `N` (or `
 
 Close the preview overlay with `Esc`, `o`, or `O`. **One back model:** `Esc` and `O` always dismiss one layer — close an open preview, or step back one navigation jump (in-document `#anchor` first, then the previous file). The status bar shows where you went (`back → README.md` or `back → previous position`). Press again to continue stepping; there is no separate “reset both stacks” key by default (bind `nav_reset` in config if you want a full drain). Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
 
-### Task lists
-
-Markdown task lists (`- [ ]` / `- [x]`) render with checkbox markers. Left-click a marker to toggle checked state for the current session; changes are not written back to the file.
-
-Marker appearance is chosen automatically:
-
-| `BMD_CHECKLIST_STYLE` | Markers |
-|-----------------------|---------|
-| `unicode` (default when auto-detection is inconclusive) | `☐` / `☑` |
-| `emoji` | `⬜` / `✅` |
-| `auto` or unset | Emoji when the terminal is identifiable (Kitty, Ghostty, iTerm2, WezTerm, Apple Terminal, VS Code); otherwise Unicode |
-
 ### Mermaid and images
 
 Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://crates.io/crates/merman) crate and displayed inline using the terminal graphics protocol.
@@ -84,6 +71,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 
 ### Other
 
+- **Task markers** — GFM `- [ ]` / `- [x]` render as checkboxes; left-click toggles for the session only (not saved). Marker style via `BMD_CHECKLIST_STYLE` (`unicode` / `emoji` / `auto`)
 - **Type-safe domain model** — Kamae-style state transitions (`ViewState` methods consume `self`)
 - **Document render cache** — full document buffered until width or highlight state changes; scrolling only blits the viewport
 - **stdin / file input** — path argument, `-`, or pipe; file paths reload automatically on save (scroll position preserved)
@@ -144,12 +132,11 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `O` / `Esc` | One step back: close preview or previous jump/file (status: `back → …`) |
 | `/` / `?` | Start forward / backward search |
 | `h` / `H` | Show help overlay / close help overlay |
-| `x` | Toggle task-list item on top visible line |
 | `y` | Copy text selection, or start yank (`yl` link, `yh` heading, `yc` code, `yy` selection) |
 | Mouse wheel | Scroll up / down |
 | `q` / `Ctrl-c` | Quit (`Esc` clears search when active; otherwise same one-step back as `O`) |
 | Left click on link | Open link / preview |
-| Left click on checkbox | Toggle task-list item (normal mode) |
+| Left click on checkbox | Toggle task marker for this session (not saved) |
 | Left click on outline | Jump to heading |
 | Drag | Select text (highlight only; press `y` to copy) |
 
@@ -239,7 +226,7 @@ Available commands:
 
 | Mode | Commands |
 |------|----------|
-| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `nav_reset`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_checklist`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` |
+| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `nav_reset`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` (optional: `toggle_checklist`, unbound by default) |
 | `preview` | `close_preview`, `preview_zoom_in`, `preview_zoom_out`, `preview_zoom_reset`, `quit` |
 | `search` | `search_confirm`, `search_cancel`, `search_backspace` |
 

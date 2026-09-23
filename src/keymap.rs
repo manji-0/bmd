@@ -462,7 +462,8 @@ fn default_normal_bindings() -> Vec<(KeySpec, Command)> {
         k("?", Command::StartSearchBackward),
         k("h", Command::ToggleHelp),
         k("H", Command::CloseHelp),
-        k("x", Command::ToggleChecklist),
+        // ToggleChecklist is intentionally unbound: top-visible-line toggle is
+        // undiscoverable; click a checkbox instead (or bind toggle_checklist).
         k("t", Command::ToggleOutline),
         k("y", Command::YankPrefix),
         k("q", Command::Quit),
@@ -540,6 +541,11 @@ mod tests {
     fn outline_and_yank_bindings() {
         assert_eq!(map(key('t')), Command::ToggleOutline);
         assert_eq!(map(key('y')), Command::YankPrefix);
+    }
+
+    #[test]
+    fn checklist_toggle_unbound_by_default() {
+        assert_eq!(map(key('x')), Command::None);
     }
 
     #[test]
