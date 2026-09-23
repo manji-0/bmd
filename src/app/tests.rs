@@ -1251,16 +1251,42 @@ fn prefetched_child_navigation_round_trip_restores_parent() {
 }
 
 #[test]
-fn toggle_outline_opens_and_focuses() {
+fn toggle_outline_opens_without_focus_mode() {
     let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
     let mut app = new_test_app(doc);
     assert!(!app.outline.visible);
     app.toggle_outline();
     assert!(app.outline.visible);
-    assert!(app.outline.focused);
     app.toggle_outline();
     assert!(!app.outline.visible);
-    assert!(!app.outline.focused);
+}
+
+#[test]
+fn outline_open_leaves_document_keys_to_keymap() {
+    use crate::keymap::Command;
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+
+    let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.toggle_outline();
+    assert!(app.outline.visible);
+
+    let map = |key: KeyEvent| {
+        app.keymap.map_event(
+            Event::Key(key),
+            app.view_state.mode(),
+            app.view_state.normal_search(),
+        )
+    };
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('j'))), Command::ScrollDown);
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('k'))), Command::ScrollUp);
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('n'))), Command::NextLink);
+    assert_eq!(
+        map(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT)),
+        Command::PrevLink
+    );
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('p'))), Command::None);
+    assert_eq!(map(KeyEvent::from(KeyCode::Tab)), Command::NextLink);
 }
 
 #[test]
@@ -1268,11 +1294,10 @@ fn outline_jump_follows_heading() {
     let doc = parse("# One\n\npara\n\n## Two\n\nmore\n").unwrap();
     let mut app = new_test_app(doc);
     app.toggle_outline();
-    app.outline_select_next();
+    app.outline.selected = 1;
     let before = app.view_state.scroll().offset();
     app.jump_to_outline_heading();
     assert!(app.view_state.scroll().offset() >= before);
-    assert!(!app.outline.focused);
     assert!(app.outline.visible);
 }
 
@@ -1352,7 +1377,6 @@ fn document_jump_restores_outline_and_text_selection() {
     let mut app = file_backed_app(&dir, "parent.md", "# Parent\n\n[open child](child.md)\n");
     app.toggle_outline();
     assert!(app.outline.visible);
-    assert!(app.outline.focused);
     app.text_selection = Some(TextSelection::new(
         TextPoint::new(0, 0),
         TextPoint::new(0, 3),
@@ -1363,7 +1387,6 @@ fn document_jump_restores_outline_and_text_selection() {
     app.open_document_link("child.md");
     assert_eq!(app.source_label.as_deref(), Some("child.md"));
     assert!(app.outline.visible);
-    assert!(!app.outline.focused);
     assert!(app.text_selection.is_none());
     assert!((app.preview.zoom - 1.0).abs() < f32::EPSILON);
     assert_eq!(app.preview.toc_selected, 0);
@@ -1374,7 +1397,6 @@ fn document_jump_restores_outline_and_text_selection() {
     app.doc_back(anchor_idle(&app));
     assert_eq!(app.source_label.as_deref(), Some("parent.md"));
     assert!(app.outline.visible);
-    assert!(app.outline.focused);
     let selection = app.text_selection.expect("restored selection");
     assert_eq!(selection.anchor, TextPoint::new(0, 0));
     assert_eq!(selection.cursor, TextPoint::new(0, 3));

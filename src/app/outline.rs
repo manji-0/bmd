@@ -13,7 +13,6 @@ use super::layout::{OUTLINE_GAP, outline_panel_width};
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct OutlineUi {
     pub visible: bool,
-    pub focused: bool,
     pub selected: usize,
 }
 
@@ -21,21 +20,15 @@ impl App {
     pub(crate) fn toggle_outline(&mut self) {
         if self.outline.visible {
             self.outline.visible = false;
-            self.outline.focused = false;
             self.clamp_after_outline_change();
             return;
         }
         self.outline.visible = true;
-        self.outline.focused = true;
         let index = self.heading_index_at_scroll(self.view_state.scroll().offset());
         if let Some(index) = index {
             self.outline.selected = index;
         }
         self.clamp_after_outline_change();
-    }
-
-    pub(crate) fn unfocus_outline(&mut self) {
-        self.outline.focused = false;
     }
 
     fn clamp_after_outline_change(&mut self) {
@@ -47,9 +40,6 @@ impl App {
     }
 
     pub(crate) fn sync_outline_selection_from_scroll(&mut self) {
-        if self.outline.focused {
-            return;
-        }
         let Some(index) = self.heading_index_at_scroll(self.view_state.scroll().offset()) else {
             return;
         };
@@ -65,30 +55,6 @@ impl App {
             .or_else(|| headings.first().map(|_| 0))
     }
 
-    pub(crate) fn outline_select_next(&mut self) {
-        self.refresh_heading_catalog();
-        let count = self.heading_cache.entries().len();
-        if count == 0 {
-            return;
-        }
-        self.outline.selected = (self.outline.selected + 1) % count;
-        self.outline.focused = true;
-    }
-
-    pub(crate) fn outline_select_prev(&mut self) {
-        self.refresh_heading_catalog();
-        let count = self.heading_cache.entries().len();
-        if count == 0 {
-            return;
-        }
-        self.outline.selected = if self.outline.selected == 0 {
-            count - 1
-        } else {
-            self.outline.selected - 1
-        };
-        self.outline.focused = true;
-    }
-
     pub(crate) fn jump_to_outline_heading(&mut self) {
         self.refresh_heading_catalog();
         let slug = self
@@ -100,47 +66,6 @@ impl App {
             return;
         };
         self.follow_anchor(&slug);
-        self.outline.focused = false;
-    }
-
-    /// Handle a key while the outline sidebar has focus.
-    ///
-    /// Returns `Some(handled)` when the key was consumed by the outline.
-    pub(crate) fn handle_outline_key(&mut self, key: &crossterm::event::KeyEvent) -> Option<bool> {
-        if !self.outline.visible || !self.outline.focused {
-            return None;
-        }
-        if !self.view_state.mode().is_normal() || self.help_visible {
-            return None;
-        }
-        use crossterm::event::KeyCode;
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down | KeyCode::Char('n') | KeyCode::Tab => {
-                self.outline_select_next();
-                Some(true)
-            }
-            KeyCode::Char('k')
-            | KeyCode::Up
-            | KeyCode::Char('N')
-            | KeyCode::Char('p')
-            | KeyCode::BackTab => {
-                self.outline_select_prev();
-                Some(true)
-            }
-            KeyCode::Char('o') | KeyCode::Enter => {
-                self.jump_to_outline_heading();
-                Some(true)
-            }
-            KeyCode::Char('t') => {
-                self.toggle_outline();
-                Some(true)
-            }
-            KeyCode::Esc => {
-                self.unfocus_outline();
-                Some(true)
-            }
-            _ => None,
-        }
     }
 
     pub(crate) fn outline_hit_index(
@@ -188,24 +113,14 @@ impl App {
 
         let current_scroll = self.view_state.scroll().offset();
         let current_idx = self.heading_index_at_scroll(current_scroll);
-        let focused = self.outline.focused;
         let selected_raw = self.outline.selected;
         let normal_style = self.theme.text;
-        let selected_style = if focused {
-            self.theme.link_selected
-        } else {
-            Style::default().add_modifier(Modifier::BOLD)
-        };
+        let selected_style = Style::default().add_modifier(Modifier::BOLD);
         let prefix_style = Style::default().add_modifier(Modifier::DIM);
         let entries = self.heading_cache.entries();
 
         frame.render_widget(Clear, area);
-        let title = if focused {
-            "Outline (focused)"
-        } else {
-            "Outline"
-        };
-        let block = Block::bordered().title(title);
+        let block = Block::bordered().title("Outline");
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

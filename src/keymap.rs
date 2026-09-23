@@ -453,7 +453,6 @@ fn default_normal_bindings() -> Vec<(KeySpec, Command)> {
         k("tab", Command::NextLink),
         k("N", Command::PrevLink),
         k("backtab", Command::PrevLink),
-        k("p", Command::PrevLink),
         k("[", Command::PrevHeading),
         k("]", Command::NextHeading),
         k("o", Command::OpenLink),
@@ -521,7 +520,7 @@ mod tests {
         assert_eq!(map(shift('G')), Command::JumpToBottom);
         assert_eq!(map(key('n')), Command::NextLink);
         assert_eq!(map(shift('N')), Command::PrevLink);
-        assert_eq!(map(key('p')), Command::PrevLink);
+        assert_eq!(map(key('p')), Command::None);
         assert_eq!(map(key('o')), Command::OpenLink);
         assert_eq!(map(key('q')), Command::Quit);
     }

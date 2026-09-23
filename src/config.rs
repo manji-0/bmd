@@ -287,8 +287,12 @@ mod tests {
     fn default_config_uses_builtin_defaults() {
         let config = Config::default();
         assert_eq!(
-            config.keymap.normal_command(&test_key(KeyCode::Char('p'))),
+            config.keymap.normal_command(&test_key(KeyCode::Char('N'))),
             Command::PrevLink
+        );
+        assert_eq!(
+            config.keymap.normal_command(&test_key(KeyCode::Char('p'))),
+            Command::None
         );
     }
 

@@ -20,10 +20,10 @@ bmd — Markdown viewer (press H or Esc to close)
 
 Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   wheel scroll
 Headings      [/] prev/next section   #anchor links jump in-document
-Outline       t toggle sidebar   j/k when focused   Enter/o jump   Esc unfocus   click entry
+Outline       t toggle sidebar   tracks scroll   click entry to jump
 Marks         ma set mark   'a jump to mark
-Links         n/p/N next/prev (scrolls)   o/Enter open   click link
-Back          Esc / O  one step: close preview, unfocus outline, or back one jump
+Links         n/N next/prev (scrolls)   Tab/Shift-Tab   o/Enter open   click link
+Back          Esc / O  one step: close preview or back one jump
               status: back → file.md  or  back → previous position   (repeat to go further)
 Search        / forward   ? backward   live count + highlight while typing   Enter jump   n/N next/prev   Esc clear
 Yank          y then l link / h heading / c code / y selection   (y alone copies active selection)
@@ -41,7 +41,6 @@ pub(crate) struct StatusBarInput<'a> {
     pub doc_stack_depth: usize,
     pub status_message: Option<&'a str>,
     pub outline_visible: bool,
-    pub outline_focused: bool,
     pub pending_prompt: Option<&'a str>,
 }
 
@@ -82,11 +81,7 @@ fn trailing_status(input: &StatusBarInput<'_>) -> String {
     }
 
     if input.outline_visible {
-        parts.push(if input.outline_focused {
-            "outline*".to_string()
-        } else {
-            "outline".to_string()
-        });
+        parts.push("outline".to_string());
     }
 
     if let NormalSearch::Active(active) = input.view_state.normal_search() {
@@ -188,7 +183,6 @@ mod tests {
             doc_stack_depth: 0,
             status_message: None,
             outline_visible: false,
-            outline_focused: false,
             pending_prompt: None,
         })
         .spans
