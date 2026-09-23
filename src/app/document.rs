@@ -116,14 +116,20 @@ impl App {
             return;
         }
         let Some(frame) = self.doc_stack.pop() else {
-            self.set_status_message("document stack empty".into());
+            self.set_status_message("nothing to go back to".into());
             return;
         };
+        let dest = frame
+            .source_label
+            .clone()
+            .unwrap_or_else(|| "(previous document)".into());
         if let Err(err) = self.try_restore_document_frame(frame) {
             let (e, frame) = *err;
             self.set_status_message(e.to_string());
             self.doc_stack.restore_frames(vec![frame]);
+            return;
         }
+        self.set_status_message(format!("back → {dest}"));
     }
 
     pub(crate) fn doc_reset(&mut self, idle: AnchorIdle) {
@@ -132,8 +138,13 @@ impl App {
         }
         let mut frames = self.doc_stack.take_all_frames().into_iter();
         let Some(root) = frames.next() else {
+            self.set_status_message("nothing to reset".into());
             return;
         };
+        let dest = root
+            .source_label
+            .clone()
+            .unwrap_or_else(|| "(root document)".into());
         let rest: Vec<_> = frames.collect();
         if let Err(err) = self.try_restore_document_frame(root) {
             let (e, root) = *err;
@@ -142,7 +153,9 @@ impl App {
             frames.push(root);
             frames.extend(rest);
             self.doc_stack.restore_frames(frames);
+            return;
         }
+        self.set_status_message(format!("reset → {dest}"));
     }
 
     fn apply_github_document(

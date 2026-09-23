@@ -22,11 +22,12 @@ Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   whe
 Headings      [/] prev/next section   #anchor links jump in-document
 Outline       t toggle sidebar   j/k when focused   Enter/o jump   Esc unfocus   click entry
 Marks         ma set mark   'a jump to mark
-Links         n/p/N next/prev (scrolls)   o/Enter open   click link   O step back or close preview   Esc reset stack
-Open/close    o opens links and previews   O closes what o opened (preview overlay) or steps back one navigation level
+Links         n/p/N next/prev (scrolls)   o/Enter open   click link
+Back          Esc / O  one step: close preview, unfocus outline, or back one jump
+              status: back → file.md  or  back → previous position   (repeat to go further)
 Search        / forward   ? backward   n/p/N next/prev match   Esc clear
 Yank          y then l link / h heading / c code / y selection   (y alone copies active selection)
-Preview       Ctrl+pinch or +/- zoom   0 reset zoom   o/Esc close   click outside to close
+Preview       Ctrl+pinch or +/- zoom   0 reset zoom   Esc/o/O close   click outside to close
 Tasks         click checkbox   x toggle at top line
 Selection     drag to select (auto-copy on release)   y copy again when selected
 Other         h help   H close help   q/Ctrl-c quit";

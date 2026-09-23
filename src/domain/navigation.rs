@@ -1,8 +1,9 @@
 //! Layered back/reset navigation: anchor stack before document stack.
 //!
-//! Back (`O`) and reset (`Esc`) always consult the anchor stack first. Document
-//! navigation applies only after the anchor stack top layer is current (no pending
-//! anchor link jumps).
+//! Default keys Esc and `O` both step back one layer (`plan_back`). Optional
+//! full drain uses `plan_reset` (`nav_reset` in config; unbound by default).
+//! Both plans consult the anchor stack first. Document navigation applies only
+//! after the anchor stack top layer is current (no pending anchor link jumps).
 
 use super::NavStack;
 
@@ -20,7 +21,7 @@ impl AnchorIdle {
     }
 }
 
-/// Planned back (`O`) step before mutating application state.
+/// Planned back (`Esc` / `O`) step before mutating application state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavBackPlan {
     AnchorStep,
@@ -28,7 +29,7 @@ pub enum NavBackPlan {
     Idle,
 }
 
-/// Planned reset (`Esc`) step before mutating application state.
+/// Planned full reset (`nav_reset`) step before mutating application state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavResetPlan {
     AnchorReset,

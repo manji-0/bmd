@@ -313,10 +313,18 @@ fn anchor_navigation_stack_push_pop_and_reset() {
 
     app.nav_back();
     assert_eq!(app.view_state.scroll().offset(), before_second);
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("back → previous position")
+    );
 
     app.nav_back();
     assert_eq!(app.view_state.scroll().offset(), before_first);
     assert!(app.nav_stack.is_empty());
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("back → previous position")
+    );
 
     app.view_state = app
         .view_state
@@ -333,6 +341,10 @@ fn anchor_navigation_stack_push_pop_and_reset() {
     app.nav_reset();
     assert_eq!(app.view_state.scroll().offset(), before_first);
     assert!(app.nav_stack.is_empty());
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("reset → previous position")
+    );
 }
 
 #[test]
@@ -449,10 +461,12 @@ fn document_stack_back_and_reset() {
     app.nav_back();
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
     assert_eq!(app.doc_stack.len_frames(), 1);
+    assert_eq!(app.status_message.as_deref(), Some("back → b.md"));
 
     app.nav_back();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
     assert!(app.doc_stack.len_frames() == 0);
+    assert_eq!(app.status_message.as_deref(), Some("back → a.md"));
 
     app.view_state = app
         .view_state
@@ -467,6 +481,7 @@ fn document_stack_back_and_reset() {
     app.nav_reset();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
     assert!(app.doc_stack.len_frames() == 0);
+    assert_eq!(app.status_message.as_deref(), Some("reset → a.md"));
 
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -513,8 +528,20 @@ fn anchor_stack_takes_priority_over_document_stack() {
     app.nav_back();
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
     assert!(app.doc_stack.len_frames() != 0);
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("back → previous position")
+    );
 
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn nav_back_idle_reports_nothing_to_go_back_to() {
+    let doc = parse("# Alone\n\nno links\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.nav_back();
+    assert_eq!(app.status_message.as_deref(), Some("nothing to go back to"));
 }
 
 #[test]
@@ -774,10 +801,15 @@ fn nav_reset_drains_anchor_before_returning_to_root_document() {
     app.nav_reset();
     assert_eq!(app.source_label.as_deref(), Some("c.md"));
     assert!(app.nav_stack.is_empty());
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("reset → previous position")
+    );
 
     app.nav_reset();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
     assert!(app.doc_stack.is_empty());
+    assert_eq!(app.status_message.as_deref(), Some("reset → a.md"));
 
     let _ = std::fs::remove_dir_all(dir);
 }

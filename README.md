@@ -60,7 +60,7 @@ Cycle through links and footnote references in the document with `n` / `N` / `p`
 | Image | `![alt](path.png)` | Floating in-terminal preview |
 | Mermaid | Link from a mermaid code block | Floating preview of the rendered diagram |
 
-Close the preview overlay with `Esc` or `o`. The `o`/`O` pairing is consistent: `o` opens links and previews; `O` closes an open preview or steps back one navigation level (anchor jump or previous file). `Esc` resets the anchor stack to your pre-jump scroll position, or returns to the first opened file when only the document stack is active. Anchor navigation takes priority over document navigation when both apply. Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
+Close the preview overlay with `Esc`, `o`, or `O`. **One back model:** `Esc` and `O` always dismiss one layer — close an open preview, unfocus the outline, or step back one navigation jump (in-document `#anchor` first, then the previous file). The status bar shows where you went (`back → README.md` or `back → previous position`). Press again to continue stepping; there is no separate “reset both stacks” key by default (bind `nav_reset` in config if you want a full drain). Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
 
 ### Task lists
 
@@ -141,13 +141,13 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `Tab` / `n` | Next link / footnote in the document, scrolling to it (or next search match when search is active) |
 | `Shift-Tab` / `N` / `p` | Previous link / footnote in the document, scrolling to it (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
-| `O` | Close an open preview, or step back one navigation level |
+| `O` / `Esc` | One step back: close preview, unfocus outline, or previous jump/file (status: `back → …`) |
 | `/` / `?` | Start forward / backward search |
 | `h` / `H` | Show help overlay / close help overlay |
 | `x` | Toggle task-list item on top visible line |
 | `y` | Copy text selection, or start yank (`yl` link, `yh` heading, `yc` code, `yy` selection) |
 | Mouse wheel | Scroll up / down |
-| `q` / `Ctrl-c` | Quit (`Esc` clears search when active; else resets anchor or document stack) |
+| `q` / `Ctrl-c` | Quit (`Esc` clears search when active; otherwise same one-step back as `O`) |
 | Left click on link | Open link / preview |
 | Left click on checkbox | Toggle task-list item (normal mode) |
 | Left click on outline | Jump to heading |
@@ -166,7 +166,7 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 
 | Key | Action |
 |-----|--------|
-| `Esc` / `o` | Close preview |
+| `Esc` / `o` / `O` | Close preview |
 | `+` / `=` / `-` | Zoom in / out |
 | `0` | Reset zoom to fit |
 | Ctrl+trackpad pinch | Zoom in / out |
@@ -239,7 +239,7 @@ Available commands:
 
 | Mode | Commands |
 |------|----------|
-| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_checklist`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` |
+| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `nav_reset`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_checklist`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` |
 | `preview` | `close_preview`, `preview_zoom_in`, `preview_zoom_out`, `preview_zoom_reset`, `quit` |
 | `search` | `search_confirm`, `search_cancel`, `search_backspace` |
 
