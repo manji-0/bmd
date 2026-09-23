@@ -11,11 +11,7 @@ pub use hits::{collect_footnote_hits, collect_link_hits};
 pub use locate::find_link_line_offset;
 
 /// Collect all navigation targets in document order (links and footnotes).
-pub fn collect_nav_targets(
-    document: &Document,
-    width: u16,
-    ctx: &RenderContext,
-) -> Vec<NavTarget> {
+pub fn collect_nav_targets(document: &Document, width: u16, ctx: &RenderContext) -> Vec<NavTarget> {
     ordered_nav_targets(document, width, ctx)
         .into_iter()
         .map(|(_, target)| target)
