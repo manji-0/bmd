@@ -44,7 +44,7 @@ pub(crate) use image::{
 pub use links::{
     collect_footnote_hits, collect_link_hits, collect_nav_targets, collect_visible_links,
     collect_visible_nav_targets, find_footnote_ref_line_offset, find_link_line_offset,
-    find_nav_target_line_offset, link_at_click,
+    find_nav_target_line_offset, footnote_at_click, link_at_click,
 };
 pub use measure::{measure_block_height, measure_document_height};
 pub use mermaid::RenderedDocument;

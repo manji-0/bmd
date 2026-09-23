@@ -9,8 +9,9 @@ use super::{
     checklist, collect_footnote_hits, collect_heading_catalog, collect_nav_targets,
     collect_visible_links, collect_visible_nav_targets, find_footnote_definition_line_offset,
     find_footnote_ref_line_offset, find_heading_line_by_anchor, find_nav_target_line_offset,
-    find_search_matches, footnote_preview_title, measure_block_height, measure_document_height,
-    next_heading_line, prev_heading_line, render_footnote_preview, slugify_heading,
+    find_search_matches, footnote_at_click, footnote_preview_title, measure_block_height,
+    measure_document_height, next_heading_line, prev_heading_line, render_footnote_preview,
+    slugify_heading,
 };
 use crate::domain::{
     Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, FootnoteDefinition,
@@ -899,7 +900,7 @@ fn footnote_nav_collects_reference_and_definition_lines() {
 }
 
 #[test]
-fn collect_nav_targets_orders_links_and_footnotes() {
+fn collect_nav_targets_excludes_footnotes() {
     let doc = Document::new(
         vec![Block::Paragraph(vec![
             Inline::FootnoteReference(FootnoteId(0), 1),
@@ -922,15 +923,17 @@ fn collect_nav_targets_orders_links_and_footnotes() {
     .unwrap();
     let ctx = test_render_context();
     let targets = collect_nav_targets(&doc, 80, &ctx);
-    assert_eq!(
-        targets,
-        vec![
-            NavTarget::Footnote(FootnoteId(0)),
-            NavTarget::Link(LinkId(0))
-        ]
-    );
+    assert_eq!(targets, vec![NavTarget::Link(LinkId(0))]);
     let visible = collect_visible_nav_targets(&doc, 80, &ctx, 0, 10);
     assert_eq!(visible, targets);
+
+    let hits = collect_footnote_hits(&doc, 80, &ctx);
+    assert_eq!(hits.len(), 1);
+    let hit = &hits[0];
+    assert_eq!(
+        footnote_at_click(&doc, 80, &ctx, hit.line, hit.x),
+        Some(FootnoteId(0))
+    );
 }
 
 #[test]
