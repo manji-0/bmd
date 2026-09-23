@@ -541,10 +541,7 @@ fn nav_back_idle_reports_nothing_to_go_back_to() {
     let doc = parse("# Alone\n\nno links\n").unwrap();
     let mut app = new_test_app(doc);
     app.nav_back();
-    assert_eq!(
-        app.status_message.as_deref(),
-        Some("nothing to go back to")
-    );
+    assert_eq!(app.status_message.as_deref(), Some("nothing to go back to"));
 }
 
 #[test]
