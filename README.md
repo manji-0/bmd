@@ -41,7 +41,7 @@ Press `y` to copy an active text selection. With no selection, `y` waits for a s
 
 ### In-document search
 
-Press `/` for forward search or `?` for backward search. A prompt appears at the bottom of the screen; press `Enter` to confirm and return to normal mode. Matches are highlighted in yellow; the current match is emphasized in magenta.
+Press `/` for forward search or `?` for backward search. A prompt appears at the bottom of the screen; as you type, matching lines are highlighted and the prompt shows a live match count. Press `Enter` to confirm, jump to the nearest match, and return to normal mode. Matches are highlighted in yellow; the current match is emphasized in magenta.
 
 - Case-insensitive substring matching
 - Searches plain text across paragraphs, code blocks, lists, block quotes, and tables

@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use crate::domain::{PreviewKind, PreviewLoadStatus, SearchDirection, UiMode};
+use crate::domain::{PreviewKind, PreviewLoadStatus, UiMode};
 use crate::error::AppError;
 use crate::render::{
     CachedMarkdownView, RenderContext, footnote_preview_title, paint_selection_overlay,
@@ -92,11 +92,11 @@ impl App {
             draw_status_bar(f, areas.status, status);
 
             if let UiMode::SearchInput { direction, query } = self.view_state.mode() {
-                let prefix = match direction {
-                    SearchDirection::Forward => "/",
-                    SearchDirection::Backward => "?",
-                };
-                let prompt = format!("{}{}", prefix, query);
+                let prompt = super::search::format_search_prompt(
+                    *direction,
+                    query,
+                    self.live_search_match_count,
+                );
                 let para = Paragraph::new(prompt);
                 f.render_widget(para, areas.prompt);
             }

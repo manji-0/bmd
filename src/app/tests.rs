@@ -2,7 +2,7 @@ use super::App;
 use crate::config::Config;
 use crate::domain::{
     ANCHOR_STACK_MAX_FRAMES, AnchorIdle, Block, DOCUMENT_STACK_MAX_LAYERS, Document, Heading,
-    HeadingLevel, Inline, Link, LinkKind, LinkUrl, SearchDirection, TerminalSize,
+    HeadingLevel, Inline, Link, LinkKind, LinkUrl, NormalSearch, SearchDirection, TerminalSize,
     anchor_stack_limit_message, document_stack_limit_message,
 };
 use crate::fs::normalize_document_path;
@@ -274,6 +274,68 @@ fn search_command_flow_scrolls_to_match() {
     let before = app.view_state.scroll().offset();
     app.next_search_match();
     assert_eq!(app.view_state.scroll().offset(), before);
+}
+
+#[test]
+fn live_search_feedback_updates_count_without_jumping() {
+    let doc = parse(
+        "# Title\n\n\
+         unique_beta once\n\n\
+         unique_beta twice\n\n\
+         nowhere else\n",
+    )
+    .unwrap();
+    let mut app = new_test_app(doc);
+    let start_scroll = app.view_state.scroll().offset();
+
+    app.start_search(SearchDirection::Forward);
+    assert_eq!(app.live_search_match_count, None);
+
+    for c in "unique_beta".chars() {
+        app.append_search_input(c);
+    }
+    assert_eq!(app.live_search_match_count, Some(2));
+    assert_eq!(
+        app.view_state.scroll().offset(),
+        start_scroll,
+        "typing must not jump until Enter"
+    );
+    assert!(app.view_state.mode().is_search_input());
+    assert!(!app.view_state.is_search_active());
+
+    // Render context should highlight while still in search input.
+    let ctx = app.render_context();
+    assert_eq!(ctx.search_query.as_deref(), Some("unique_beta"));
+    assert_eq!(ctx.selected_search_match, None);
+
+    app.append_search_input('z');
+    assert_eq!(app.live_search_match_count, Some(0));
+
+    app.backspace_search_input();
+    assert_eq!(app.live_search_match_count, Some(2));
+
+    app.confirm_search();
+    assert_eq!(app.live_search_match_count, None);
+    assert!(app.view_state.is_search_active());
+    if let NormalSearch::Active(active) = app.view_state.normal_search() {
+        assert_eq!(active.matches().len(), 2);
+    } else {
+        panic!("expected active search after confirm");
+    }
+}
+
+#[test]
+fn live_search_feedback_clears_on_cancel() {
+    let doc = parse("needle here\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.start_search(SearchDirection::Forward);
+    for c in "needle".chars() {
+        app.append_search_input(c);
+    }
+    assert_eq!(app.live_search_match_count, Some(1));
+    app.cancel_search();
+    assert_eq!(app.live_search_match_count, None);
+    assert!(app.view_state.mode().is_normal());
 }
 
 #[test]
