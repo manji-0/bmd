@@ -300,25 +300,25 @@ mod tests {
     fn theme_preset_selects_base_palette() {
         let toml = r#"
 [theme]
-preset = "nord"
+preset = "dark"
 "#;
         let file: ConfigFile = toml::from_str(toml).unwrap();
         let config = file.into_config().unwrap();
-        assert_eq!(config.theme, Theme::from_preset("nord").unwrap());
+        assert_eq!(config.theme, Theme::from_preset("dark").unwrap());
     }
 
     #[test]
     fn theme_preset_with_override_replaces_specified_fields() {
         let toml = r#"
 [theme]
-preset = "dracula"
+preset = "light"
 
 [theme.link]
 fg = "cyan"
 "#;
         let file: ConfigFile = toml::from_str(toml).unwrap();
         let config = file.into_config().unwrap();
-        let preset = Theme::from_preset("dracula").unwrap();
+        let preset = Theme::from_preset("light").unwrap();
         assert_eq!(config.theme.link.fg, Some(Color::Cyan));
         assert_eq!(config.theme.link.bg, preset.link.bg);
         assert_eq!(config.theme.link.add_modifier, preset.link.add_modifier);

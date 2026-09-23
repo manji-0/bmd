@@ -9,18 +9,10 @@ use crate::error::AppError;
 pub const DEFAULT_PRESET: &str = "cursor-midnight";
 
 /// Names of built-in theme presets (stable identifiers for config).
-pub const PRESET_NAMES: &[&str] = &[
-    "dark",
-    "light",
-    "solarized-dark",
-    "solarized-light",
-    "nord",
-    "gruvbox-dark",
-    "dracula",
-    "tokyo-night",
-    "hackerman-omarchy",
-    "cursor-midnight",
-];
+///
+/// Kept to a short reader set (`dark` / `light` / default). Further skins
+/// belong in `[theme.<role>]` overrides, not a preset zoo.
+pub const PRESET_NAMES: &[&str] = &["dark", "light", "cursor-midnight"];
 
 /// Styles for a boxed callout panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,15 +88,6 @@ fn canonical_preset_name(name: &str) -> Option<&'static str> {
         "dark" => Some("dark"),
         "default" => Some(DEFAULT_PRESET),
         "light" => Some("light"),
-        "solarized-dark" | "solarized_dark" => Some("solarized-dark"),
-        "solarized-light" | "solarized_light" => Some("solarized-light"),
-        "nord" => Some("nord"),
-        "gruvbox-dark" | "gruvbox_dark" | "gruvbox" => Some("gruvbox-dark"),
-        "dracula" => Some("dracula"),
-        "tokyo-night" | "tokyo_night" | "tokyonight" => Some("tokyo-night"),
-        "hackerman-omarchy" | "hackerman_omarchy" | "hackerman" | "omarchy-hackerman" => {
-            Some("hackerman-omarchy")
-        }
         "cursor-midnight" | "cursor_midnight" | "cursor-dark-midnight" => Some("cursor-midnight"),
         _ => None,
     }
@@ -165,196 +148,6 @@ fn builtin_preset(name: &str) -> Palette {
             table_header: rgb(0x11, 0x11, 0x11),
             table_border: rgb(0xc0, 0xc0, 0xc0),
             mermaid: rgb(0x0e, 0x63, 0x8c),
-        },
-        "solarized-dark" => Palette {
-            text: rgb(0x83, 0x94, 0x96),
-            heading: rgb(0x93, 0xa1, 0xa1),
-            heading_prefix: rgb(0xb5, 0x89, 0x00),
-            heading_muted: rgb(0x65, 0x7b, 0x83),
-            heading_faint: rgb(0x58, 0x6e, 0x75),
-            code_fg: rgb(0x2a, 0xa1, 0x98),
-            code_bg: rgb(0x00, 0x2b, 0x36),
-            code_label_fg: rgb(0x00, 0x2b, 0x36),
-            code_label_bg: rgb(0xb5, 0x89, 0x00),
-            blockquote: rgb(0x65, 0x7b, 0x83),
-            list_marker: rgb(0x2a, 0xa1, 0x98),
-            link: rgb(0x26, 0x8b, 0xd2),
-            link_selected_fg: rgb(0x00, 0x2b, 0x36),
-            link_selected_bg: rgb(0x26, 0x8b, 0xd2),
-            image_link: rgb(0xd3, 0x36, 0x82),
-            image_selected_fg: rgb(0x00, 0x2b, 0x36),
-            image_selected_bg: rgb(0xd3, 0x36, 0x82),
-            search_match_fg: rgb(0x00, 0x2b, 0x36),
-            search_match_bg: rgb(0xb5, 0x89, 0x00),
-            search_selected_fg: rgb(0xfd, 0xf6, 0xe3),
-            search_selected_bg: rgb(0x6c, 0x71, 0xc4),
-            rule: rgb(0x58, 0x6e, 0x75),
-            table_header: rgb(0x93, 0xa1, 0xa1),
-            table_border: rgb(0x58, 0x6e, 0x75),
-            mermaid: rgb(0xb5, 0x89, 0x00),
-        },
-        "solarized-light" => Palette {
-            text: rgb(0x65, 0x7b, 0x83),
-            heading: rgb(0x58, 0x6e, 0x75),
-            heading_prefix: rgb(0xcb, 0x4b, 0x16),
-            heading_muted: rgb(0x83, 0x94, 0x96),
-            heading_faint: rgb(0x93, 0xa1, 0xa1),
-            code_fg: rgb(0x07, 0x89, 0x6f),
-            code_bg: rgb(0xee, 0xe8, 0xd5),
-            code_label_fg: rgb(0xfd, 0xf6, 0xe3),
-            code_label_bg: rgb(0xcb, 0x4b, 0x16),
-            blockquote: rgb(0x83, 0x94, 0x96),
-            list_marker: rgb(0x07, 0x89, 0x6f),
-            link: rgb(0x26, 0x8b, 0xd2),
-            link_selected_fg: rgb(0xfd, 0xf6, 0xe3),
-            link_selected_bg: rgb(0x26, 0x8b, 0xd2),
-            image_link: rgb(0xd3, 0x36, 0x82),
-            image_selected_fg: rgb(0xfd, 0xf6, 0xe3),
-            image_selected_bg: rgb(0xd3, 0x36, 0x82),
-            search_match_fg: rgb(0xfd, 0xf6, 0xe3),
-            search_match_bg: rgb(0xcb, 0x4b, 0x16),
-            search_selected_fg: rgb(0xfd, 0xf6, 0xe3),
-            search_selected_bg: rgb(0x6c, 0x71, 0xc4),
-            rule: rgb(0x93, 0xa1, 0xa1),
-            table_header: rgb(0x58, 0x6e, 0x75),
-            table_border: rgb(0x93, 0xa1, 0xa1),
-            mermaid: rgb(0xcb, 0x4b, 0x16),
-        },
-        "nord" => Palette {
-            text: rgb(0xd8, 0xde, 0xe9),
-            heading: rgb(0xe5, 0xe9, 0xf0),
-            heading_prefix: rgb(0x88, 0xc0, 0xd0),
-            heading_muted: rgb(0xa3, 0xbe, 0x8c),
-            heading_faint: rgb(0x81, 0xa1, 0xc1),
-            code_fg: rgb(0x8f, 0xbc, 0xbb),
-            code_bg: rgb(0x2e, 0x34, 0x40),
-            code_label_fg: rgb(0x2e, 0x34, 0x40),
-            code_label_bg: rgb(0x5e, 0x81, 0xac),
-            blockquote: rgb(0x81, 0xa1, 0xc1),
-            list_marker: rgb(0x88, 0xc0, 0xd0),
-            link: rgb(0x81, 0xa1, 0xc1),
-            link_selected_fg: rgb(0x2e, 0x34, 0x40),
-            link_selected_bg: rgb(0x5e, 0x81, 0xac),
-            image_link: rgb(0xb4, 0x8e, 0xad),
-            image_selected_fg: rgb(0x2e, 0x34, 0x40),
-            image_selected_bg: rgb(0xb4, 0x8e, 0xad),
-            search_match_fg: rgb(0x2e, 0x34, 0x40),
-            search_match_bg: rgb(0xeb, 0xcb, 0x8b),
-            search_selected_fg: rgb(0x2e, 0x34, 0x40),
-            search_selected_bg: rgb(0xbf, 0x61, 0x6a),
-            rule: rgb(0x4c, 0x56, 0x6a),
-            table_header: rgb(0xe5, 0xe9, 0xf0),
-            table_border: rgb(0x4c, 0x56, 0x6a),
-            mermaid: rgb(0x88, 0xc0, 0xd0),
-        },
-        "gruvbox-dark" => Palette {
-            text: rgb(0xeb, 0xdb, 0xb2),
-            heading: rgb(0xfb, 0xf1, 0xc7),
-            heading_prefix: rgb(0xfe, 0x80, 0x19),
-            heading_muted: rgb(0xd5, 0xc4, 0xa1),
-            heading_faint: rgb(0xa8, 0x99, 0x84),
-            code_fg: rgb(0x8e, 0xc0, 0x7c),
-            code_bg: rgb(0x28, 0x28, 0x28),
-            code_label_fg: rgb(0x28, 0x28, 0x28),
-            code_label_bg: rgb(0xd7, 0x99, 0x21),
-            blockquote: rgb(0xa8, 0x99, 0x84),
-            list_marker: rgb(0x83, 0xa5, 0x98),
-            link: rgb(0x83, 0xa5, 0x98),
-            link_selected_fg: rgb(0x28, 0x28, 0x28),
-            link_selected_bg: rgb(0x83, 0xa5, 0x98),
-            image_link: rgb(0xd3, 0x86, 0x9b),
-            image_selected_fg: rgb(0x28, 0x28, 0x28),
-            image_selected_bg: rgb(0xd3, 0x86, 0x9b),
-            search_match_fg: rgb(0x28, 0x28, 0x28),
-            search_match_bg: rgb(0xfa, 0xbd, 0x2f),
-            search_selected_fg: rgb(0x28, 0x28, 0x28),
-            search_selected_bg: rgb(0xfb, 0x49, 0x34),
-            rule: rgb(0x50, 0x50, 0x50),
-            table_header: rgb(0xfb, 0xf1, 0xc7),
-            table_border: rgb(0x50, 0x50, 0x50),
-            mermaid: rgb(0xfe, 0x80, 0x19),
-        },
-        "dracula" => Palette {
-            text: rgb(0xf8, 0xf8, 0xf2),
-            heading: rgb(0xff, 0xff, 0xff),
-            heading_prefix: rgb(0xff, 0x79, 0xc6),
-            heading_muted: rgb(0xbd, 0x93, 0xf9),
-            heading_faint: rgb(0x62, 0x72, 0xa4),
-            code_fg: rgb(0x50, 0xfa, 0x7b),
-            code_bg: rgb(0x21, 0x22, 0x2c),
-            code_label_fg: rgb(0x28, 0x2a, 0x36),
-            code_label_bg: rgb(0xf1, 0xfa, 0x8c),
-            blockquote: rgb(0x62, 0x72, 0xa4),
-            list_marker: rgb(0x8b, 0xe9, 0xfd),
-            link: rgb(0x8b, 0xe9, 0xfd),
-            link_selected_fg: rgb(0x28, 0x2a, 0x36),
-            link_selected_bg: rgb(0x8b, 0xe9, 0xfd),
-            image_link: rgb(0xff, 0x79, 0xc6),
-            image_selected_fg: rgb(0x28, 0x2a, 0x36),
-            image_selected_bg: rgb(0xff, 0x79, 0xc6),
-            search_match_fg: rgb(0x28, 0x2a, 0x36),
-            search_match_bg: rgb(0xf1, 0xfa, 0x8c),
-            search_selected_fg: rgb(0xf8, 0xf8, 0xf2),
-            search_selected_bg: rgb(0xff, 0x55, 0x55),
-            rule: rgb(0x44, 0x47, 0x5a),
-            table_header: rgb(0xff, 0xff, 0xff),
-            table_border: rgb(0x44, 0x47, 0x5a),
-            mermaid: rgb(0xbd, 0x93, 0xf9),
-        },
-        "tokyo-night" => Palette {
-            text: rgb(0xc0, 0xca, 0xf5),
-            heading: rgb(0xd9, 0xe2, 0xff),
-            heading_prefix: rgb(0x7a, 0xa2, 0xf7),
-            heading_muted: rgb(0x9a, 0xa5, 0xce),
-            heading_faint: rgb(0x56, 0x5f, 0x89),
-            code_fg: rgb(0x9e, 0xce, 0x6a),
-            code_bg: rgb(0x1a, 0x1b, 0x26),
-            code_label_fg: rgb(0x1a, 0x1b, 0x26),
-            code_label_bg: rgb(0xe0, 0xaf, 0x68),
-            blockquote: rgb(0x56, 0x5f, 0x89),
-            list_marker: rgb(0x7d, 0xcf, 0xff),
-            link: rgb(0x7a, 0xa2, 0xf7),
-            link_selected_fg: rgb(0x1a, 0x1b, 0x26),
-            link_selected_bg: rgb(0x7a, 0xa2, 0xf7),
-            image_link: rgb(0xbb, 0x9a, 0xf7),
-            image_selected_fg: rgb(0x1a, 0x1b, 0x26),
-            image_selected_bg: rgb(0xbb, 0x9a, 0xf7),
-            search_match_fg: rgb(0x1a, 0x1b, 0x26),
-            search_match_bg: rgb(0xe0, 0xaf, 0x68),
-            search_selected_fg: rgb(0x1a, 0x1b, 0x26),
-            search_selected_bg: rgb(0xf7, 0x76, 0x8e),
-            rule: rgb(0x3b, 0x40, 0x60),
-            table_header: rgb(0xd9, 0xe2, 0xff),
-            table_border: rgb(0x3b, 0x40, 0x60),
-            mermaid: rgb(0x7d, 0xcf, 0xff),
-        },
-        // Omarchy Hackerman — colors from basecamp/omarchy themes/hackerman/colors.toml
-        "hackerman-omarchy" => Palette {
-            text: rgb(0xdd, 0xf7, 0xff),
-            heading: rgb(0xdd, 0xf7, 0xff),
-            heading_prefix: rgb(0x82, 0xfb, 0x9c),
-            heading_muted: rgb(0x85, 0xe1, 0xfb),
-            heading_faint: rgb(0x6a, 0x6e, 0x95),
-            code_fg: rgb(0x7c, 0xf8, 0xf7),
-            code_bg: rgb(0x0b, 0x0c, 0x16),
-            code_label_fg: rgb(0x0b, 0x0c, 0x16),
-            code_label_bg: rgb(0x82, 0xfb, 0x9c),
-            blockquote: rgb(0x6a, 0x6e, 0x95),
-            list_marker: rgb(0x50, 0xf7, 0xd4),
-            link: rgb(0x82, 0x9d, 0xd4),
-            link_selected_fg: rgb(0x0b, 0x0c, 0x16),
-            link_selected_bg: rgb(0x82, 0x9d, 0xd4),
-            image_link: rgb(0x86, 0xa7, 0xdf),
-            image_selected_fg: rgb(0x0b, 0x0c, 0x16),
-            image_selected_bg: rgb(0x86, 0xa7, 0xdf),
-            search_match_fg: rgb(0x0b, 0x0c, 0x16),
-            search_match_bg: rgb(0x50, 0xf8, 0x72),
-            search_selected_fg: rgb(0x0b, 0x0c, 0x16),
-            search_selected_bg: rgb(0x50, 0xf7, 0xd4),
-            rule: rgb(0x3e, 0x40, 0x58),
-            table_header: rgb(0xdd, 0xf7, 0xff),
-            table_border: rgb(0x3e, 0x40, 0x58),
-            mermaid: rgb(0x82, 0xfb, 0x9c),
         },
         // Cursor Dark Midnight — from Cursor IDE theme-cursor (VS Code JSON sources)
         "cursor-midnight" => Palette {
@@ -475,7 +268,7 @@ fn rgb(r: u8, g: u8, b: u8) -> Color {
 }
 
 fn callout_styles_for(preset: &str, kind: CalloutKind) -> CalloutStyles {
-    let light = matches!(preset, "light" | "solarized-light");
+    let light = preset == "light";
     let (border, bg, title_fg, body_fg) = match (light, kind) {
         (false, CalloutKind::Note) => (
             rgb(31, 111, 235),
@@ -565,6 +358,8 @@ mod tests {
     #[test]
     fn unknown_preset_errors() {
         assert!(Theme::from_preset("unknown-scheme").is_err());
+        assert!(Theme::from_preset("nord").is_err());
+        assert!(Theme::from_preset("dracula").is_err());
     }
 
     #[test]
@@ -577,23 +372,15 @@ mod tests {
 
     #[test]
     fn presets_differ_from_default() {
-        assert_ne!(Theme::from_preset("nord").unwrap(), Theme::default());
+        assert_ne!(Theme::from_preset("dark").unwrap(), Theme::default());
         assert_ne!(Theme::from_preset("light").unwrap(), Theme::default());
     }
 
     #[test]
     fn cursor_midnight_aliases_resolve() {
-        for alias in ["cursor-midnight", "cursor-dark-midnight"] {
+        for alias in ["cursor-midnight", "cursor-dark-midnight", "default"] {
             let theme = Theme::from_preset(alias).unwrap();
             assert_eq!(theme.link.fg, Some(rgb(0x8f, 0xbc, 0xbb)));
-        }
-    }
-
-    #[test]
-    fn hackerman_omarchy_aliases_resolve() {
-        for alias in ["hackerman-omarchy", "hackerman", "omarchy-hackerman"] {
-            let theme = Theme::from_preset(alias).unwrap();
-            assert_eq!(theme.text.fg, Some(rgb(0xdd, 0xf7, 0xff)));
         }
     }
 
@@ -602,5 +389,6 @@ mod tests {
         for name in PRESET_NAMES {
             assert_eq!(canonical_preset_name(name), Some(*name));
         }
+        assert_eq!(PRESET_NAMES.len(), 3);
     }
 }
