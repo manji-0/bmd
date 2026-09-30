@@ -60,155 +60,180 @@ fn build_agent() -> ureq::Agent {
     ureq::Agent::new_with_config(config)
 }
 
-fn auth_header(auth: &GitHubAuth) -> Option<String> {
-    match auth {
-        GitHubAuth::Token(token) => Some(format!("Bearer {token}")),
-        GitHubAuth::None => None,
+/// GET `url` with the optional `Accept` media type and bearer token.
+fn get(
+    agent: &ureq::Agent,
+    url: &str,
+    accept: Option<&str>,
+    auth: &GitHubAuth,
+) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+    let mut req = agent.get(url);
+    if let Some(accept) = accept {
+        req = req.header("Accept", accept);
+    }
+    if let GitHubAuth::Token(token) = auth {
+        req = req.header("Authorization", &format!("Bearer {token}"));
+    }
+    req.call()
+}
+
+fn api_error(error: ureq::Error, body: impl FnOnce() -> String) -> GitHubError {
+    match error {
+        ureq::Error::StatusCode(status) => GitHubError::Api {
+            status,
+            body: body(),
+        },
+        other => GitHubError::Http(other.to_string()),
     }
 }
 
 /// Fetch raw content for a GitHub blob URL.
 pub fn fetch_blob_content(blob: &GitHubBlobUrl, auth: &GitHubAuth) -> Result<String, GitHubError> {
     let agent = build_agent();
-
-    // Try raw.githubusercontent.com first (works for public repos without auth)
-    let raw_url = blob.raw_url();
-    let mut req = agent.get(&raw_url);
-    if let Some(header) = auth_header(auth) {
-        req = req.header("Authorization", &header);
-    }
-    match req.call() {
-        Ok(response) => {
-            return response
-                .into_body()
-                .read_to_string()
-                .map_err(|e| GitHubError::Http(e.to_string()));
-        }
+    // raw.githubusercontent.com serves public repos without auth; private repos
+    // 404 there and fall back to the Contents API.
+    let response = match get(&agent, &blob.raw_url(), None, auth) {
         Err(ureq::Error::StatusCode(404)) => {
-            // Fall through to API endpoint for private repos
+            let api_url = format!(
+                "https://api.github.com/repos/{}/{}/contents/{}?ref={}",
+                blob.owner, blob.repo, blob.path, blob.git_ref
+            );
+            get(
+                &agent,
+                &api_url,
+                Some("application/vnd.github.raw+json"),
+                auth,
+            )
+            .map_err(|e| api_error(e, || format!("contents API failed for {}", blob.path)))?
         }
-        Err(e) => return Err(GitHubError::Http(e.to_string())),
-    }
-
-    // Fallback: GitHub Contents API (requires auth for private repos)
-    let api_url = format!(
-        "https://api.github.com/repos/{}/{}/contents/{}?ref={}",
-        blob.owner, blob.repo, blob.path, blob.git_ref
-    );
-    let mut req = agent
-        .get(&api_url)
-        .header("Accept", "application/vnd.github.raw+json");
-    if let Some(header) = auth_header(auth) {
-        req = req.header("Authorization", &header);
-    }
-    let response = req.call().map_err(|e| match e {
-        ureq::Error::StatusCode(status) => GitHubError::Api {
-            status,
-            body: format!("contents API failed for {}", blob.path),
-        },
-        other => GitHubError::Http(other.to_string()),
-    })?;
-
+        other => other.map_err(|e| GitHubError::Http(e.to_string()))?,
+    };
     response
         .into_body()
         .read_to_string()
         .map_err(|e| GitHubError::Http(e.to_string()))
 }
 
+#[derive(serde::Deserialize)]
+struct PrJson {
+    title: Option<String>,
+    head: BranchJson,
+    base: BranchJson,
+}
+
+#[derive(serde::Deserialize)]
+struct BranchJson {
+    sha: Option<String>,
+    #[serde(rename = "ref")]
+    git_ref: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct FileJson {
+    #[serde(default)]
+    filename: String,
+    status: Option<String>,
+}
+
+const FILES_PER_PAGE: usize = 100;
+
 /// Fetch PR metadata and document file list.
 pub fn fetch_pr_info(pr: &GitHubPrUrl, auth: &GitHubAuth) -> Result<PrInfo, GitHubError> {
+    const JSON: Option<&str> = Some("application/vnd.github.v3+json");
     let agent = build_agent();
-
-    let pr_url = format!(
+    let base = format!(
         "https://api.github.com/repos/{}/{}/pulls/{}",
         pr.owner, pr.repo, pr.number
     );
-    let mut req = agent
-        .get(&pr_url)
-        .header("Accept", "application/vnd.github.v3+json");
-    if let Some(header) = auth_header(auth) {
-        req = req.header("Authorization", &header);
-    }
-    let pr_response = req.call().map_err(|e| match e {
-        ureq::Error::StatusCode(status) => GitHubError::Api {
-            status,
-            body: format!("PR #{} not found", pr.number),
-        },
-        other => GitHubError::Http(other.to_string()),
-    })?;
-
-    let pr_json: serde_json::Value = pr_response
+    let pr_json: PrJson = get(&agent, &base, JSON, auth)
+        .map_err(|e| api_error(e, || format!("PR #{} not found", pr.number)))?
         .into_body()
-        .read_json::<serde_json::Value>()
+        .read_json()
         .map_err(|e| GitHubError::Parse(e.to_string()))?;
 
-    let title = pr_json["title"]
-        .as_str()
-        .unwrap_or("(untitled)")
-        .to_string();
-    let head_sha = pr_json["head"]["sha"]
-        .as_str()
-        .ok_or_else(|| GitHubError::Parse("missing head.sha".into()))?
-        .to_string();
-    let base_ref = pr_json["base"]["ref"]
-        .as_str()
-        .unwrap_or("main")
-        .to_string();
-    let head_ref = pr_json["head"]["ref"]
-        .as_str()
-        .unwrap_or("unknown")
-        .to_string();
-
     let mut files = Vec::new();
-    let mut page = 1u32;
-    loop {
-        let files_url = format!(
-            "https://api.github.com/repos/{}/{}/pulls/{}/files?per_page=100&page={}",
-            pr.owner, pr.repo, pr.number, page
-        );
-        let mut req = agent
-            .get(&files_url)
-            .header("Accept", "application/vnd.github.v3+json");
-        if let Some(header) = auth_header(auth) {
-            req = req.header("Authorization", &header);
-        }
-        let files_response = req.call().map_err(|e| GitHubError::Http(e.to_string()))?;
-
-        let page_files: Vec<serde_json::Value> = files_response
+    for page in 1.. {
+        let url = format!("{base}/files?per_page={FILES_PER_PAGE}&page={page}");
+        let page_files: Vec<FileJson> = get(&agent, &url, JSON, auth)
+            .map_err(|e| GitHubError::Http(e.to_string()))?
             .into_body()
-            .read_json::<Vec<serde_json::Value>>()
+            .read_json()
             .map_err(|e| GitHubError::Parse(e.to_string()))?;
-
-        if page_files.is_empty() {
+        let last_page = page_files.len() < FILES_PER_PAGE;
+        files.extend(page_files);
+        if last_page {
             break;
         }
-
-        for file in &page_files {
-            let filename = file["filename"].as_str().unwrap_or_default().to_string();
-            let status = file["status"].as_str().unwrap_or("modified").to_string();
-            if !filename.is_empty() {
-                files.push(PrDocumentFile { filename, status });
-            }
-        }
-
-        if page_files.len() < 100 {
-            break;
-        }
-        page += 1;
     }
+    pr_info(pr_json, files)
+}
 
+fn pr_info(pr: PrJson, files: Vec<FileJson>) -> Result<PrInfo, GitHubError> {
     Ok(PrInfo {
-        title,
-        head_sha,
-        base_ref,
-        head_ref,
-        files,
+        title: pr.title.unwrap_or_else(|| "(untitled)".into()),
+        head_sha: pr
+            .head
+            .sha
+            .ok_or_else(|| GitHubError::Parse("missing head.sha".into()))?,
+        base_ref: pr.base.git_ref.unwrap_or_else(|| "main".into()),
+        head_ref: pr.head.git_ref.unwrap_or_else(|| "unknown".into()),
+        files: files
+            .into_iter()
+            .filter(|file| !file.filename.is_empty())
+            .map(|file| PrDocumentFile {
+                filename: file.filename,
+                status: file.status.unwrap_or_else(|| "modified".into()),
+            })
+            .collect(),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pr_info_maps_api_json_with_defaults() {
+        let pr: PrJson = serde_json::from_str(
+            r#"{"title":"Docs","head":{"sha":"abc","ref":"feat"},"base":{"ref":"dev"}}"#,
+        )
+        .unwrap();
+        let files: Vec<FileJson> = serde_json::from_str(
+            r#"[{"filename":"a.md","status":"added"},{"filename":"b.rst"},{"status":"removed"}]"#,
+        )
+        .unwrap();
+        let info = pr_info(pr, files).unwrap();
+        assert_eq!(
+            (info.title.as_str(), info.head_sha.as_str()),
+            ("Docs", "abc")
+        );
+        assert_eq!(
+            (info.base_ref.as_str(), info.head_ref.as_str()),
+            ("dev", "feat")
+        );
+        let files: Vec<_> = info
+            .files
+            .iter()
+            .map(|f| (f.filename.as_str(), f.status.as_str()))
+            .collect();
+        assert_eq!(files, [("a.md", "added"), ("b.rst", "modified")]);
+
+        let bare: PrJson = serde_json::from_str(r#"{"head":{"sha":"x"},"base":{}}"#).unwrap();
+        let info = pr_info(bare, vec![]).unwrap();
+        assert_eq!(
+            (
+                info.title.as_str(),
+                info.base_ref.as_str(),
+                info.head_ref.as_str()
+            ),
+            ("(untitled)", "main", "unknown")
+        );
+        let no_sha: PrJson = serde_json::from_str(r#"{"head":{},"base":{}}"#).unwrap();
+        assert!(matches!(
+            pr_info(no_sha, vec![]),
+            Err(GitHubError::Parse(_))
+        ));
+    }
 
     #[test]
     fn github_auth_debug_redacts_token() {

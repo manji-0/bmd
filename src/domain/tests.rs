@@ -538,3 +538,100 @@ fn confirm_search_outside_search_input_is_error() {
         .unwrap_err();
     assert_eq!(err, crate::domain::SearchTransitionError::WrongMode);
 }
+
+/// `inline` wrapped in every container that can hold inlines, one per top-level block.
+fn nested_everywhere(inline: Inline) -> Vec<Block> {
+    use super::{DefinitionItem, DefinitionList, List, ListItem};
+    let para = || Block::Paragraph(vec![Inline::Strong(vec![inline.clone()])]);
+    vec![
+        para(),
+        Block::Heading(Heading {
+            level: HeadingLevel::H2,
+            content: vec![inline.clone()],
+            anchor: None,
+        }),
+        Block::Quote(vec![para()]),
+        Block::Callout(Callout {
+            kind: CalloutKind::Note,
+            title: None,
+            body: vec![para()],
+        }),
+        Block::List(List {
+            ordered: false,
+            items: vec![ListItem::plain(vec![para()])],
+        }),
+        Block::DefinitionList(DefinitionList {
+            items: vec![
+                DefinitionItem {
+                    term: vec![inline.clone()],
+                    definitions: vec![],
+                },
+                DefinitionItem {
+                    term: vec![],
+                    definitions: vec![vec![para()]],
+                },
+            ],
+        }),
+        Block::Table(Table {
+            headers: vec![vec![Inline::Text("h".into())]],
+            rows: vec![vec![vec![inline.clone()]]],
+            alignments: vec![Alignment::None],
+        }),
+    ]
+}
+
+#[test]
+fn validation_finds_dangling_references_in_every_container() {
+    use super::{FootnoteDefinition, FootnoteId};
+    for (index, block) in nested_everywhere(Inline::Link(LinkId(3), vec![]))
+        .into_iter()
+        .enumerate()
+    {
+        let blocks = vec![Block::Rule; index]
+            .into_iter()
+            .chain([block])
+            .collect();
+        assert_eq!(
+            Document::new(blocks, vec![], vec![], vec![], vec![], None),
+            Err(DocumentError::DanglingLink {
+                block_index: index,
+                link_id: LinkId(3),
+            }),
+            "container #{index}"
+        );
+    }
+    let reference = Inline::FootnoteReference(FootnoteId(1), 1);
+    for block in nested_everywhere(reference.clone()) {
+        assert_eq!(
+            Document::new(vec![block], vec![], vec![], vec![], vec![], None),
+            Err(DocumentError::DanglingFootnote {
+                block_index: 0,
+                footnote_id: FootnoteId(1),
+            })
+        );
+    }
+    let empty = FootnoteDefinition {
+        label: "n".into(),
+        content: vec![],
+    };
+    let referenced = || {
+        vec![Block::Paragraph(vec![Inline::FootnoteReference(
+            FootnoteId(0),
+            1,
+        )])]
+    };
+    assert_eq!(
+        Document::new(
+            referenced(),
+            vec![],
+            vec![],
+            vec![empty.clone()],
+            vec![FootnoteId(0)],
+            None
+        ),
+        Err(DocumentError::UndefinedFootnote {
+            footnote_id: FootnoteId(0)
+        })
+    );
+    assert!(Document::new(referenced(), vec![], vec![], vec![empty], vec![], None).is_ok());
+}
