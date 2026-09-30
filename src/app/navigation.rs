@@ -62,7 +62,7 @@ impl App {
     fn visible_nav_targets(&mut self) -> Vec<crate::domain::NavTarget> {
         let scroll = self.view_state.scroll().offset();
         let lines = self.content_height() as usize;
-        crate::render::visible_nav_targets(self.nav_hits(), scroll, lines)
+        crate::render::visible_nav_targets(self.hits(), scroll, lines)
     }
 
     pub(crate) fn next_heading(&mut self) {

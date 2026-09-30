@@ -4,6 +4,7 @@ mod block;
 mod inline;
 mod table;
 
+use super::checklist::ChecklistId;
 use super::front_matter::FrontMatter;
 use super::link::{DocumentError, Link, LinkId, LinkKind};
 use super::preview_load::mermaid_diagram_index;
@@ -112,6 +113,28 @@ impl Document {
                 *link = next;
             }
         }
+    }
+
+    /// The task-list item with `id`, searched through nested containers.
+    pub fn checklist_item(&self, id: ChecklistId) -> Option<&ListItem> {
+        fn in_blocks(blocks: &[Block], id: ChecklistId) -> Option<&ListItem> {
+            blocks.iter().find_map(|block| match block {
+                Block::List(list) => list.items.iter().find_map(|item| {
+                    (item.checklist_id == Some(id))
+                        .then_some(item)
+                        .or_else(|| in_blocks(&item.content, id))
+                }),
+                Block::Quote(blocks) => in_blocks(blocks, id),
+                Block::Callout(callout) => in_blocks(&callout.body, id),
+                Block::DefinitionList(list) => list
+                    .items
+                    .iter()
+                    .flat_map(|item| &item.definitions)
+                    .find_map(|definition| in_blocks(definition, id)),
+                _ => None,
+            })
+        }
+        in_blocks(&self.blocks, id)
     }
 
     /// Visit every inline of the body depth first, with its top-level block index.

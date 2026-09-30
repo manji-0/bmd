@@ -4,7 +4,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 use super::document::render_document;
-use super::nav_hits::collect_nav_hits;
+use super::hits::{HitTarget, collect_hits};
 use super::{RenderContext, SyntaxAssets, Theme, find_search_matches, measure_document_height};
 use crate::domain::{ChecklistState, ChecklistStyle, Document, Inline, NavTarget};
 use crate::parse::{MarkupFormat, parse_document};
@@ -135,11 +135,13 @@ fn search_matches_land_on_rows_containing_the_query() {
 #[test]
 fn every_referenced_link_and_footnote_has_a_disjoint_hit() {
     for_each_sample(|name, document, ctx, width| {
-        let hits = collect_nav_hits(document, width, ctx);
+        let hits = collect_hits(document, width, ctx);
         let mut referenced = Vec::new();
         document.visit_inlines(|_, inline| match inline {
-            Inline::Link(id, _) => referenced.push(NavTarget::Link(*id)),
-            Inline::FootnoteReference(id, _) => referenced.push(NavTarget::Footnote(*id)),
+            Inline::Link(id, _) => referenced.push(HitTarget::Nav(NavTarget::Link(*id))),
+            Inline::FootnoteReference(id, _) => {
+                referenced.push(HitTarget::Nav(NavTarget::Footnote(*id)));
+            }
             _ => {}
         });
         assert!(!referenced.is_empty() || name != "kitchen-sink.md");

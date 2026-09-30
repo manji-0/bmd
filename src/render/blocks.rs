@@ -13,6 +13,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::callout::render_callout;
 use super::context::RenderContext;
+use super::hits::{HitTarget, probe_style};
 use super::inline::{heading_styles, highlight_line, inlines_to_wrapped_lines, syntect_span};
 use super::math::render_math_block;
 use super::measure::measure_block_height;
@@ -248,13 +249,12 @@ fn render_list(list: &List, area: Rect, buf: &mut Buffer, ctx: &RenderContext, l
         }
         let marker = list_marker_label(list, idx, item, ctx.checklist_state);
         let marker_width = list_marker_width_at(list, idx, item, ctx.checklist_state);
-        buf.set_stringn(
-            area.x,
-            item_area.y,
-            &marker,
-            marker_width,
-            ctx.theme.list_marker,
-        );
+        let marker_style = item
+            .checklist_id
+            .filter(|_| ctx.nav_probe)
+            .and_then(|id| probe_style(HitTarget::Checklist(id)))
+            .unwrap_or(ctx.theme.list_marker);
+        buf.set_stringn(area.x, item_area.y, &marker, marker_width, marker_style);
         if item.content.is_empty() {
             row += 1;
             continue;

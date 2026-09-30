@@ -1,15 +1,15 @@
 use super::blocks::render_code_block;
 use super::document::render_document;
 use super::headings::collect_heading_offsets;
+use super::hits::{Hit, HitTarget, collect_hits, hit_at, visible_links, visible_nav_targets};
 use super::inline::{highlight_span, highlight_text, inlines_to_text, inlines_to_wrapped_lines};
 use super::measure::measure_block_height;
 use super::measure::measure_code_block_height;
-use super::nav_hits::{NavHit, collect_nav_hits, link_at, visible_links, visible_nav_targets};
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
 use super::{
-    DocumentRenderCache, RenderContext, SyntaxAssets, Theme, checklist,
-    find_heading_line_by_anchor, find_search_matches, footnote_preview_title,
-    measure_document_height, next_heading_line, prev_heading_line, render_footnote_preview,
+    DocumentRenderCache, RenderContext, SyntaxAssets, Theme, find_heading_line_by_anchor,
+    find_search_matches, footnote_preview_title, measure_document_height, next_heading_line,
+    prev_heading_line, render_footnote_preview,
 };
 use crate::domain::slugify_heading;
 use crate::domain::{
@@ -35,13 +35,20 @@ impl ratatui::widgets::Widget for DocView<'_> {
     }
 }
 
-fn hits(document: &Document) -> Vec<NavHit> {
-    collect_nav_hits(document, 80, &test_render_context())
+fn hits(document: &Document) -> Vec<Hit> {
+    collect_hits(document, 80, &test_render_context())
 }
 
-fn first_line(hits: &[NavHit], target: NavTarget) -> Option<usize> {
+fn link_at(hits: &[Hit], line: usize, col: usize) -> Option<LinkId> {
+    match hit_at(hits, line, col) {
+        Some(HitTarget::Nav(NavTarget::Link(id))) => Some(id),
+        _ => None,
+    }
+}
+
+fn first_line(hits: &[Hit], target: NavTarget) -> Option<usize> {
     hits.iter()
-        .find(|hit| hit.target == target)
+        .find(|hit| hit.target == HitTarget::Nav(target))
         .map(|hit| hit.line)
 }
 
@@ -855,7 +862,10 @@ fn footnote_nav_collects_reference_and_definition_lines() {
     .unwrap();
     let hits = hits(&doc);
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].target, NavTarget::Footnote(FootnoteId(0)));
+    assert_eq!(
+        hits[0].target,
+        HitTarget::Nav(NavTarget::Footnote(FootnoteId(0)))
+    );
 }
 
 #[test]
@@ -1146,9 +1156,9 @@ fn list_item_with_multiple_blocks_indents_all() {
 #[test]
 fn checklist_hit_region_matches_unicode_marker_width() {
     let document = parse("- [ ] click me").unwrap();
-    let ctx = test_render_context();
-    let hits = checklist::collect_checklist_hits(&document, 80, &ctx);
+    let hits = hits(&document);
     assert_eq!(hits.len(), 1);
+    assert!(matches!(hits[0].target, HitTarget::Checklist(_)));
     assert_eq!(hits[0].line, 0);
     assert_eq!(hits[0].x, 0);
     assert_eq!(hits[0].width, ChecklistStyle::Unicode.marker_width());
@@ -1178,10 +1188,12 @@ fn checklist_toggle_updates_marker_label() {
 #[test]
 fn checklist_at_click_finds_item_on_marker_column() {
     let document = parse("- [ ] task").unwrap();
-    let ctx = test_render_context();
-    let item = checklist::checklist_at_click(&document, 80, &ctx, 0, 0);
-    assert!(item.is_some());
-    assert!(checklist::checklist_at_click(&document, 80, &ctx, 0, 2).is_none());
+    let hits = hits(&document);
+    let Some(HitTarget::Checklist(id)) = hit_at(&hits, 0, 0) else {
+        panic!("{hits:?}");
+    };
+    assert!(document.checklist_item(id).is_some());
+    assert!(hit_at(&hits, 0, 2).is_none());
 }
 
 #[test]
@@ -1208,7 +1220,7 @@ fn link_at_click_finds_link_in_table_cell() {
     let document = parse("| A | B |\n|---|---|\n| [link](https://example.com) | text |").unwrap();
     let hits = hits(&document);
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].target, NavTarget::Link(LinkId(0)));
+    assert_eq!(hits[0].target, HitTarget::Nav(NavTarget::Link(LinkId(0))));
     // top border (0), header (1), separator (2), body row (3), bottom border (4)
     assert_eq!(hits[0].line, 3);
     assert_eq!(link_at(&hits, 3, hits[0].x), Some(LinkId(0)));
@@ -1258,4 +1270,24 @@ fn styled_spans_do_not_gain_spaces_at_their_boundaries() {
 fn overlong_words_start_on_a_fresh_row_without_losing_spaces() {
     let rows = rendered_rows("a much longerword", 6);
     assert_eq!(rows, ["a much", "longer", "word"]);
+}
+
+#[test]
+fn checklist_hits_follow_the_rendered_rows_after_other_blocks() {
+    let markdown = "# Title\n\n> [!NOTE]\n> - [ ] in callout\n\n- [x] top level";
+    let document = parse(markdown).unwrap();
+    let rows = rendered_rows(markdown, 80);
+    let hits = hits(&document);
+    let checklist: Vec<_> = hits
+        .iter()
+        .filter(|hit| matches!(hit.target, HitTarget::Checklist(_)))
+        .collect();
+    assert_eq!(checklist.len(), 2, "{hits:?}");
+    for hit in checklist {
+        let marker: String = rows[hit.line].chars().skip(hit.x).take(1).collect();
+        assert!(
+            ["☐", "☑"].contains(&marker.as_str()),
+            "{hit:?} in {rows:#?}"
+        );
+    }
 }

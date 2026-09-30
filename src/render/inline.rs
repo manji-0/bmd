@@ -10,8 +10,8 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::{HeadingLevel, Inline, LinkId, NavTarget};
 
 use super::context::RenderContext;
+use super::hits::{is_probe_style, probe_style};
 use super::math::render_latex;
-use super::nav_hits::{is_probe_style, probe_style};
 use super::theme::Theme;
 
 pub(crate) fn footnote_marker_style(ctx: &RenderContext) -> Style {

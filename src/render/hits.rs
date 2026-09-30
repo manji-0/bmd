@@ -1,7 +1,8 @@
-//! Screen positions of links and footnote references, read back from a probe render.
+//! Screen positions of links, footnote references, and task-list markers, read
+//! back from a probe render.
 //!
-//! Instead of re-deriving layout, the document is rendered once with every link and
-//! footnote reference span tagged by an `underline_color` that encodes its target.
+//! Instead of re-deriving layout, the document is rendered once with every
+//! interactive span tagged by an `underline_color` that encodes its target.
 //! Scanning the buffer for tags yields hit rectangles that match the real render
 //! by construction.
 
@@ -10,7 +11,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::{Document, FootnoteId, LinkId, NavTarget};
+use crate::domain::{ChecklistId, Document, FootnoteId, LinkId, NavTarget};
 
 use super::context::RenderContext;
 use super::document::render_document;
@@ -18,34 +19,50 @@ use super::measure::measure_document_height;
 
 const LINK_TAG: u8 = 0xB1;
 const FOOTNOTE_TAG: u8 = 0xB2;
+const CHECKLIST_TAG: u8 = 0xB3;
 
-/// One contiguous run of a navigation target on a rendered row.
+/// Something the user can select or click in the rendered document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct NavHit {
-    pub target: NavTarget,
+pub enum HitTarget {
+    Nav(NavTarget),
+    Checklist(ChecklistId),
+}
+
+/// One contiguous run of a target on a rendered row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Hit {
+    pub target: HitTarget,
     pub line: usize,
     pub x: usize,
     pub width: usize,
 }
 
+impl From<NavTarget> for HitTarget {
+    fn from(target: NavTarget) -> Self {
+        Self::Nav(target)
+    }
+}
+
 /// Probe style for spans of `target`; `None` when the id does not fit the tag.
-pub(crate) fn probe_style(target: NavTarget) -> Option<Style> {
-    let (tag, id) = match target {
-        NavTarget::Link(LinkId(id)) => (LINK_TAG, id),
-        NavTarget::Footnote(FootnoteId(id)) => (FOOTNOTE_TAG, id),
+pub(crate) fn probe_style(target: impl Into<HitTarget>) -> Option<Style> {
+    let (tag, id) = match target.into() {
+        HitTarget::Nav(NavTarget::Link(LinkId(id))) => (LINK_TAG, id),
+        HitTarget::Nav(NavTarget::Footnote(FootnoteId(id))) => (FOOTNOTE_TAG, id),
+        HitTarget::Checklist(ChecklistId(id)) => (CHECKLIST_TAG, id as usize),
     };
     let [hi, lo] = u16::try_from(id).ok()?.to_be_bytes();
     Some(Style::default().underline_color(Color::Rgb(tag, hi, lo)))
 }
 
-fn probe_target(style: Style) -> Option<NavTarget> {
+fn probe_target(style: Style) -> Option<HitTarget> {
     let Some(Color::Rgb(tag, hi, lo)) = style.underline_color else {
         return None;
     };
-    let id = usize::from(u16::from_be_bytes([hi, lo]));
+    let id = u16::from_be_bytes([hi, lo]);
     match tag {
-        LINK_TAG => Some(NavTarget::Link(LinkId(id))),
-        FOOTNOTE_TAG => Some(NavTarget::Footnote(FootnoteId(id))),
+        LINK_TAG => Some(NavTarget::Link(LinkId(id.into())).into()),
+        FOOTNOTE_TAG => Some(NavTarget::Footnote(FootnoteId(id.into())).into()),
+        CHECKLIST_TAG => Some(HitTarget::Checklist(ChecklistId(id.into()))),
         _ => None,
     }
 }
@@ -56,11 +73,7 @@ pub(crate) fn is_probe_style(style: Style) -> bool {
 }
 
 /// Render `document` in probe mode at `width` and collect every tagged run.
-pub(crate) fn collect_nav_hits(
-    document: &Document,
-    width: u16,
-    ctx: &RenderContext,
-) -> Vec<NavHit> {
+pub(crate) fn collect_hits(document: &Document, width: u16, ctx: &RenderContext) -> Vec<Hit> {
     let probe_ctx = RenderContext {
         nav_probe: true,
         selected_link: None,
@@ -76,8 +89,8 @@ pub(crate) fn collect_nav_hits(
     scan_hits(&buf)
 }
 
-fn scan_hits(buf: &Buffer) -> Vec<NavHit> {
-    let mut hits: Vec<NavHit> = Vec::new();
+fn scan_hits(buf: &Buffer) -> Vec<Hit> {
+    let mut hits: Vec<Hit> = Vec::new();
     for y in 0..buf.area.height {
         let mut x = 0u16;
         while x < buf.area.width {
@@ -92,7 +105,7 @@ fn scan_hits(buf: &Buffer) -> Vec<NavHit> {
                     {
                         last.width += cell_width;
                     }
-                    _ => hits.push(NavHit {
+                    _ => hits.push(Hit {
                         target,
                         line: y as usize,
                         x: x as usize,
@@ -106,33 +119,35 @@ fn scan_hits(buf: &Buffer) -> Vec<NavHit> {
     hits
 }
 
-/// Targets with a hit in `[scroll, scroll + lines)`, in reading order, each once.
-pub fn visible_nav_targets(hits: &[NavHit], scroll: usize, lines: usize) -> Vec<NavTarget> {
+/// Navigation targets with a hit in `[scroll, scroll + lines)`, in reading order, each once.
+pub fn visible_nav_targets(hits: &[Hit], scroll: usize, lines: usize) -> Vec<NavTarget> {
     let mut out: Vec<NavTarget> = Vec::new();
     for hit in hits
         .iter()
         .filter(|hit| (scroll..scroll + lines).contains(&hit.line))
     {
-        if !out.contains(&hit.target) {
-            out.push(hit.target);
+        if let HitTarget::Nav(target) = hit.target
+            && !out.contains(&target)
+        {
+            out.push(target);
         }
     }
     out
 }
 
 /// Links with a hit in `[scroll, scroll + lines)`, each once.
-pub fn visible_links(hits: &[NavHit], scroll: usize, lines: usize) -> Vec<LinkId> {
+pub fn visible_links(hits: &[Hit], scroll: usize, lines: usize) -> Vec<LinkId> {
     visible_nav_targets(hits, scroll, lines)
         .into_iter()
         .filter_map(NavTarget::link_id)
         .collect()
 }
 
-/// The link drawn at logical `line`, column `col`, if any.
-pub fn link_at(hits: &[NavHit], line: usize, col: usize) -> Option<LinkId> {
+/// The target drawn at logical `line`, column `col`, if any.
+pub fn hit_at(hits: &[Hit], line: usize, col: usize) -> Option<HitTarget> {
     hits.iter()
         .find(|hit| hit.line == line && (hit.x..hit.x + hit.width).contains(&col))
-        .and_then(|hit| hit.target.link_id())
+        .map(|hit| hit.target)
 }
 
 #[cfg(test)]
@@ -142,9 +157,10 @@ mod tests {
     #[test]
     fn probe_style_round_trips_and_rejects_oversized_ids() {
         for target in [
-            NavTarget::Link(LinkId(0)),
-            NavTarget::Link(LinkId(65_535)),
-            NavTarget::Footnote(FootnoteId(7)),
+            NavTarget::Link(LinkId(0)).into(),
+            NavTarget::Link(LinkId(65_535)).into(),
+            NavTarget::Footnote(FootnoteId(7)).into(),
+            HitTarget::Checklist(ChecklistId(9)),
         ] {
             assert_eq!(probe_target(probe_style(target).unwrap()), Some(target));
         }
@@ -164,17 +180,17 @@ mod tests {
         buf.set_string(0, 1, "x", Style::default());
         buf.set_string(2, 1, "y", link);
         let hits = scan_hits(&buf);
-        let target = NavTarget::Link(LinkId(3));
+        let target = HitTarget::Nav(NavTarget::Link(LinkId(3)));
         assert_eq!(
             hits,
             [
-                NavHit {
+                Hit {
                     target,
                     line: 0,
                     x: 1,
                     width: 4
                 },
-                NavHit {
+                Hit {
                     target,
                     line: 1,
                     x: 2,
@@ -182,8 +198,8 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(link_at(&hits, 0, 4), Some(LinkId(3)));
-        assert_eq!(link_at(&hits, 1, 0), None);
+        assert_eq!(hit_at(&hits, 0, 4), Some(target));
+        assert_eq!(hit_at(&hits, 1, 0), None);
         assert_eq!(visible_links(&hits, 1, 1), [LinkId(3)]);
         assert!(visible_nav_targets(&hits, 2, 5).is_empty());
     }

@@ -6,8 +6,8 @@ use crate::domain::{Document, FootnoteId, LinkId};
 
 use super::context::RenderContext;
 use super::document::render_document;
+use super::hits::{Hit, collect_hits};
 use super::measure::measure_document_height;
-use super::nav_hits::{NavHit, collect_nav_hits};
 use super::subpixel::{SUBPIXEL_SNAP, compose_cells_vertical};
 
 /// Key for invalidating a pre-rendered document buffer.
@@ -41,8 +41,8 @@ pub struct DocumentRenderCache {
     key: Option<RenderCacheKey>,
     buffer: Buffer,
     total_height: usize,
-    /// Link/footnote positions keyed by the inputs that change layout.
-    hits: Vec<NavHit>,
+    /// Interactive-span positions keyed by the inputs that change layout.
+    hits: Vec<Hit>,
     hits_key: Option<(u16, u64)>,
 }
 
@@ -90,17 +90,12 @@ impl DocumentRenderCache {
         self.hits_key = None;
     }
 
-    /// Link and footnote-reference positions at `width`, rebuilt only when the
-    /// width or checklist state changes. Selection and search do not move text.
-    pub fn nav_hits(
-        &mut self,
-        document: &Document,
-        ctx: &RenderContext<'_>,
-        width: u16,
-    ) -> &[NavHit] {
+    /// Link, footnote-reference, and task-marker positions at `width`, rebuilt only
+    /// when the width or checklist state changes. Selection and search do not move text.
+    pub fn hits(&mut self, document: &Document, ctx: &RenderContext<'_>, width: u16) -> &[Hit] {
         let key = (width, ctx.checklist_state.revision());
         if self.hits_key != Some(key) {
-            self.hits = collect_nav_hits(document, width, ctx);
+            self.hits = collect_hits(document, width, ctx);
             self.hits_key = Some(key);
         }
         &self.hits
