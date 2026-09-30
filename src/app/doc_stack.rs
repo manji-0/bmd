@@ -29,8 +29,6 @@ pub(crate) struct DocumentFrame {
     pub view_state: ViewState,
     pub scroll_visual: f32,
     pub scroll_anim_speed: f32,
-    pub tracked_scroll_position: f32,
-    pub show_terminal_images: bool,
     pub checklist_state: ChecklistState,
     pub source_label: Option<String>,
     pub base_path: Option<PathBuf>,

@@ -197,8 +197,6 @@ impl App {
             view_state: self.view_state.clone(),
             scroll_visual: self.scroll.visual,
             scroll_anim_speed: self.scroll.anim_speed,
-            tracked_scroll_position: self.scroll.tracked_position,
-            show_terminal_images: self.scroll.show_images,
             checklist_state: self.checklist_state.clone(),
             source_label: self.source_label.clone(),
             base_path: self.base_path.clone(),
@@ -261,8 +259,6 @@ impl App {
         self.preview.pending = frame.pending_preview;
         self.scroll.visual = frame.scroll_visual;
         self.scroll.anim_speed = frame.scroll_anim_speed;
-        self.scroll.tracked_position = frame.tracked_scroll_position;
-        self.scroll.show_images = frame.show_terminal_images;
         self.checklist_state = frame.checklist_state;
         self.source_label = frame.source_label;
         self.base_path = frame.base_path;
@@ -271,7 +267,6 @@ impl App {
         self.marks = frame.marks;
         self.pending_input = super::pending::PendingInput::None;
         self.outline.focused = false;
-        self.scroll.images_reenable_at = None;
         self.scroll.key_down_at = None;
         self.help_visible = false;
         self.previews.resume(

@@ -4,10 +4,10 @@ use ratatui::{buffer::Buffer, layout::Rect, text::Line};
 
 use crate::domain::{Block, Document, FootnoteId, Heading};
 
-use super::blocks::render_block;
+use super::blocks::{render_stacked, rows_below};
 use super::context::RenderContext;
 use super::inline::{footnote_marker_style, inlines_to_wrapped_lines};
-use super::measure::measure_block_height;
+use super::measure::{BLOCK_GAP, measure_block_height};
 use unicode_width::UnicodeWidthStr;
 
 pub(crate) fn measure_footnotes_height(
@@ -34,82 +34,48 @@ fn measure_footnote_entry_height(
     let Some(def) = document.footnotes.get(footnote_id.0) else {
         return 0;
     };
-    let marker_width = footnote_marker_width(document, footnote_id);
-    let inner_width = (width as usize).saturating_sub(marker_width).max(1) as u16;
+    let inner_width = footnote_inner_width(document, footnote_id, width);
     if def.content.is_empty() {
         return 1;
     }
     def.content
         .iter()
-        .map(|block| measure_block_height(block, usize::MAX, inner_width, ctx))
+        .map(|block| measure_block_height(block, inner_width, ctx))
         .sum::<usize>()
         .max(1)
 }
 
-/// Render the footnotes section into `area`, the viewport rows left below the body.
+/// Render the footnotes section (a leading blank row, then one entry per footnote)
+/// into `area`, the rows below the body.
 pub(crate) fn render_footnotes_section(
     document: &Document,
     area: Rect,
     buf: &mut Buffer,
-    scroll: usize,
     ctx: &RenderContext,
     line_offset: usize,
 ) {
-    if document.footnote_order.is_empty() || area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let section_height = measure_footnotes_height(document, area.width, ctx);
-    if scroll >= line_offset + section_height {
-        return;
-    }
-
-    let mut y = area.y;
-    let max_y = area.y + area.height;
-    let mut current_offset = line_offset;
-
-    // Leading gap row between body and footnotes.
-    if scroll <= current_offset && y < max_y {
-        y += 1;
-    }
-    current_offset += 1;
-
+    let mut row = 1usize;
     for &footnote_id in &document.footnote_order {
-        let entry_height = measure_footnote_entry_height(document, footnote_id, area.width, ctx);
-        if scroll >= current_offset + entry_height {
-            current_offset += entry_height;
-            continue;
-        }
-
-        let skip_rows = scroll.saturating_sub(current_offset);
-        let visible_height = entry_height
-            .saturating_sub(skip_rows)
-            .min((max_y - y) as usize);
-        if visible_height == 0 {
+        let entry_area = rows_below(area, row);
+        if entry_area.height == 0 {
             break;
         }
-
-        let entry_area = Rect {
-            x: area.x,
-            y,
-            width: area.width,
-            height: visible_height as u16,
-        };
         render_footnote_entry(
             document,
             footnote_id,
             entry_area,
             buf,
-            skip_rows,
             ctx,
-            current_offset,
+            line_offset + row,
         );
-        y += visible_height as u16;
-        current_offset += entry_height;
-        if y >= max_y {
-            break;
-        }
+        row += measure_footnote_entry_height(document, footnote_id, area.width, ctx);
     }
+}
+
+fn footnote_inner_width(document: &Document, footnote_id: FootnoteId, width: u16) -> u16 {
+    (width as usize)
+        .saturating_sub(footnote_marker_width(document, footnote_id))
+        .max(1) as u16
 }
 
 fn render_footnote_entry(
@@ -117,93 +83,53 @@ fn render_footnote_entry(
     footnote_id: FootnoteId,
     area: Rect,
     buf: &mut Buffer,
-    skip_rows: usize,
     ctx: &RenderContext,
     line_offset: usize,
 ) {
     let Some(def) = document.footnotes.get(footnote_id.0) else {
         return;
     };
-
     let marker = footnote_marker_label(document, footnote_id);
     let marker_width = marker.width();
-    let marker_style = footnote_marker_style(ctx);
-    let inner_width = (area.width as usize).saturating_sub(marker_width).max(1) as u16;
-
-    if def.content.is_empty() {
-        if skip_rows == 0 && area.height > 0 {
-            buf.set_stringn(area.x, area.y, &marker, marker_width, marker_style);
-        }
-        return;
-    }
-
-    let mut y = area.y;
-    let max_y = area.y + area.height;
-    let mut line_offset_inner = 0usize;
-    let scroll = skip_rows;
-    let mut drew_marker = false;
-
-    for block in &def.content {
-        let height = measure_block_height(block, usize::MAX, inner_width, ctx);
-        if line_offset_inner.saturating_add(height) <= scroll {
-            line_offset_inner += height;
-            continue;
-        }
-        let block_skip = scroll.saturating_sub(line_offset_inner);
-        let block_line_offset = line_offset + line_offset_inner;
-        let remaining = (max_y - y) as usize;
-        let render_height = height.saturating_sub(block_skip).min(remaining);
-        if render_height == 0 {
-            break;
-        }
-
-        if !drew_marker && line_offset_inner + height > scroll {
-            let marker_y = y + block_skip as u16;
-            if marker_y < max_y {
-                buf.set_stringn(area.x, marker_y, &marker, marker_width, marker_style);
-            }
-            drew_marker = true;
-        }
-
-        let block_area = Rect {
-            x: area.x + marker_width as u16,
-            y,
-            width: inner_width,
-            height: render_height as u16,
-        };
-        render_block(
-            block,
-            usize::MAX,
-            block_area,
-            buf,
-            block_skip,
-            ctx,
-            block_line_offset,
-        );
-        y += render_height as u16;
-        line_offset_inner += height;
-        if y >= max_y {
-            break;
-        }
-    }
+    buf.set_stringn(
+        area.x,
+        area.y,
+        &marker,
+        marker_width,
+        footnote_marker_style(ctx),
+    );
+    let body = Rect {
+        x: area.x + marker_width as u16,
+        width: footnote_inner_width(document, footnote_id, area.width),
+        ..area
+    };
+    render_stacked(&def.content, body, buf, ctx, line_offset, 0);
 }
 
+/// Plain text of each footnote-section row after the leading blank row, laid out
+/// exactly as [`render_footnotes_section`] wraps it.
 pub(crate) fn footnote_searchable_lines(
     document: &Document,
     width: u16,
     ctx: &RenderContext,
 ) -> Vec<String> {
-    if document.footnote_order.is_empty() {
-        return Vec::new();
-    }
     let mut out = Vec::new();
     for &footnote_id in &document.footnote_order {
         let Some(def) = document.footnotes.get(footnote_id.0) else {
             continue;
         };
+        let inner_width = footnote_inner_width(document, footnote_id, width);
+        let mut entry = Vec::new();
         for block in &def.content {
-            out.extend(block_searchable_lines(block, width, ctx));
+            let mut lines = block_searchable_lines(block, inner_width, ctx);
+            lines.resize(measure_block_height(block, inner_width, ctx), String::new());
+            entry.extend(lines);
         }
+        entry.resize(
+            measure_footnote_entry_height(document, footnote_id, width, ctx),
+            String::new(),
+        );
+        out.extend(entry);
     }
     out
 }
@@ -262,33 +188,7 @@ pub fn render_footnote_preview(
         return true;
     }
 
-    let mut y = area.y;
-    let max_y = area.y + area.height;
-    let mut line_offset = 0usize;
-
-    for (block_idx, block) in def.content.iter().enumerate() {
-        let gap = if block_idx == 0 { 0 } else { 1 };
-        if gap > 0 && y < max_y {
-            y += 1;
-        }
-        let height = measure_block_height(block, usize::MAX, area.width, ctx);
-        let visible_height = height.min((max_y - y) as usize);
-        if visible_height == 0 {
-            break;
-        }
-        let block_area = Rect {
-            x: area.x,
-            y,
-            width: area.width,
-            height: visible_height as u16,
-        };
-        render_block(block, usize::MAX, block_area, buf, 0, ctx, line_offset);
-        y += visible_height as u16;
-        line_offset += height + gap;
-        if y >= max_y {
-            break;
-        }
-    }
+    render_stacked(&def.content, area, buf, ctx, 0, BLOCK_GAP);
     true
 }
 

@@ -112,15 +112,13 @@ fn renders_document_to_test_backend() {
             let ctx = RenderContext::new(
                 &app.theme,
                 &app.syntax_assets,
-                &app.rendered,
                 &app.document.links,
                 &app.view_state,
-                app.scroll.show_images,
                 &app.checklist_state,
             );
             let width = app.view_state.terminal_size().width();
             let mut cache = DocumentRenderCache::default();
-            cache.ensure(&app.document, &ctx, &app.view_state, width);
+            cache.ensure(&app.document, &ctx, width);
             let widget = CachedMarkdownView {
                 cache: &cache,
                 scroll: app.view_state.scroll().offset() as f32,
@@ -169,33 +167,6 @@ fn jump_commands_snap_visual_scroll() {
     let max = app.max_scroll();
     assert_eq!(app.view_state.scroll().offset(), max);
     assert_eq!(app.scroll.visual.round() as usize, max);
-}
-
-#[test]
-fn terminal_images_defer_until_scroll_idle() {
-    use std::time::{Duration, Instant};
-
-    use super::scroll::IMAGE_REENABLE_DELAY;
-
-    let mut input = String::from("# Title\n\n");
-    for i in 0..50 {
-        input.push_str(&format!("paragraph {}\n\n", i));
-    }
-    let doc = parse(&input).unwrap();
-    let mut app = new_test_app(doc);
-    assert!(app.scroll.show_images);
-
-    let t0 = Instant::now();
-    app.scroll_down(4);
-    assert!(app.update_terminal_image_visibility(t0));
-    assert!(!app.scroll.show_images);
-
-    assert!(!app.update_terminal_image_visibility(t0));
-    assert!(!app.scroll.show_images);
-
-    let after_idle = t0 + IMAGE_REENABLE_DELAY + Duration::from_millis(1);
-    assert!(app.update_terminal_image_visibility(after_idle));
-    assert!(app.scroll.show_images);
 }
 
 #[test]

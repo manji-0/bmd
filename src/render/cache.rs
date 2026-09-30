@@ -2,12 +2,12 @@
 
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
-use crate::domain::{Document, FootnoteId, LinkId, ViewState};
+use crate::domain::{Document, FootnoteId, LinkId};
 
 use super::context::RenderContext;
+use super::document::render_document;
 use super::measure::measure_document_height;
 use super::subpixel::{SUBPIXEL_SNAP, compose_cells_vertical};
-use super::widget::MarkdownWidget;
 
 /// Key for invalidating a pre-rendered document buffer.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,34 +54,26 @@ impl Default for DocumentRenderCache {
 
 impl DocumentRenderCache {
     /// Rebuild the cache when `ctx` or `width` no longer match the stored key.
-    pub fn ensure(
-        &mut self,
-        document: &Document,
-        ctx: &RenderContext<'_>,
-        view_state: &ViewState,
-        width: u16,
-    ) {
+    pub fn ensure(&mut self, document: &Document, ctx: &RenderContext<'_>, width: u16) {
         let key = RenderCacheKey::from_context(ctx, width);
         if self.key.as_ref() == Some(&key) && self.total_height > 0 {
             return;
         }
-        self.rebuild(document, ctx, view_state, width, key);
+        self.rebuild(document, ctx, width, key);
     }
 
     fn rebuild(
         &mut self,
         document: &Document,
         ctx: &RenderContext<'_>,
-        view_state: &ViewState,
         width: u16,
         key: RenderCacheKey,
     ) {
         let total_height = measure_document_height(document, width, ctx).max(1);
         let height = total_height.min(u16::MAX as usize) as u16;
-        let mut buffer = Buffer::empty(Rect::new(0, 0, width, height));
-        let top_view = view_state.clone().scroll_to(0, 0);
-        let widget = MarkdownWidget::new(document, ctx, &top_view);
-        widget.render(Rect::new(0, 0, width, height), &mut buffer);
+        let area = Rect::new(0, 0, width, height);
+        let mut buffer = Buffer::empty(area);
+        render_document(document, area, &mut buffer, ctx);
         self.key = Some(key);
         self.buffer = buffer;
         self.total_height = total_height;

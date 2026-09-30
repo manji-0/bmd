@@ -11,7 +11,7 @@ use super::callout::callout_inner_width;
 use super::context::RenderContext;
 use super::footnotes::footnote_searchable_lines;
 use super::inline::{heading_styles, inlines_to_wrapped_lines};
-use super::measure::measure_block_height;
+use super::measure::{block_tops, measure_body_height};
 use super::table::wrap_cell_inlines;
 
 /// Find all logical lines in the rendered document that contain `query`.
@@ -52,17 +52,13 @@ fn collect_searchable_lines(
     ctx: &RenderContext,
 ) -> Vec<(usize, String)> {
     let mut out = Vec::new();
-    let mut line_offset: usize = 0;
-    for (idx, block) in document.blocks.iter().enumerate() {
-        let gap = if idx == 0 { 0 } else { 1 };
+    for (top, block, height) in block_tops(document, width, ctx) {
         let block_lines = block_searchable_lines(block, width, ctx);
-        let block_height = measure_block_height(block, idx, width, ctx).max(block_lines.len());
-        for (i, line) in block_lines.iter().enumerate().take(block_height) {
-            out.push((line_offset + i, line.clone()));
+        for (i, line) in block_lines.into_iter().take(height).enumerate() {
+            out.push((top + i, line));
         }
-        // Keep in sync with `MarkdownWidget::render`: gap rows trail block content.
-        line_offset += block_height + gap;
     }
+    let mut line_offset = measure_body_height(document, width, ctx);
 
     if !document.footnote_order.is_empty() {
         line_offset += 1;

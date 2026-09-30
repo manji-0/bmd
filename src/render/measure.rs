@@ -15,26 +15,37 @@ use super::list_marker::list_marker_width_at;
 use super::math::measure_math_height;
 use super::table::{allocate_column_widths, wrap_cell_inlines};
 
-/// Total logical height of the whole document, including one-row gaps between
-/// consecutive block-level elements.
-///
-/// This must stay in lock-step with `MarkdownWidget::render`: any change to how
-/// blocks are laid out must be reflected here, otherwise scrolling will truncate
-/// or overshoot the document.
+/// Blank rows between consecutive top-level blocks.
+pub(crate) const BLOCK_GAP: usize = 1;
+
+/// `(top row, block, height)` for each top-level block, in document order.
+pub(crate) fn block_tops<'a>(
+    document: &'a Document,
+    width: u16,
+    ctx: &'a RenderContext,
+) -> impl Iterator<Item = (usize, &'a Block, usize)> + 'a {
+    let mut next_top = 0;
+    document.blocks.iter().map(move |block| {
+        let height = measure_block_height(block, width, ctx);
+        let top = next_top;
+        next_top = top + height + BLOCK_GAP;
+        (top, block, height)
+    })
+}
+
+/// Rows occupied by the top-level blocks, excluding the footnotes section.
+pub(crate) fn measure_body_height(document: &Document, width: u16, ctx: &RenderContext) -> usize {
+    block_tops(document, width, ctx)
+        .last()
+        .map_or(0, |(top, _, height)| top + height)
+}
+
+/// Total logical height of the whole document: body blocks plus footnotes.
 pub fn measure_document_height(document: &Document, width: u16, ctx: &RenderContext) -> usize {
     if width == 0 {
         return 0;
     }
-    let body_height: usize = document
-        .blocks
-        .iter()
-        .enumerate()
-        .map(|(idx, block)| {
-            let gap = if idx == 0 { 0 } else { 1 };
-            measure_block_height(block, idx, width, ctx) + gap
-        })
-        .sum();
-    body_height + measure_footnotes_height(document, width, ctx)
+    measure_body_height(document, width, ctx) + measure_footnotes_height(document, width, ctx)
 }
 
 /// Number of logical rows a block occupies at the given width.
@@ -42,12 +53,7 @@ pub fn measure_document_height(document: &Document, width: u16, ctx: &RenderCont
 /// This must stay in lock-step with the `render_*` functions: any change to how a
 /// block is drawn must be reflected here, otherwise scrolling will truncate or
 /// overshoot the document.
-pub fn measure_block_height(
-    block: &Block,
-    _block_idx: usize,
-    width: u16,
-    ctx: &RenderContext,
-) -> usize {
+pub fn measure_block_height(block: &Block, width: u16, ctx: &RenderContext) -> usize {
     if width == 0 {
         return 0;
     }
@@ -105,7 +111,7 @@ fn measure_definition_list_height(list: &DefinitionList, width: u16, ctx: &Rende
         for definition in &item.definitions {
             total += definition
                 .iter()
-                .map(|block| measure_block_height(block, usize::MAX, inner_width, ctx))
+                .map(|block| measure_block_height(block, inner_width, ctx))
                 .sum::<usize>();
         }
     }
@@ -116,7 +122,7 @@ fn measure_blockquote_height(blocks: &[Block], width: u16, ctx: &RenderContext) 
     let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
     let content_height: usize = blocks
         .iter()
-        .map(|b| measure_block_height(b, usize::MAX, inner_width, ctx))
+        .map(|b| measure_block_height(b, inner_width, ctx))
         .sum();
     content_height.saturating_add(1)
 }
@@ -133,7 +139,7 @@ fn measure_list_height(list: &List, width: u16, ctx: &RenderContext) -> usize {
             total += item
                 .content
                 .iter()
-                .map(|b| measure_block_height(b, usize::MAX, inner_width, ctx))
+                .map(|b| measure_block_height(b, inner_width, ctx))
                 .sum::<usize>();
         }
     }

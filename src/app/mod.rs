@@ -293,10 +293,8 @@ impl App {
         let ctx = RenderContext::new(
             &self.theme,
             &self.syntax_assets,
-            &self.rendered,
             &self.document.links,
             &self.view_state,
-            self.scroll.show_images,
             &self.checklist_state,
         );
         self.heading_cache
@@ -380,19 +378,17 @@ impl App {
             }
 
             let animating = self.tick_scroll_animation(dt);
-            let image_dirty = self.update_terminal_image_visibility(now);
             self.maybe_prefetch_visible_links();
             let mermaid_dirty = self.poll_preview_renders();
-            let awaiting_images = self.scroll.images_reenable_at.is_some();
             let awaiting_preview = self.preview_work_pending();
             self.tick_status_message(now);
 
-            if dirty || animating || image_dirty || mermaid_dirty {
+            if dirty || animating || mermaid_dirty {
                 self.draw_frame(terminal)?;
                 last_draw = now;
             }
 
-            let frame_budget = if animating || awaiting_images || awaiting_preview {
+            let frame_budget = if animating || awaiting_preview {
                 ACTIVE_FRAME_INTERVAL
             } else {
                 IDLE_POLL_INTERVAL
@@ -401,7 +397,7 @@ impl App {
             if event::poll(wait)? {
                 continue;
             }
-            if animating || awaiting_images || awaiting_preview {
+            if animating || awaiting_preview {
                 continue;
             }
         }

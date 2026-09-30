@@ -5,7 +5,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::domain::Callout;
 
-use super::blocks::render_block;
+use super::blocks::{render_stacked, rows_below};
 use super::context::RenderContext;
 use super::measure::measure_block_height;
 use super::theme::CalloutStyles;
@@ -26,7 +26,7 @@ pub(crate) fn measure_callout_height(callout: &Callout, width: u16, ctx: &Render
     let body_height: usize = callout
         .body
         .iter()
-        .map(|block| measure_block_height(block, usize::MAX, inner_width, ctx))
+        .map(|block| measure_block_height(block, inner_width, ctx))
         .sum();
     body_height + 2
 }
@@ -35,93 +35,36 @@ pub(crate) fn render_callout(
     callout: &Callout,
     area: Rect,
     buf: &mut Buffer,
-    skip_rows: usize,
     ctx: &RenderContext,
     line_offset: usize,
 ) {
     if area.width < 3 || area.height == 0 {
         return;
     }
-
     let styles = ctx.theme.callout_styles(callout.kind);
     let width = callout_frame_width(callout, area.width) as usize;
-    let total_height = measure_callout_height(callout, area.width, ctx);
-    if skip_rows >= total_height {
-        return;
-    }
-
-    let inner_width = width.saturating_sub(2).max(1) as u16;
-    let mut logical_row = 0usize;
-    let mut y = area.y;
-
-    if logical_row >= skip_rows && y < area.y + area.height {
-        draw_top_border(buf, area.x, y, width, &callout.header_label(), styles);
-        y += 1;
-    }
-    logical_row += 1;
+    draw_top_border(buf, area.x, area.y, width, &callout.header_label(), styles);
 
     let mut callout_theme = ctx.theme.clone();
     callout_theme.text = styles.body;
     let callout_ctx = RenderContext {
         theme: &callout_theme,
-        syntax_set: ctx.syntax_set,
-        syntax_theme: ctx.syntax_theme,
-        rendered: ctx.rendered,
-        links: ctx.links,
-        selected_link: ctx.selected_link,
-        selected_footnote: ctx.selected_footnote,
-        search_query: ctx.search_query.clone(),
-        selected_search_match: ctx.selected_search_match,
-        selected_match_line_offset: ctx.selected_match_line_offset,
-        checklist_state: ctx.checklist_state,
-        show_terminal_images: ctx.show_terminal_images,
+        ..ctx.clone()
     };
-
-    let mut body_line_offset = line_offset + 1;
-    for block in &callout.body {
-        let block_height = measure_block_height(block, usize::MAX, inner_width, ctx);
-        if logical_row + block_height <= skip_rows {
-            logical_row += block_height;
-            body_line_offset += block_height;
-            continue;
-        }
-        let block_skip = skip_rows.saturating_sub(logical_row);
-        let remaining = (area.y + area.height).saturating_sub(y) as usize;
-        let render_height = block_height.saturating_sub(block_skip).min(remaining);
-        if render_height == 0 {
-            break;
-        }
-        for row in 0..render_height {
-            let row_y = y + row as u16;
-            if row_y < area.y + area.height {
-                paint_body_row(buf, area.x, row_y, width, styles.border);
-            }
-        }
-        let block_area = Rect {
-            x: area.x + 1,
-            y,
-            width: inner_width,
-            height: render_height as u16,
-        };
-        render_block(
-            block,
-            usize::MAX,
-            block_area,
-            buf,
-            block_skip,
-            &callout_ctx,
-            body_line_offset,
-        );
-        y += render_height as u16;
-        logical_row += block_height;
-        body_line_offset += block_height;
-        if y >= area.y + area.height {
-            break;
-        }
+    let body = rows_below(area, 1);
+    let body_rows =
+        (measure_callout_height(callout, area.width, ctx) - 2).min(body.height as usize);
+    for row in 0..body_rows {
+        paint_body_row(buf, area.x, body.y + row as u16, width, styles.border);
     }
-
-    if logical_row >= skip_rows && y < area.y + area.height {
-        draw_bottom_border(buf, area.x, y, width, styles.border);
+    let body = Rect {
+        x: area.x + 1,
+        width: width.saturating_sub(2).max(1) as u16,
+        ..body
+    };
+    render_stacked(&callout.body, body, buf, &callout_ctx, line_offset + 1, 0);
+    if body_rows < body.height as usize {
+        draw_bottom_border(buf, area.x, body.y + body_rows as u16, width, styles.border);
     }
 }
 

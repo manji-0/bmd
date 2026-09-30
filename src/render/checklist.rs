@@ -96,10 +96,10 @@ fn collect_block_checklist_hits(
                     }
                 }
             }
-            *line_offset += measure_block_height(block, block_idx, width, ctx);
+            *line_offset += measure_block_height(block, width, ctx);
         }
         _ => {
-            *line_offset += measure_block_height(block, block_idx, width, ctx);
+            *line_offset += measure_block_height(block, width, ctx);
         }
     }
 }

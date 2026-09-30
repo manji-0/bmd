@@ -3,7 +3,6 @@
 use crate::clipboard::copy_to_clipboard;
 use crate::domain::Block;
 use crate::error::AppError;
-use crate::render::measure_block_height;
 
 use super::App;
 
@@ -62,23 +61,17 @@ impl App {
         let scroll = self.view_state.scroll().offset();
         let view_end = scroll + self.content_height() as usize;
 
-        let mut offset = 0usize;
         let mut first_after: Option<String> = None;
-        for (idx, block) in self.document.blocks.iter().enumerate() {
-            let gap = if idx == 0 { 0 } else { 1 };
-            offset += gap;
-            let height = measure_block_height(block, idx, width, &ctx);
-            let end = offset + height;
-            if let Block::CodeBlock(cb) = block {
-                let intersects = end > scroll && offset < view_end;
-                if intersects {
-                    return Some(cb.content.clone());
-                }
-                if first_after.is_none() && offset >= scroll {
-                    first_after = Some(cb.content.clone());
-                }
+        for (top, block, height) in crate::render::block_tops(&self.document, width, &ctx) {
+            let Block::CodeBlock(cb) = block else {
+                continue;
+            };
+            if top + height > scroll && top < view_end {
+                return Some(cb.content.clone());
             }
-            offset = end;
+            if first_after.is_none() && top >= scroll {
+                first_after = Some(cb.content.clone());
+            }
         }
         first_after.or_else(|| {
             self.document.blocks.iter().find_map(|block| match block {

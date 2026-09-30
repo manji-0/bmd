@@ -5,54 +5,43 @@ use syntect::parsing::SyntaxSet;
 
 use crate::domain::{ChecklistState, FootnoteId, LinkId, ViewState};
 
-use super::mermaid::RenderedDocument;
-use super::search_state::{
-    active_search_match_index, active_search_match_line_offset, active_search_query,
-};
+use super::search_state::{active_search_match_line_offset, active_search_query};
 use super::syntax::SyntaxAssets;
 use super::theme::Theme;
 
 use crate::domain::Link;
 
 /// Everything needed to render blocks.
+#[derive(Clone)]
 pub struct RenderContext<'a> {
     pub theme: &'a Theme,
     pub syntax_set: &'a SyntaxSet,
     pub syntax_theme: &'a SyntectTheme,
-    pub rendered: &'a RenderedDocument,
     pub links: &'a [Link],
     pub selected_link: Option<LinkId>,
     pub selected_footnote: Option<FootnoteId>,
     pub search_query: Option<String>,
-    pub selected_search_match: Option<usize>,
     pub selected_match_line_offset: Option<usize>,
     pub checklist_state: &'a ChecklistState,
-    /// When false, mermaid and markdown images render as blank space (scroll perf).
-    pub show_terminal_images: bool,
 }
 
 impl<'a> RenderContext<'a> {
     pub fn new(
         theme: &'a Theme,
         syntax_assets: &'a SyntaxAssets,
-        rendered: &'a RenderedDocument,
         links: &'a [Link],
         view_state: &'a ViewState,
-        show_terminal_images: bool,
         checklist_state: &'a ChecklistState,
     ) -> Self {
         Self {
             theme,
             syntax_set: &syntax_assets.syntax_set,
             syntax_theme: syntax_assets.theme(),
-            rendered,
             links,
             selected_link: view_state.selected_link(),
             selected_footnote: view_state.selected_footnote(),
             search_query: active_search_query(view_state.normal_search()),
-            selected_search_match: active_search_match_index(view_state.normal_search()),
             selected_match_line_offset: active_search_match_line_offset(view_state.normal_search()),
-            show_terminal_images,
             checklist_state,
         }
     }

@@ -9,16 +9,6 @@ pub(crate) fn active_search_query(normal_search: &NormalSearch) -> Option<String
     }
 }
 
-pub(crate) fn active_search_match_index(normal_search: &NormalSearch) -> Option<usize> {
-    match normal_search {
-        NormalSearch::Active(active) => active
-            .matches()
-            .get(active.current_index())
-            .map(|m| m.match_index),
-        _ => None,
-    }
-}
-
 pub(crate) fn active_search_match_line_offset(normal_search: &NormalSearch) -> Option<usize> {
     match normal_search {
         NormalSearch::Active(active) => active
@@ -47,7 +37,6 @@ mod tests {
     fn inactive_search_returns_none() {
         let inactive = NormalSearch::inactive();
         assert_eq!(active_search_query(&inactive), None);
-        assert_eq!(active_search_match_index(&inactive), None);
         assert_eq!(active_search_match_line_offset(&inactive), None);
     }
 
@@ -55,7 +44,6 @@ mod tests {
     fn active_search_exposes_query_and_current_match() {
         let search = active_search();
         assert_eq!(active_search_query(&search), Some("needle".to_string()));
-        assert_eq!(active_search_match_index(&search), Some(2));
         assert_eq!(active_search_match_line_offset(&search), Some(9));
     }
 }

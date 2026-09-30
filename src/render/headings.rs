@@ -5,7 +5,7 @@ use crate::domain::{
 };
 
 use super::context::RenderContext;
-use super::measure::measure_block_height;
+use super::measure::block_tops;
 
 /// Cached heading offsets for repeated j/k navigation.
 #[derive(Clone, Default)]
@@ -52,16 +52,12 @@ pub fn collect_heading_offsets(
     if width == 0 {
         return Vec::new();
     }
-    let mut out = Vec::new();
-    let mut line_offset = 0usize;
-    for (block_idx, block) in document.blocks.iter().enumerate() {
-        let gap = if block_idx == 0 { 0 } else { 1 };
-        if let Block::Heading(h) = block {
-            out.push((line_offset, h.level));
-        }
-        line_offset += measure_block_height(block, block_idx, width, ctx) + gap;
-    }
-    out
+    block_tops(document, width, ctx)
+        .filter_map(|(top, block, _)| match block {
+            Block::Heading(h) => Some((top, h.level)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Next heading line strictly after `scroll`.
@@ -94,17 +90,10 @@ pub fn find_heading_line_by_anchor(
         return None;
     }
     let target = normalize_anchor_slug(anchor);
-    let mut line_offset = 0usize;
-    for (block_idx, block) in document.blocks.iter().enumerate() {
-        let gap = if block_idx == 0 { 0 } else { 1 };
-        if let Block::Heading(h) = block
-            && heading_anchor_slug(h) == target
-        {
-            return Some(line_offset);
-        }
-        line_offset += measure_block_height(block, block_idx, width, ctx) + gap;
-    }
-    None
+    block_tops(document, width, ctx).find_map(|(top, block, _)| match block {
+        Block::Heading(h) if heading_anchor_slug(h) == target => Some(top),
+        _ => None,
+    })
 }
 
 fn heading_anchor_slug(heading: &Heading) -> String {
@@ -122,9 +111,7 @@ mod tests {
     #[test]
     fn heading_offset_cache_reuses_collected_offsets() {
         use crate::domain::TerminalSize;
-        use crate::render::{
-            HeadingOffsetCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
-        };
+        use crate::render::{HeadingOffsetCache, RenderContext, SyntaxAssets, Theme};
 
         let document = Document {
             blocks: vec![
@@ -145,7 +132,6 @@ mod tests {
             footnote_order: vec![],
             front_matter: None,
         };
-        let rendered = RenderedDocument::default();
         let view_state = crate::domain::ViewState::new(TerminalSize::new(80, 24).unwrap());
         let checklist_state =
             crate::domain::ChecklistState::new(crate::domain::ChecklistStyle::Unicode);
@@ -154,10 +140,8 @@ mod tests {
         let ctx = RenderContext::new(
             &theme,
             &syntax_assets,
-            &rendered,
             &document.links,
             &view_state,
-            true,
             &checklist_state,
         );
         let mut cache = HeadingOffsetCache::default();

@@ -39,15 +39,12 @@ impl App {
             let ctx = RenderContext::new(
                 &self.theme,
                 &self.syntax_assets,
-                &self.rendered,
                 &self.document.links,
                 &self.view_state,
-                self.scroll.show_images,
                 &self.checklist_state,
             );
             let width = self.document_width();
-            self.document_cache
-                .ensure(&self.document, &ctx, &self.view_state, width);
+            self.document_cache.ensure(&self.document, &ctx, width);
             let widget = CachedMarkdownView {
                 cache: &self.document_cache,
                 scroll: self.scroll.visual,

@@ -28,7 +28,7 @@ pub fn find_link_line_offset(
         if let Some(local) = block_first_link_line(block, block_idx, width, ctx, link_id) {
             return Some(line_offset + local);
         }
-        line_offset += measure_block_height(block, block_idx, width, ctx) + gap;
+        line_offset += measure_block_height(block, width, ctx) + gap;
     }
     None
 }
@@ -69,7 +69,7 @@ fn block_first_link_line(
                 {
                     return Some(inner_offset + local);
                 }
-                inner_offset += measure_block_height(child, block_idx, inner_width, ctx);
+                inner_offset += measure_block_height(child, inner_width, ctx);
             }
             None
         }
@@ -82,7 +82,7 @@ fn block_first_link_line(
                 {
                     return Some(inner_offset + local);
                 }
-                inner_offset += measure_block_height(child, block_idx, inner_width, ctx);
+                inner_offset += measure_block_height(child, inner_width, ctx);
             }
             None
         }
@@ -111,7 +111,7 @@ fn list_first_link_line(
             if let Some(local) = block_first_link_line(child, block_idx, item_width, ctx, link_id) {
                 return Some(line_offset + item_line + local);
             }
-            item_line += measure_block_height(child, block_idx, item_width, ctx);
+            item_line += measure_block_height(child, item_width, ctx);
         }
         line_offset += item_line.max(1);
     }
@@ -132,8 +132,7 @@ fn definition_list_first_link_line(
             if inlines_contain_link(&item.term, link_id) {
                 return Some(line_offset);
             }
-            line_offset +=
-                measure_block_height(&Block::Paragraph(item.term.clone()), block_idx, width, ctx);
+            line_offset += measure_block_height(&Block::Paragraph(item.term.clone()), width, ctx);
         }
         for definition in &item.definitions {
             for child in definition {
@@ -142,7 +141,7 @@ fn definition_list_first_link_line(
                 {
                     return Some(line_offset + local);
                 }
-                line_offset += measure_block_height(child, block_idx, inner_width, ctx);
+                line_offset += measure_block_height(child, inner_width, ctx);
             }
         }
     }

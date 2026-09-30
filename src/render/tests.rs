@@ -1,17 +1,16 @@
-use std::collections::HashMap;
-
 use super::blocks::render_code_block;
+use super::document::render_document;
 use super::headings::collect_heading_offsets;
 use super::inline::{highlight_span, highlight_text, inlines_to_text, inlines_to_wrapped_lines};
 use super::links::{collect_footnote_hits, find_link_line_offset};
+use super::measure::measure_block_height;
 use super::measure::measure_code_block_height;
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
-use super::widget::MarkdownWidget;
 use super::{
-    DocumentRenderCache, RenderContext, RenderedDocument, SyntaxAssets, Theme, checklist,
-    collect_visible_links, collect_visible_nav_targets, find_heading_line_by_anchor,
-    find_search_matches, footnote_preview_title, measure_block_height, measure_document_height,
-    next_heading_line, prev_heading_line, render_footnote_preview,
+    DocumentRenderCache, RenderContext, SyntaxAssets, Theme, checklist, collect_visible_links,
+    collect_visible_nav_targets, find_heading_line_by_anchor, find_search_matches,
+    footnote_preview_title, measure_document_height, next_heading_line, prev_heading_line,
+    render_footnote_preview,
 };
 use crate::domain::slugify_heading;
 use crate::domain::{
@@ -28,6 +27,15 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use unicode_width::UnicodeWidthStr;
 
+/// Full-document render as a widget, for drawing through a `TestBackend`.
+struct DocView<'a>(&'a Document, &'a RenderContext<'a>);
+
+impl ratatui::widgets::Widget for DocView<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        render_document(self.0, area, buf, self.1);
+    }
+}
+
 fn test_syntax_assets() -> &'static SyntaxAssets {
     Box::leak(Box::new(SyntaxAssets::new()))
 }
@@ -36,10 +44,6 @@ fn test_render_context() -> RenderContext<'static> {
     // Leaked for the duration of the test process; acceptable for unit tests.
     let theme: &'static Theme = Box::leak(Box::new(Theme::default()));
     let syntax_assets = test_syntax_assets();
-    let rendered: &'static RenderedDocument = Box::leak(Box::new(RenderedDocument {
-        mermaid_images: HashMap::new(),
-        markdown_images: HashMap::new(),
-    }));
     let links: &'static [crate::domain::Link] = Box::leak(Box::new([]));
     let checklist_state: &'static ChecklistState =
         Box::leak(Box::new(ChecklistState::new(ChecklistStyle::Unicode)));
@@ -47,15 +51,12 @@ fn test_render_context() -> RenderContext<'static> {
         theme,
         syntax_set: &syntax_assets.syntax_set,
         syntax_theme: syntax_assets.theme(),
-        rendered,
         links,
         selected_link: None,
         selected_footnote: None,
         search_query: None,
-        selected_search_match: None,
         selected_match_line_offset: None,
         checklist_state,
-        show_terminal_images: true,
     }
 }
 
@@ -83,11 +84,9 @@ fn document_render_cache_blits_fractional_scroll() {
         Document::new(blocks, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None).unwrap();
     let width = 40u16;
     let height = 5u16;
-    let size = TerminalSize::new(width, height).unwrap();
-    let view_state = ViewState::new(size);
 
     let mut cache = DocumentRenderCache::default();
-    cache.ensure(&document, &ctx, &view_state, width);
+    cache.ensure(&document, &ctx, width);
 
     let mut integer = Buffer::empty(Rect::new(0, 0, width, height));
     cache.blit(7.0, Rect::new(0, 0, width, height), &mut integer);
@@ -112,16 +111,14 @@ fn document_render_cache_blits_scrolled_viewport() {
         Document::new(blocks, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None).unwrap();
     let width = 40u16;
     let height = 5u16;
-    let size = TerminalSize::new(width, height).unwrap();
-    let view_state = ViewState::new(size);
 
     let mut cache = DocumentRenderCache::default();
-    cache.ensure(&document, &ctx, &view_state, width);
+    cache.ensure(&document, &ctx, width);
 
-    // Logical layout: line N sits at offset N * 2 - 1 (gap row follows each block).
-    let scroll = 7;
+    // Logical layout: line N sits at offset N * 2 (one gap row between blocks).
+    let scroll = 8;
     let mut screen = Buffer::empty(Rect::new(0, 0, width, height));
-    cache.blit(7.0, Rect::new(0, 0, width, height), &mut screen);
+    cache.blit(scroll as f32, Rect::new(0, 0, width, height), &mut screen);
 
     let row0: String = (0..width)
         .map(|x| {
@@ -150,13 +147,11 @@ fn document_render_cache_rebuilds_on_width_change() {
         None,
     )
     .unwrap();
-    let size = TerminalSize::new(80, 10).unwrap();
-    let view_state = ViewState::new(size);
 
     let mut cache = DocumentRenderCache::default();
-    cache.ensure(&document, &ctx, &view_state, 80);
+    cache.ensure(&document, &ctx, 80);
     let height_at_80 = cache.total_height();
-    cache.ensure(&document, &ctx, &view_state, 20);
+    cache.ensure(&document, &ctx, 20);
     let height_at_20 = cache.total_height();
     assert!(height_at_20 > height_at_80);
 }
@@ -179,7 +174,7 @@ fn find_search_matches_finds_text_in_paragraphs() {
     let matches = find_matches(&document, 80, "hello");
     assert_eq!(matches.len(), 2);
     assert_eq!(matches[0].line_offset, 0);
-    assert_eq!(matches[1].line_offset, 3);
+    assert_eq!(matches[1].line_offset, 4);
 }
 
 #[test]
@@ -313,7 +308,7 @@ fn find_search_matches_blockquote_includes_padding() {
     let matches = find_matches(&document, 80, "after");
     assert_eq!(matches.len(), 1);
     // quoted (line 0) + blockquote padding (line 1) + gap (line 2) -> after at line 3.
-    assert_eq!(matches[0].line_offset, 2);
+    assert_eq!(matches[0].line_offset, 3);
 }
 
 #[test]
@@ -337,7 +332,7 @@ fn find_search_matches_table_includes_borders() {
     let matches = find_matches(&document, 80, "after");
     assert_eq!(matches.len(), 1);
     // top border (0) + header (1) + separator (2) + cell (3) + bottom border (4) + gap (5) -> after at 6.
-    assert_eq!(matches[0].line_offset, 5);
+    assert_eq!(matches[0].line_offset, 6);
 }
 
 #[test]
@@ -385,10 +380,8 @@ fn selected_search_match_renders_selected_style_in_buffer() {
     let ctx = RenderContext::new(
         ctx_base.theme,
         test_syntax_assets(),
-        ctx_base.rendered,
         ctx_base.links,
         &view_state,
-        true,
         ctx_base.checklist_state,
     );
 
@@ -396,7 +389,7 @@ fn selected_search_match_renders_selected_style_in_buffer() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|f| {
-            let widget = MarkdownWidget::new(&document, &ctx, &view_state);
+            let widget = DocView(&document, &ctx);
             f.render_widget(widget, f.area());
         })
         .unwrap();
@@ -655,10 +648,7 @@ fn table_logical_height_accounts_for_borders_and_header() {
         rows: vec![vec![vec![Inline::Text("Cell".into())]]],
         alignments: vec![Alignment::Left],
     };
-    assert_eq!(
-        measure_block_height(&Block::Table(table), usize::MAX, 20, &ctx),
-        5
-    );
+    assert_eq!(measure_block_height(&Block::Table(table), 20, &ctx), 5);
 }
 
 #[test]
@@ -1040,7 +1030,7 @@ fn render_code_block_draws_language_label_and_content() {
         content: "fn main() {}".into(),
     };
     let mut buf = Buffer::empty(Rect::new(0, 0, 20, 5));
-    render_code_block(&cb, Rect::new(0, 0, 20, 5), &mut buf, 0, &ctx, 0);
+    render_code_block(&cb, Rect::new(0, 0, 20, 5), &mut buf, &ctx, 0);
     let row_0 = (0..20)
         .map(|x| buf.cell((x, 0)).map_or(" ", |c| c.symbol()))
         .collect::<String>();
@@ -1055,103 +1045,14 @@ fn long_document_renders_last_block_at_bottom_scroll() {
         .collect();
     let document =
         Document::new(blocks, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None).unwrap();
-    let size = TerminalSize::new(80, 10).unwrap();
-    let total_height = measure_document_height(&document, 80, &ctx);
-    let max_scroll = total_height.saturating_sub(size.height() as usize);
-    let view_state = ViewState::new(size).jump_to_bottom(max_scroll);
-
-    let backend = TestBackend::new(80, 10);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|f| {
-            let widget = MarkdownWidget::new(&document, &ctx, &view_state);
-            f.render_widget(widget, f.area());
-        })
-        .unwrap();
-
-    let text: String = terminal
-        .backend()
-        .buffer()
-        .content
-        .iter()
-        .map(|c| c.symbol())
-        .collect();
-    assert!(text.contains("Paragraph 49"));
-}
-
-#[test]
-fn sap_metrics_file_renders_to_bottom() {
-    let path = "/Users/manji0/src/dagayn/docs/SAP-METRICS.md";
-    if !std::path::Path::new(path).exists() {
-        return;
-    }
-    let input = std::fs::read_to_string(path).unwrap();
-    let document = parse(&input).unwrap();
-    let ctx = test_render_context();
-    let width = 100u16;
-    let height = 60u16;
-    let size = TerminalSize::new(width, height).unwrap();
-    let total_height = measure_document_height(&document, width, &ctx);
-    let max_scroll = total_height.saturating_sub(height as usize);
-    let view_state = ViewState::new(size).jump_to_bottom(max_scroll);
-
-    let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|f| {
-            let widget = MarkdownWidget::new(&document, &ctx, &view_state);
-            f.render_widget(widget, f.area());
-        })
-        .unwrap();
-
-    let text: String = terminal
-        .backend()
-        .buffer()
-        .content
-        .iter()
-        .map(|c| c.symbol())
-        .collect();
-    assert!(
-        text.contains("Known open questions") || text.contains("Design history"),
-        "late content missing; total_height={total_height}, max_scroll={max_scroll}"
-    );
-}
-
-#[test]
-fn list_layout_has_no_extra_gap() {
-    let ctx = test_render_context();
-    let input = "- item A\n- item B\n- item C\n\n## Next";
-    let document = parse(input).unwrap();
-    let width = 40u16;
-    let height = 10u16;
-    let size = TerminalSize::new(width, height).unwrap();
-    let view_state = ViewState::new(size);
-
-    let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|f| {
-            let widget = MarkdownWidget::new(&document, &ctx, &view_state);
-            f.render_widget(widget, f.area());
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    for y in 0..height {
-        let row: String = (0..width)
-            .map(|x| {
-                buf.cell((x, y)).map_or(' ', |c| {
-                    let s = c.symbol();
-                    if s.chars().next().map(|c| c.is_whitespace()).unwrap_or(false) {
-                        ' '
-                    } else {
-                        s.chars().next().unwrap()
-                    }
-                })
-            })
-            .collect();
-        eprintln!("{y:02}: {row:?}");
-    }
+    let mut cache = DocumentRenderCache::default();
+    cache.ensure(&document, &ctx, 80);
+    let max_scroll = measure_document_height(&document, 80, &ctx) - 10;
+    let area = Rect::new(0, 0, 80, 10);
+    let mut buf = Buffer::empty(area);
+    cache.blit(max_scroll as f32, area, &mut buf);
+    let last_row: String = (0..80).map(|x| buf[(x, 9)].symbol()).collect();
+    assert!(last_row.starts_with("Paragraph 49"), "{last_row:?}");
 }
 
 #[test]
@@ -1161,14 +1062,12 @@ fn list_multiline_item_indents_properly() {
     let document = parse(input).unwrap();
     let width = 30u16;
     let height = 8u16;
-    let size = TerminalSize::new(width, height).unwrap();
-    let view_state = ViewState::new(size);
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|f| {
-            let widget = MarkdownWidget::new(&document, &ctx, &view_state);
+            let widget = DocView(&document, &ctx);
             f.render_widget(widget, f.area());
         })
         .unwrap();
@@ -1205,14 +1104,12 @@ fn list_item_with_multiple_blocks_indents_all() {
     let document = parse(input).unwrap();
     let width = 40u16;
     let height = 12u16;
-    let size = TerminalSize::new(width, height).unwrap();
-    let view_state = ViewState::new(size);
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|f| {
-            let widget = MarkdownWidget::new(&document, &ctx, &view_state);
+            let widget = DocView(&document, &ctx);
             f.render_widget(widget, f.area());
         })
         .unwrap();
@@ -1339,8 +1236,7 @@ fn footnotes_section_renders_below_body_not_over_it() {
     let doc = parse("Body first line.\n\nSecond paragraph[^n].\n\n[^n]: The note.\n").unwrap();
     let ctx = test_render_context();
     let mut cache = DocumentRenderCache::default();
-    let view = ViewState::new(TerminalSize::new(40, 10).unwrap());
-    cache.ensure(&doc, &ctx, &view, 40);
+    cache.ensure(&doc, &ctx, 40);
     let rows: Vec<String> = (0..cache.total_height() as u16)
         .map(|y| (0..40).map(|x| cache.buffer()[(x, y)].symbol()).collect())
         .collect();

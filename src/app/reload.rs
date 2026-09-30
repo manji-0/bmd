@@ -112,10 +112,7 @@ impl App {
             .reset_for_reload(scroll_offset, max_scroll);
         let offset = self.view_state.scroll().offset();
         self.scroll.visual = offset as f32;
-        self.scroll.tracked_position = self.scroll.visual;
         self.scroll.key_down_at = None;
-        self.scroll.images_reenable_at = None;
-        self.scroll.show_images = true;
         self.restart_background_work();
         Ok(true)
     }

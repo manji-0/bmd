@@ -21,7 +21,6 @@ pub(crate) fn render_table(
     table: &Table,
     area: Rect,
     buf: &mut Buffer,
-    skip_rows: usize,
     ctx: &RenderContext,
     line_offset: usize,
 ) {
@@ -127,14 +126,11 @@ pub(crate) fn render_table(
         ),
     ));
 
-    // Render directly into the buffer, skipping scrolled rows and clipping to area.
     for (row_line_offset, line) in rows.iter() {
         let row_idx = row_line_offset.saturating_sub(line_offset);
-        let screen_y = area.y as usize + row_idx;
-        if row_idx < skip_rows || screen_y >= (area.y + area.height) as usize {
-            continue;
+        if row_idx < area.height as usize {
+            buf.set_line(area.x, area.y + row_idx as u16, line, area.width);
         }
-        buf.set_line(area.x, screen_y as u16, line, area.width);
     }
 }
 

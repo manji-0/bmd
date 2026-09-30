@@ -91,11 +91,11 @@ fn collect_block_link_hits(
                 *line_offset,
                 hits,
             );
-            *line_offset += measure_block_height(block, block_idx, width, ctx);
+            *line_offset += measure_block_height(block, width, ctx);
         }
         Block::Paragraph(inlines) => {
             collect_inline_link_hits(inlines, width as usize, base_x, *line_offset, hits);
-            *line_offset += measure_block_height(block, block_idx, width, ctx);
+            *line_offset += measure_block_height(block, width, ctx);
         }
         Block::Quote(blocks) => {
             let quote_x = base_x + 2;
@@ -147,7 +147,7 @@ fn collect_block_link_hits(
             collect_table_link_hits(table, width, base_x, ctx, hits, line_offset);
         }
         Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {
-            *line_offset += measure_block_height(block, block_idx, width, ctx);
+            *line_offset += measure_block_height(block, width, ctx);
         }
     }
 }
@@ -176,11 +176,11 @@ fn collect_block_footnote_hits(
                 *line_offset,
                 hits,
             );
-            *line_offset += measure_block_height(block, block_idx, width, ctx);
+            *line_offset += measure_block_height(block, width, ctx);
         }
         Block::Paragraph(inlines) => {
             collect_inline_footnote_hits(inlines, width as usize, base_x, *line_offset, hits);
-            *line_offset += measure_block_height(block, block_idx, width, ctx);
+            *line_offset += measure_block_height(block, width, ctx);
         }
         Block::Quote(blocks) => {
             let quote_x = base_x + 2;
@@ -232,7 +232,7 @@ fn collect_block_footnote_hits(
             collect_table_footnote_hits(table, width, base_x, ctx, hits, line_offset);
         }
         Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {
-            *line_offset += measure_block_height(block, block_idx, width, ctx);
+            *line_offset += measure_block_height(block, width, ctx);
         }
     }
 }
@@ -284,8 +284,7 @@ fn collect_definition_list_link_hits(
     for item in &list.items {
         if !item.term.is_empty() {
             collect_inline_link_hits(&item.term, width as usize, base_x, *line_offset, hits);
-            *line_offset +=
-                measure_block_height(&Block::Paragraph(item.term.clone()), block_idx, width, ctx);
+            *line_offset += measure_block_height(&Block::Paragraph(item.term.clone()), width, ctx);
         }
         for definition in &item.definitions {
             for child in definition {
@@ -350,8 +349,7 @@ fn collect_definition_list_footnote_hits(
     for item in &list.items {
         if !item.term.is_empty() {
             collect_inline_footnote_hits(&item.term, width as usize, base_x, *line_offset, hits);
-            *line_offset +=
-                measure_block_height(&Block::Paragraph(item.term.clone()), block_idx, width, ctx);
+            *line_offset += measure_block_height(&Block::Paragraph(item.term.clone()), width, ctx);
         }
         for definition in &item.definitions {
             for child in definition {

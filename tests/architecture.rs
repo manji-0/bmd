@@ -47,7 +47,7 @@ fn rust_files(path: &Path, out: &mut Vec<PathBuf>) {
 
 /// Source with unit-test modules stripped; tests may reach across layers.
 fn production_source(path: &Path) -> String {
-    if path.file_name().is_some_and(|name| name == "tests.rs") {
+    if path.to_str().is_some_and(|name| name.ends_with("tests.rs")) {
         return String::new();
     }
     let src = fs::read_to_string(path).unwrap();

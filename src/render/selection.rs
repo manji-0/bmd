@@ -102,15 +102,12 @@ pub fn paint_selection_overlay(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
     use super::*;
     use crate::domain::{
         Block, ChecklistState, ChecklistStyle, Document, Inline, TextPoint, ViewState,
     };
-    use crate::render::{
-        DocumentRenderCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
-    };
+    use crate::render::{DocumentRenderCache, RenderContext, SyntaxAssets, Theme};
 
     fn render_cache(text: &str) -> DocumentRenderCache {
         let document = Document {
@@ -123,23 +120,11 @@ mod tests {
         };
         let theme = Theme::default();
         let syntax = SyntaxAssets::new();
-        let rendered = RenderedDocument {
-            mermaid_images: HashMap::new(),
-            markdown_images: HashMap::new(),
-        };
         let view_state = ViewState::new(crate::domain::TerminalSize::new(40, 24).unwrap());
         let checklist = ChecklistState::new(ChecklistStyle::Unicode);
-        let ctx = RenderContext::new(
-            &theme,
-            &syntax,
-            &rendered,
-            &[],
-            &view_state,
-            true,
-            &checklist,
-        );
+        let ctx = RenderContext::new(&theme, &syntax, &[], &view_state, &checklist);
         let mut cache = DocumentRenderCache::default();
-        cache.ensure(&document, &ctx, &view_state, 40);
+        cache.ensure(&document, &ctx, 40);
         cache
     }
 

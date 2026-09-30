@@ -5,6 +5,7 @@ mod cache;
 mod callout;
 pub(crate) mod checklist;
 mod context;
+mod document;
 mod footnotes;
 mod headings;
 mod image;
@@ -22,8 +23,9 @@ pub(crate) mod subpixel;
 mod syntax;
 mod table;
 mod theme;
-mod widget;
 
+#[cfg(test)]
+mod invariant_tests;
 #[cfg(test)]
 mod tests;
 
@@ -38,7 +40,8 @@ pub(crate) use image::{
     PREVIEW_POPUP_PERCENT, centered_rect, render_floating_image, resolve_image_path,
 };
 pub use links::{collect_visible_links, collect_visible_nav_targets, link_at_click};
-pub use measure::{measure_block_height, measure_document_height};
+pub(crate) use measure::block_tops;
+pub use measure::measure_document_height;
 pub use mermaid::RenderedDocument;
 pub(crate) use mermaid::{render_mermaid_from_source, save_mermaid_png};
 pub use preview_cache::PreviewRenderCache;
