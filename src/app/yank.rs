@@ -5,6 +5,7 @@ use crate::domain::Block;
 use crate::error::AppError;
 
 use super::App;
+use super::status::truncate_status;
 
 impl App {
     pub(crate) fn yank_link_url(&mut self) -> Result<(), AppError> {
@@ -78,13 +79,4 @@ impl App {
             })
         })
     }
-}
-
-fn truncate_status(text: &str, max_chars: usize) -> String {
-    let count = text.chars().count();
-    if count <= max_chars {
-        return text.to_string();
-    }
-    let truncated: String = text.chars().take(max_chars.saturating_sub(1)).collect();
-    format!("{truncated}…")
 }

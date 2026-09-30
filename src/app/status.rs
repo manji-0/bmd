@@ -9,6 +9,7 @@ use ratatui::{
 
 use crate::domain::{Document, NavTarget, NormalSearch, ViewState};
 use crate::render::Theme;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::layout::content_height;
 
@@ -66,6 +67,8 @@ pub(crate) struct StatusBarInput<'a> {
     pub pending_prompt: Option<&'a str>,
     pub status_is_error: bool,
     pub theme: &'a Theme,
+    /// Columns available for the whole status line.
+    pub width: u16,
 }
 
 pub(crate) fn format_status_bar(input: StatusBarInput<'_>) -> Line<'static> {
@@ -84,21 +87,28 @@ pub(crate) fn format_status_bar(input: StatusBarInput<'_>) -> Line<'static> {
         }
         (None, None) => None,
     };
-    let trailing = Span::raw(trailing_status(&input));
+    let lead_width = lead
+        .as_ref()
+        .map_or(0, |span| span.width() + STATUS_SEPARATOR_GAP);
+    let budget = usize::from(input.width).saturating_sub(lead_width);
+    let trailing = Span::raw(trailing_status(&input, budget));
     match lead {
         Some(lead) => Line::from(vec![lead, Span::raw("  "), trailing]),
         None => Line::from(trailing),
     }
 }
 
-fn trailing_status(input: &StatusBarInput<'_>) -> String {
-    let mut parts = Vec::new();
-    parts.push(
-        input
-            .source_label
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "(stdin)".to_string()),
-    );
+/// Separator between status segments.
+const STATUS_SEPARATOR: &str = "  |  ";
+/// Gap between a leading message and the position summary.
+const STATUS_SEPARATOR_GAP: usize = 2;
+
+/// Position summary, dropping low-priority segments until it fits `budget` columns.
+fn trailing_status(input: &StatusBarInput<'_>, budget: usize) -> String {
+    // (priority, text): higher priority survives longer on narrow terminals.
+    let mut parts: Vec<(u8, String)> = Vec::new();
+    let source = input.source_label.unwrap_or("(stdin)");
+    parts.push((5, source.to_string()));
 
     let offset = input.view_state.scroll().offset().min(input.max_scroll);
     let pct = if input.max_scroll == 0 {
@@ -106,10 +116,10 @@ fn trailing_status(input: &StatusBarInput<'_>) -> String {
     } else {
         ((offset as f64 / input.max_scroll as f64) * 100.0).round() as u32
     };
-    parts.push(format!("{pct}%"));
+    parts.push((6, format!("{pct}%")));
 
     if input.outline_visible {
-        parts.push("outline".to_string());
+        parts.push((1, "outline".to_string()));
     }
 
     if let NormalSearch::Active(active) = input.view_state.normal_search() {
@@ -119,23 +129,45 @@ fn trailing_status(input: &StatusBarInput<'_>) -> String {
         } else {
             active.current_index() + 1
         };
-        parts.push(format!(
-            "{}/{} '{}'",
-            current,
-            total,
-            active.query().as_str()
+        parts.push((
+            4,
+            format!("{}/{} '{}'", current, total, active.query().as_str()),
         ));
     }
 
     if let Some(selected) = selected_nav_status(input.document, input.view_state) {
-        parts.push(selected);
+        parts.push((3, selected));
     }
 
     if input.doc_stack_depth > 0 {
-        parts.push(format!("doc+{}", input.doc_stack_depth));
+        parts.push((2, format!("doc+{}", input.doc_stack_depth)));
     }
 
-    parts.join("  |  ")
+    let joined_width = |parts: &[(u8, String)]| {
+        let text: usize = parts.iter().map(|(_, text)| text.width()).sum();
+        text + STATUS_SEPARATOR.len() * parts.len().saturating_sub(1)
+    };
+    while joined_width(&parts) > budget && parts.len() > 2 {
+        let lowest = parts
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, (priority, _))| *priority)
+            .map(|(index, _)| index)
+            .expect("parts is non-empty");
+        parts.remove(lowest);
+    }
+    let overflow = joined_width(&parts).saturating_sub(budget);
+    if overflow > 0 {
+        // Keep the end of the path: the file name tells documents apart.
+        let keep = source.width().saturating_sub(overflow);
+        parts[0].1 = truncate_start_to_width(source, keep);
+    }
+
+    parts
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect::<Vec<_>>()
+        .join(STATUS_SEPARATOR)
 }
 
 /// Human-readable status text for the selected link or footnote.
@@ -152,13 +184,55 @@ fn selected_nav_status(document: &Document, view_state: &ViewState) -> Option<St
     }
 }
 
-fn truncate_status(text: &str, max_chars: usize) -> String {
+/// Shorten `text` to at most `max_chars` characters, ending with `…` when cut.
+pub(crate) fn truncate_status(text: &str, max_chars: usize) -> String {
     let count = text.chars().count();
     if count <= max_chars {
         return text.to_string();
     }
     let truncated: String = text.chars().take(max_chars.saturating_sub(1)).collect();
     format!("{truncated}…")
+}
+
+/// Shorten `text` to at most `max_width` columns, ending with `…` when cut.
+pub(crate) fn truncate_to_width(text: &str, max_width: usize) -> String {
+    if text.width() <= max_width {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for c in text.chars() {
+        let w = c.width().unwrap_or(0);
+        if used + w + 1 > max_width {
+            break;
+        }
+        out.push(c);
+        used += w;
+    }
+    if max_width > 0 {
+        out.push('…');
+    }
+    out
+}
+
+/// Shorten `text` to at most `max_width` columns, starting with `…` when cut.
+fn truncate_start_to_width(text: &str, max_width: usize) -> String {
+    if text.width() <= max_width {
+        return text.to_string();
+    }
+    let mut tail = Vec::new();
+    let mut used = 0;
+    for c in text.chars().rev() {
+        let w = c.width().unwrap_or(0);
+        if used + w + 1 > max_width {
+            break;
+        }
+        tail.push(c);
+        used += w;
+    }
+    let mut out = String::from(if max_width > 0 { "…" } else { "" });
+    out.extend(tail.into_iter().rev());
+    out
 }
 
 pub(crate) fn draw_status_bar(frame: &mut Frame, area: Rect, line: Line<'_>, theme: &Theme) {
@@ -233,6 +307,7 @@ mod tests {
             pending_prompt: None,
             status_is_error: false,
             theme: &Theme::default(),
+            width: 200,
         })
         .spans
         .iter()
@@ -284,5 +359,65 @@ mod tests {
             !text.contains("footnote #0"),
             "opaque footnote id should not appear: {text}"
         );
+    }
+
+    #[test]
+    fn narrow_status_drops_low_priority_segments_first() {
+        let document = parse("[docs](https://example.com/path)\n").unwrap();
+        let view_state =
+            ViewState::new(TerminalSize::new(80, 24).unwrap()).with_selected_link(LinkId(0));
+        let line = format_status_bar(StatusBarInput {
+            source_label: Some("notes/readme.md"),
+            document: &document,
+            view_state: &view_state,
+            max_scroll: 0,
+            doc_stack_depth: 2,
+            status_message: None,
+            outline_visible: true,
+            pending_prompt: None,
+            status_is_error: false,
+            theme: &Theme::default(),
+            width: 30,
+        });
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.width() <= 30, "status overflows: {text}");
+        assert!(
+            text.contains("notes/readme.md") && text.contains("100%"),
+            "{text}"
+        );
+        assert!(!text.contains("outline"), "lowest priority kept: {text}");
+    }
+
+    #[test]
+    fn long_source_label_keeps_its_file_name() {
+        let document = parse("text\n").unwrap();
+        let view_state = ViewState::new(TerminalSize::new(80, 24).unwrap());
+        let line = format_status_bar(StatusBarInput {
+            source_label: Some("/very/long/path/to/some/deeply/nested/docs/readme.md"),
+            document: &document,
+            view_state: &view_state,
+            max_scroll: 0,
+            doc_stack_depth: 0,
+            status_message: None,
+            outline_visible: false,
+            pending_prompt: None,
+            status_is_error: false,
+            theme: &Theme::default(),
+            width: 24,
+        });
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text.width(), 24, "{text}");
+        assert!(
+            text.starts_with('…') && text.contains("readme.md"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn truncation_respects_display_width() {
+        assert_eq!(truncate_to_width("abcdef", 6), "abcdef");
+        assert_eq!(truncate_to_width("abcdef", 4), "abc…");
+        assert_eq!(truncate_to_width("見出し", 4), "見…");
+        assert_eq!(truncate_start_to_width("a/b/file.md", 8), "…file.md");
     }
 }

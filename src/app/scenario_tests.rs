@@ -317,3 +317,24 @@ fn status_messages_use_theme_info_and_error_styles() {
     let bg = h.terminal.backend().buffer()[(WIDTH - 1, HEIGHT - 1)].bg;
     assert_eq!(Some(bg), h.app.theme.status_bar.bg);
 }
+
+#[test]
+fn outline_rows_fit_the_sidebar_without_heading_markers() {
+    let mut h = Harness::kitchen_sink();
+    h.keys("t");
+    let panel = super::layout::outline_panel_width(WIDTH) as usize;
+    let rows: Vec<String> = (1..HEIGHT - 2)
+        .map(|y| h.row(y).chars().take(panel).collect())
+        .collect();
+    assert!(
+        rows.iter().all(|row| !row.contains("# ")),
+        "outline still shows # markers:\n{}",
+        rows.join("\n")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("Level six") || row.contains("Level s…")),
+        "deep heading lost its text:\n{}",
+        rows.join("\n")
+    );
+}

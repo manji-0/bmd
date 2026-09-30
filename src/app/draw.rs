@@ -87,6 +87,7 @@ impl App {
                 pending_prompt: self.pending_input.prompt(),
                 status_is_error: self.status_is_error,
                 theme: &self.theme,
+                width: areas.status.width,
             });
             draw_status_bar(f, areas.status, status, &self.theme);
 
@@ -96,8 +97,13 @@ impl App {
                     query,
                     self.live_search_match_count,
                 );
-                let para = Paragraph::new(prompt);
-                f.render_widget(para, areas.prompt);
+                // A query with no matches reads as an error while typing.
+                let style = if self.live_search_match_count == Some(0) {
+                    self.theme.status_error
+                } else {
+                    self.theme.text
+                };
+                f.render_widget(Paragraph::new(prompt).style(style), areas.prompt);
             }
         })?;
         Ok(())
