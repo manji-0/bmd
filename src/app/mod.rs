@@ -88,6 +88,8 @@ pub struct App {
     /// Marker style resolved once at startup; reused for every opened document.
     checklist_style: ChecklistStyle,
     checklist_state: ChecklistState,
+    /// Widest the document column grows; `None` fills the terminal.
+    max_width: Option<u16>,
     base_path: Option<std::path::PathBuf>,
     source_label: Option<String>,
     help_visible: bool,
@@ -200,6 +202,7 @@ impl App {
             keymap: config.keymap,
             checklist_style,
             checklist_state: ChecklistState::new(checklist_style),
+            max_width: config.view.max_width,
             base_path: base_path.clone(),
             source_label,
             help_visible: false,
@@ -337,11 +340,21 @@ impl App {
         );
     }
 
-    /// Content width available for document wrapping (excludes outline sidebar).
+    /// Screen areas for the current terminal size, mode, outline, and max width.
+    pub(crate) fn layout_areas(&self) -> layout::LayoutAreas {
+        let terminal = self.view_state.terminal_size();
+        let full_area = ratatui::layout::Rect::new(0, 0, terminal.width(), terminal.height());
+        layout::split_layout(
+            full_area,
+            self.view_state.mode(),
+            self.outline.visible,
+            self.max_width,
+        )
+    }
+
+    /// Content width available for document wrapping: the main column's width.
     pub(crate) fn document_width(&self) -> u16 {
-        let full = self.view_state.terminal_size().width();
-        let reserve = outline::outline_reserve_width(full, self.outline.visible);
-        full.saturating_sub(reserve).max(1)
+        self.layout_areas().main.width
     }
 
     pub(crate) fn preview_work_pending(&self) -> bool {

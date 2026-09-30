@@ -8,7 +8,6 @@ use ratatui::{
 };
 
 use super::App;
-use super::layout::{OUTLINE_GAP, outline_panel_width};
 use super::status::truncate_to_width;
 
 /// Columns of indent per heading level below the shallowest one.
@@ -193,18 +192,5 @@ impl App {
         };
         let paragraph = Paragraph::new(lines).scroll((scroll_y as u16, 0));
         frame.render_widget(paragraph, inner);
-    }
-}
-
-/// Width reserved for the outline column including the gap before main content.
-pub(crate) fn outline_reserve_width(terminal_width: u16, outline_visible: bool) -> u16 {
-    if !outline_visible {
-        return 0;
-    }
-    let panel = outline_panel_width(terminal_width);
-    if panel == 0 {
-        0
-    } else {
-        panel.saturating_add(OUTLINE_GAP)
     }
 }

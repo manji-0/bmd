@@ -200,9 +200,10 @@ Supported fields per role: `fg`, `bg`, `bold`, `italic`, `underlined`, `dim`, `r
 ```toml
 [view]
 checklist = "ascii"   # task markers: auto (default) / unicode ☐☑ / emoji ⬜✅ / ascii [ ] [x]
+max_width = 100       # widest the document column grows; 0 fills the terminal
 ```
 
-`BMD_CHECKLIST_STYLE` overrides `checklist` for a single run.
+`BMD_CHECKLIST_STYLE` overrides `checklist` for a single run. On terminals wider than `max_width` (default 100) the document column is centered; narrower terminals are unaffected.
 
 ### Keymap
 

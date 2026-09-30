@@ -25,11 +25,28 @@ pub struct Config {
 }
 
 /// `[view]` settings for how documents are laid out and marked up.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewConfig {
     /// Task-list marker style; `None` leaves it to `BMD_CHECKLIST_STYLE` or detection.
     pub checklist: Option<ChecklistMarkers>,
+    /// Widest the document column grows before it is centered; `None` fills the terminal.
+    pub max_width: Option<u16>,
 }
+
+impl Default for ViewConfig {
+    fn default() -> Self {
+        Self {
+            checklist: None,
+            max_width: Some(DEFAULT_MAX_WIDTH),
+        }
+    }
+}
+
+/// Default `[view] max_width`: a comfortable reading measure that leaves
+/// 80-column terminals untouched.
+pub const DEFAULT_MAX_WIDTH: u16 = 100;
+/// Narrowest accepted `[view] max_width` (other than 0, which disables it).
+const MIN_MAX_WIDTH: u16 = 20;
 
 /// Task-list marker choice from `[view] checklist`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -56,6 +73,7 @@ struct ConfigFile {
 #[serde(deny_unknown_fields)]
 struct ViewSection {
     checklist: Option<ChecklistMarkers>,
+    max_width: Option<u16>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -127,8 +145,19 @@ impl ConfigFile {
             config.keymap = keymap.apply_to(Keymap::default())?;
         }
         if let Some(view) = self.view {
+            let max_width = match view.max_width {
+                None => Some(DEFAULT_MAX_WIDTH),
+                Some(0) => None,
+                Some(width) if width < MIN_MAX_WIDTH => {
+                    return Err(AppError::UnsupportedInput(format!(
+                        "[view] max_width must be 0 (off) or at least {MIN_MAX_WIDTH}, got {width}"
+                    )));
+                }
+                Some(width) => Some(width),
+            };
             config.view = ViewConfig {
                 checklist: view.checklist.filter(|m| *m != ChecklistMarkers::Auto),
+                max_width,
             };
         }
         Ok(config)
@@ -355,5 +384,20 @@ scroll_down = ["e"]
 
         assert!(toml::from_str::<ConfigFile>("[view]\nchecklist = \"boxes\"\n").is_err());
         assert!(toml::from_str::<ConfigFile>("[view]\nunknown = 1\n").is_err());
+    }
+
+    #[test]
+    fn view_max_width_defaults_disables_and_validates() {
+        assert_eq!(Config::default().view.max_width, Some(DEFAULT_MAX_WIDTH));
+        let parse = |toml: &str| toml::from_str::<ConfigFile>(toml).unwrap().into_config();
+        assert_eq!(
+            parse("[view]\nmax_width = 0\n").unwrap().view.max_width,
+            None
+        );
+        assert_eq!(
+            parse("[view]\nmax_width = 72\n").unwrap().view.max_width,
+            Some(72)
+        );
+        assert!(parse("[view]\nmax_width = 5\n").is_err());
     }
 }

@@ -36,7 +36,12 @@ impl App {
         };
         terminal.draw(|f| {
             let full_area = f.area();
-            let areas = split_layout(full_area, self.view_state.mode(), self.outline.visible);
+            let areas = split_layout(
+                full_area,
+                self.view_state.mode(),
+                self.outline.visible,
+                self.max_width,
+            );
 
             if areas.outline.width > 0 {
                 self.draw_outline_sidebar(f, areas.outline);

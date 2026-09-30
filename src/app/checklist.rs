@@ -11,7 +11,7 @@ use crate::render::{
 };
 
 use super::App;
-use super::layout::{split_layout, split_main_and_prompt};
+use super::layout::split_layout;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SelectionDrag {
@@ -96,7 +96,7 @@ impl App {
             width: terminal.width(),
             height: terminal.height(),
         };
-        let areas = split_layout(full_area, self.view_state.mode(), true);
+        let areas = split_layout(full_area, self.view_state.mode(), true, self.max_width);
         let Some(index) = self.outline_hit_index(column, row, areas.outline) else {
             return false;
         };
@@ -131,8 +131,7 @@ impl App {
             return Ok(true);
         }
 
-        let (main_area, _) =
-            split_main_and_prompt(full_area, self.view_state.mode(), self.outline.visible);
+        let main_area = self.layout_areas().main;
 
         if column < main_area.x
             || column >= main_area.x + main_area.width
@@ -177,15 +176,7 @@ impl App {
             return None;
         }
 
-        let terminal = self.view_state.terminal_size();
-        let full_area = Rect {
-            x: 0,
-            y: 0,
-            width: terminal.width(),
-            height: terminal.height(),
-        };
-        let (main_area, _) =
-            split_main_and_prompt(full_area, self.view_state.mode(), self.outline.visible);
+        let main_area = self.layout_areas().main;
         if column < main_area.x
             || column >= main_area.x + main_area.width
             || row < main_area.y

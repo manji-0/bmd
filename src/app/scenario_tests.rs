@@ -462,3 +462,48 @@ fn help_overlay_follows_keymap_overrides() {
     assert!(scroll_row.contains("e/k line"), "{scroll_row}");
     assert!(!scroll_row.contains("j/k"), "{scroll_row}");
 }
+
+#[test]
+fn wide_terminal_centers_a_capped_column_and_clicks_still_land() {
+    const WIDE: u16 = 140;
+    let (_, format, source) = SAMPLES[0];
+    let mut h = Harness::sized(format, source, WIDE, HEIGHT);
+    h.draw();
+    let max = crate::config::DEFAULT_MAX_WIDTH;
+    let main = h.app.layout_areas().main;
+    assert_eq!((main.x, main.width), ((WIDE - max) / 2, max));
+    assert_eq!(h.app.document_width(), max);
+    assert!(
+        h.row(0).starts_with(&" ".repeat(main.x as usize)),
+        "{}",
+        h.row(0)
+    );
+    assert!(h.row(0)[main.x as usize..].starts_with("# Kitchen sink"));
+
+    let hits = h.app.hits().to_vec();
+    let checkbox = hits
+        .iter()
+        .find(|hit| matches!(hit.target, HitTarget::Checklist(_)))
+        .unwrap();
+    let max_scroll = h.app.max_scroll();
+    h.app.view_state = h
+        .app
+        .view_state
+        .clone()
+        .scroll_to(checkbox.line, max_scroll);
+    h.app.snap_scroll_visual();
+    let row = (checkbox.line - h.scroll()) as u16;
+    let before = h.app.checklist_state.revision();
+    h.click(main.x + checkbox.x as u16, row);
+    assert_ne!(
+        h.app.checklist_state.revision(),
+        before,
+        "centered click missed"
+    );
+
+    // Opening the outline re-centers the column in the remaining space.
+    h.keys("t");
+    let with_outline = h.app.layout_areas();
+    assert!(with_outline.main.x >= with_outline.outline.width);
+    assert!(with_outline.main.width <= max);
+}
