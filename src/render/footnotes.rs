@@ -46,6 +46,7 @@ fn measure_footnote_entry_height(
         .max(1)
 }
 
+/// Render the footnotes section into `area`, the viewport rows left below the body.
 pub(crate) fn render_footnotes_section(
     document: &Document,
     area: Rect,

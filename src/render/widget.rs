@@ -99,6 +99,11 @@ impl Widget for MarkdownWidget<'_> {
             }
         }
 
-        render_footnotes_section(self.document, area, buf, scroll, ctx, line_offset);
+        let body_end = Rect {
+            y,
+            height: max_y - y,
+            ..area
+        };
+        render_footnotes_section(self.document, body_end, buf, scroll, ctx, line_offset);
     }
 }

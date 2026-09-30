@@ -1333,3 +1333,22 @@ fn find_link_line_offset_in_table_body_row() {
         Some(3)
     );
 }
+
+#[test]
+fn footnotes_section_renders_below_body_not_over_it() {
+    let doc = parse("Body first line.\n\nSecond paragraph[^n].\n\n[^n]: The note.\n").unwrap();
+    let ctx = test_render_context();
+    let mut cache = DocumentRenderCache::default();
+    let view = ViewState::new(TerminalSize::new(40, 10).unwrap());
+    cache.ensure(&doc, &ctx, &view, 40);
+    let rows: Vec<String> = (0..cache.total_height() as u16)
+        .map(|y| (0..40).map(|x| cache.buffer()[(x, y)].symbol()).collect())
+        .collect();
+    assert!(rows[0].starts_with("Body first line."), "{rows:#?}");
+    assert!(rows.last().unwrap().contains("The note."), "{rows:#?}");
+    assert_eq!(
+        rows.iter().filter(|row| row.contains("The note.")).count(),
+        1,
+        "{rows:#?}"
+    );
+}
