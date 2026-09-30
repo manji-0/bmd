@@ -164,9 +164,8 @@ impl App {
         document: crate::domain::Document,
     ) -> Result<(), AppError> {
         let terminal_size = self.view_state.terminal_size();
-        let rendered = RenderedDocument::new(&document, &self.picker, terminal_size, None)?;
         self.document = document;
-        self.rendered = rendered;
+        self.rendered = RenderedDocument::default();
         self.bump_document_revision();
         self.document_cache = DocumentRenderCache::default();
         self.preview.cache.clear();
@@ -182,11 +181,7 @@ impl App {
         self.clear_marks();
         self.pending_input = super::pending::PendingInput::None;
         self.outline.focused = false;
-        self.mermaid_render.begin_document();
-        self.image_render.begin_document();
-        self.document_prefetch.begin_document();
-        self.invalidate_prefetch_viewport();
-        self.maybe_prefetch_visible_links();
+        self.restart_background_work();
         Ok(())
     }
 
@@ -194,8 +189,7 @@ impl App {
         DocumentFrame {
             document: self.document.clone(),
             rendered: self.rendered.clone(),
-            mermaid_session: self.mermaid_render.suspend(),
-            image_session: self.image_render.suspend(),
+            preview_sessions: self.previews.suspend(),
             document_prefetch_session: self.document_prefetch.suspend(),
             document_cache: self.document_cache.clone(),
             preview_render_cache: self.preview.cache.clone(),
@@ -224,9 +218,8 @@ impl App {
             return Err(AppError::TerminalImage("injected apply failure".into()));
         }
         let terminal_size = self.view_state.terminal_size();
-        let rendered = RenderedDocument::new(&document, &self.picker, terminal_size, Some(&path))?;
         self.document = document;
-        self.rendered = rendered;
+        self.rendered = RenderedDocument::default();
         self.bump_document_revision();
         self.document_cache = DocumentRenderCache::default();
         self.preview.cache.clear();
@@ -244,11 +237,7 @@ impl App {
         self.clear_marks();
         self.pending_input = super::pending::PendingInput::None;
         self.outline.focused = false;
-        self.mermaid_render.begin_document();
-        self.image_render.begin_document();
-        self.document_prefetch.begin_document();
-        self.invalidate_prefetch_viewport();
-        self.maybe_prefetch_visible_links();
+        self.restart_background_work();
         Ok(())
     }
 
@@ -285,21 +274,10 @@ impl App {
         self.scroll.images_reenable_at = None;
         self.scroll.key_down_at = None;
         self.help_visible = false;
-        let terminal_size = self.view_state.terminal_size();
-        self.mermaid_render.resume(
-            frame.mermaid_session,
-            &self.document,
+        self.previews.resume(
+            frame.preview_sessions,
             &self.rendered,
-            &self.picker,
-            terminal_size,
-        );
-        self.image_render.resume(
-            frame.image_session,
-            &self.document,
-            &self.rendered,
-            self.base_path.as_ref(),
-            &self.picker,
-            terminal_size,
+            &super::preview_env!(self),
         );
         self.document_prefetch
             .resume(frame.document_prefetch_session);

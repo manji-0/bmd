@@ -14,7 +14,6 @@ mod subsup;
 #[cfg(test)]
 mod tests;
 
-pub use crate::domain::{anchor_href, normalize_anchor_slug, slugify_heading};
 pub use dto::ParsedDocument;
 pub use error::ParseError;
 pub use format::MarkupFormat;
@@ -46,7 +45,8 @@ pub fn parse_dto(format: MarkupFormat, content: &str) -> Result<ParsedDocument, 
     }
 }
 
-/// Parse CommonMark content (backward-compatible entry point).
+/// Parse CommonMark content; test shorthand for [`parse_document`].
+#[cfg(test)]
 pub fn parse(content: &str) -> Result<Document, AppError> {
     parse_document(MarkupFormat::Markdown, content)
 }

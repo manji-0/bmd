@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use super::front_matter::FrontMatter;
 use super::link::{DocumentError, Link, LinkId, LinkKind};
-use super::mermaid_render::mermaid_diagram_index;
+use super::preview_load::mermaid_diagram_index;
 
 pub use block::{
     Block, CodeBlock, DefinitionItem, DefinitionList, Heading, HeadingLevel, List, ListItem,
@@ -137,7 +137,7 @@ impl Document {
                 Self::validate_inlines_links(inlines, block_idx, link_count)?;
             }
             Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
-            Block::BlockQuote(blocks) => {
+            Block::Quote(blocks) => {
                 for child in blocks {
                     Self::validate_block_links(child, block_idx, link_count)?;
                 }
@@ -247,7 +247,7 @@ impl Document {
                 )?;
             }
             Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
-            Block::BlockQuote(blocks) => {
+            Block::Quote(blocks) => {
                 for child in blocks {
                     Self::validate_block_footnotes(
                         child,

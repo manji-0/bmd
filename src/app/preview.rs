@@ -29,18 +29,8 @@ impl Default for PreviewUi {
 
 impl App {
     pub(crate) fn preview_load_status(&self, link_id: LinkId) -> PreviewLoadStatus {
-        let Some(link) = self.document.links.get(link_id.0) else {
-            return PreviewLoadStatus::Idle;
-        };
-        match link.kind {
-            LinkKind::Mermaid => self.mermaid_render.preview_status(link_id, &self.rendered),
-            LinkKind::Image => {
-                self.image_render
-                    .preview_status(link_id, &self.document, &self.rendered)
-            }
-            LinkKind::Toc => PreviewLoadStatus::Ready,
-            _ => PreviewLoadStatus::Idle,
-        }
+        self.previews
+            .status(link_id, &self.rendered, &self.document)
     }
 
     pub(crate) fn preview_ready_to_open(&self, link_id: LinkId) -> bool {
@@ -123,11 +113,7 @@ impl App {
         self.preview.cache.clear();
         self.rendered.mermaid_images.clear();
         self.rendered.markdown_images.clear();
-        self.mermaid_render.begin_document();
-        self.image_render.begin_document();
-        self.document_prefetch.begin_document();
-        self.invalidate_prefetch_viewport();
-        self.maybe_prefetch_visible_links();
+        self.restart_background_work();
     }
 
     pub(crate) fn adjust_preview_zoom(&mut self, factor: f32) {

@@ -145,13 +145,7 @@ mod tests {
             footnote_order: vec![],
             front_matter: None,
         };
-        let rendered = RenderedDocument::new(
-            &document,
-            &ratatui_image::picker::Picker::halfblocks(),
-            TerminalSize::new(80, 24).unwrap(),
-            None,
-        )
-        .unwrap();
+        let rendered = RenderedDocument::default();
         let view_state = crate::domain::ViewState::new(TerminalSize::new(80, 24).unwrap());
         let checklist_state =
             crate::domain::ChecklistState::new(crate::domain::ChecklistStyle::Unicode);

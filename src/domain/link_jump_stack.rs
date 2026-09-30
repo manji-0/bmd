@@ -48,20 +48,13 @@ impl<T> LinkJumpStack<T> {
         }
     }
 
-    pub fn max_layers(&self) -> usize {
-        self.max_frames + 1
-    }
-
-    pub fn max_frames(&self) -> usize {
-        self.max_frames
-    }
-
     /// Number of fixed priors. The live current layer is not included.
     pub fn fixed_prior_count(&self) -> usize {
         self.priors.len()
     }
 
     /// Active layer (1-based) including the live current item.
+    #[cfg(test)]
     pub fn current_layer(&self) -> usize {
         self.fixed_prior_count() + 1
     }
@@ -88,10 +81,6 @@ impl<T> LinkJumpStack<T> {
             .pop()
             .map(PriorAtLinkJump::into_inner)
             .ok_or(LinkJumpStackEmpty)
-    }
-
-    pub fn oldest_prior(&self) -> Option<&T> {
-        self.priors.first().map(PriorAtLinkJump::as_inner)
     }
 
     pub fn reset_to_oldest_prior(&mut self) -> Result<T, LinkJumpStackEmpty>

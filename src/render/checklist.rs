@@ -47,7 +47,7 @@ fn collect_block_checklist_hits(
         Block::List(list) => {
             collect_list_checklist_hits(list, block_idx, width, base_x, ctx, hits, line_offset)
         }
-        Block::BlockQuote(blocks) => {
+        Block::Quote(blocks) => {
             let quote_x = base_x + 2;
             let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
             for child in blocks {
@@ -171,7 +171,7 @@ fn find_checklist_item(document: &Document, id: ChecklistId) -> Option<&ListItem
 fn find_checklist_item_in_block(block: &Block, id: ChecklistId) -> Option<&ListItem> {
     match block {
         Block::List(list) => find_checklist_item_in_list(list, id),
-        Block::BlockQuote(blocks) => blocks
+        Block::Quote(blocks) => blocks
             .iter()
             .find_map(|child| find_checklist_item_in_block(child, id)),
         Block::Callout(callout) => callout

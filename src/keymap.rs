@@ -498,14 +498,13 @@ fn default_search_bindings() -> Vec<(KeySpec, Command)> {
     ]
 }
 
-/// Backwards-compatible helper for tests.
-pub fn map_event(event: Event, mode: &UiMode, normal_search: &NormalSearch) -> Command {
-    Keymap::default().map_event(event, mode, normal_search)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn map_event(event: Event, mode: &UiMode, normal_search: &NormalSearch) -> Command {
+        Keymap::default().map_event(event, mode, normal_search)
+    }
     use crate::domain::UiMode;
 
     #[test]

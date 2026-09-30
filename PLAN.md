@@ -47,7 +47,7 @@
 ```text
 src/
 ├── main.rs          # CLI: 引数、stdin、GitHub URL、TUI 初期化
-├── lib.rs           # クレート境界
+├── lib.rs           # クレート境界（main が使う型・関数だけを re-export、モジュールは非公開）
 ├── domain/          # 値オブジェクト、Document、状態遷移、slug
 ├── parse/           # Markdown / RST / AsciiDoc → DTO → domain
 ├── render/          # domain → ratatui widgets（parse は import しない）
@@ -93,7 +93,7 @@ src/
 - `Scroll`: スクロール offset を newtype で包む。
 - `ViewState`: `Scroll` + 選択中リンク + `TerminalSize`。遷移は `self` を消費する。
 - `NavStack` / `LinkJumpStack`: リンクジャンプ時に prior を固定。ライブな現在位置はスタックの外。
-- `MermaidRenderSession` / `ImageRenderSession`: プレビューを `Idle → Queued → Rendering → Ready | Failed` で追跡。
+- `PreviewLoadSession<S: PreviewSource>`: mermaid / 画像プレビューを `(未登録) → Queued → Loading → Ready | Failed` で追跡する単一の汎用状態機械。app 側は `PreviewPools` が両種を束ねる。
 
 ## レンダリングパイプライン
 

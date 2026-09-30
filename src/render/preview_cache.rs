@@ -31,11 +31,6 @@ impl PreviewRenderCache {
         self.entries.clear();
     }
 
-    #[cfg(test)]
-    pub fn len_entries(&self) -> usize {
-        self.entries.len()
-    }
-
     pub fn popup_rect(terminal: TerminalSize) -> Rect {
         let full = Rect::new(0, 0, terminal.width(), terminal.height());
         centered_rect(PREVIEW_POPUP_PERCENT, PREVIEW_POPUP_PERCENT, full)

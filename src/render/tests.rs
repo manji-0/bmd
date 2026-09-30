@@ -1,17 +1,19 @@
 use std::collections::HashMap;
 
 use super::blocks::render_code_block;
+use super::headings::collect_heading_offsets;
 use super::inline::{highlight_span, highlight_text, inlines_to_text, inlines_to_wrapped_lines};
+use super::links::{collect_footnote_hits, find_link_line_offset};
 use super::measure::measure_code_block_height;
 use super::table::{allocate_column_widths, render_table_row, wrap_cell_inlines};
+use super::widget::MarkdownWidget;
 use super::{
-    DocumentRenderCache, MarkdownWidget, RenderContext, RenderedDocument, SyntaxAssets, Theme,
-    checklist, collect_footnote_hits, collect_heading_offsets, collect_visible_links,
-    collect_visible_nav_targets, find_footnote_definition_line_offset,
-    find_footnote_ref_line_offset, find_heading_line_by_anchor, find_search_matches,
-    footnote_preview_title, measure_block_height, measure_document_height, next_heading_line,
-    prev_heading_line, render_footnote_preview, slugify_heading,
+    DocumentRenderCache, RenderContext, RenderedDocument, SyntaxAssets, Theme, checklist,
+    collect_visible_links, collect_visible_nav_targets, find_heading_line_by_anchor,
+    find_search_matches, footnote_preview_title, measure_block_height, measure_document_height,
+    next_heading_line, prev_heading_line, render_footnote_preview,
 };
+use crate::domain::slugify_heading;
 use crate::domain::{
     Alignment, Block, ChecklistState, ChecklistStyle, CodeBlock, Document, FootnoteDefinition,
     FootnoteId, Heading, HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl, List, ListItem,
@@ -296,7 +298,7 @@ fn find_search_matches_list_offsets_exclude_inner_gaps() {
 fn find_search_matches_blockquote_includes_padding() {
     let document = Document::new(
         vec![
-            Block::BlockQuote(vec![Block::Paragraph(vec![Inline::Text(
+            Block::Quote(vec![Block::Paragraph(vec![Inline::Text(
                 "quoted".to_string(),
             )])]),
             Block::Paragraph(vec![Inline::Text("after".to_string())]),
@@ -824,8 +826,8 @@ fn collect_visible_links_filters_by_viewport() {
     )
     .unwrap();
     let ctx = test_render_context();
-    let top_line = super::find_link_line_offset(&doc, 80, &ctx, LinkId(0)).unwrap();
-    let bottom_line = super::find_link_line_offset(&doc, 80, &ctx, LinkId(1)).unwrap();
+    let top_line = find_link_line_offset(&doc, 80, &ctx, LinkId(0)).unwrap();
+    let bottom_line = find_link_line_offset(&doc, 80, &ctx, LinkId(1)).unwrap();
     assert!(bottom_line > top_line);
 
     let visible = collect_visible_links(&doc, 80, &ctx, top_line, 1);
@@ -857,13 +859,9 @@ fn footnote_nav_collects_reference_and_definition_lines() {
     .unwrap();
     let ctx = test_render_context();
 
-    let ref_line = find_footnote_ref_line_offset(&doc, 80, &ctx, FootnoteId(0)).unwrap();
-    let def_line = find_footnote_definition_line_offset(&doc, 80, &ctx, FootnoteId(0)).unwrap();
-    assert!(def_line > ref_line);
-
     let hits = collect_footnote_hits(&doc, 80, &ctx);
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].line, ref_line);
+    assert_eq!(hits[0].id, FootnoteId(0));
 }
 
 #[test]
@@ -1331,7 +1329,7 @@ fn find_link_line_offset_in_table_body_row() {
     let document = parse("| A | B |\n|---|---|\n| [link](https://example.com) | text |").unwrap();
     let ctx = test_render_context();
     assert_eq!(
-        super::find_link_line_offset(&document, 80, &ctx, LinkId(0)),
+        find_link_line_offset(&document, 80, &ctx, LinkId(0)),
         Some(3)
     );
 }

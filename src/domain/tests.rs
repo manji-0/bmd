@@ -1,7 +1,7 @@
 use super::{
     Alignment, Block, Callout, CalloutKind, CodeBlock, Document, DocumentError, Heading,
-    HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl, LinkUrlError, NormalSearch, PreviewKind,
-    SearchDirection, SearchMatch, SearchQuery, SearchQueryError, Table, TerminalSize,
+    HeadingLevel, Inline, Link, LinkId, LinkKind, LinkUrl, LinkUrlError, NavTarget, NormalSearch,
+    PreviewKind, SearchDirection, SearchMatch, SearchQuery, SearchQueryError, Table, TerminalSize,
     TerminalSizeError, UiMode, ViewState,
 };
 
@@ -53,16 +53,16 @@ fn scroll_up_saturates() {
 
 #[test]
 fn link_selection_wraps_within_visible_set() {
-    let visible = [LinkId(1), LinkId(3), LinkId(5)];
+    let visible = [LinkId(1), LinkId(3), LinkId(5)].map(NavTarget::Link);
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size);
-    let state = state.select_next_link_in(&visible);
+    let state = state.select_next_nav_in(&visible);
     assert_eq!(state.selected_link(), Some(LinkId(1)));
-    let state = state.select_next_link_in(&visible);
+    let state = state.select_next_nav_in(&visible);
     assert_eq!(state.selected_link(), Some(LinkId(3)));
-    let state = state.select_next_link_in(&visible);
+    let state = state.select_next_nav_in(&visible);
     assert_eq!(state.selected_link(), Some(LinkId(5)));
-    let state = state.select_next_link_in(&visible);
+    let state = state.select_next_nav_in(&visible);
     assert_eq!(state.selected_link(), Some(LinkId(1)));
 }
 
@@ -228,7 +228,7 @@ fn view_state_reset_for_reload_preserves_clamped_scroll() {
     )
     .unwrap();
     let state = ViewState::new(size)
-        .select_next_link_in(&[LinkId(0)])
+        .with_selected_link(LinkId(0))
         .reset_for_reload(42, 10);
     assert_eq!(state.scroll().offset(), 10);
     assert_eq!(state.selected_link(), None);
@@ -446,21 +446,12 @@ fn link_kind_preview_flag() {
 
 #[test]
 fn link_selection_prev_wraps_within_visible_set() {
-    let visible = [LinkId(1), LinkId(3)];
+    let visible = [LinkId(1), LinkId(3)].map(NavTarget::Link);
     let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size).select_prev_link_in(&visible);
+    let state = ViewState::new(size).select_prev_nav_in(&visible);
     assert_eq!(state.selected_link(), Some(LinkId(3)));
-    let state = state.select_prev_link_in(&visible);
+    let state = state.select_prev_nav_in(&visible);
     assert_eq!(state.selected_link(), Some(LinkId(1)));
-}
-
-#[test]
-fn clear_link_selection() {
-    let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size)
-        .select_next_link_in(&[LinkId(0)])
-        .clear_link_selection();
-    assert_eq!(state.selected_link(), None);
 }
 
 #[test]
@@ -483,15 +474,6 @@ fn view_state_prev_search_match_wraps() {
         panic!("expected active search");
     };
     assert_eq!(active.current_index(), 0);
-}
-
-#[test]
-fn half_page_scroll_uses_terminal_height() {
-    let size = TerminalSize::new(80, 20).unwrap();
-    let state = ViewState::new(size).half_page_down(100);
-    assert_eq!(state.scroll().offset(), 10);
-    let state = state.half_page_up();
-    assert_eq!(state.scroll().offset(), 0);
 }
 
 #[test]

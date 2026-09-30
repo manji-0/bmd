@@ -36,9 +36,7 @@ pub(crate) fn render_block(
         }
         Block::CodeBlock(cb) => render_code_block(cb, area, buf, skip_rows, ctx, line_offset),
         Block::MathBlock(math) => render_math_block_content(math, area, buf, skip_rows, ctx),
-        Block::BlockQuote(blocks) => {
-            render_blockquote(blocks, area, buf, skip_rows, ctx, line_offset)
-        }
+        Block::Quote(blocks) => render_blockquote(blocks, area, buf, skip_rows, ctx, line_offset),
         Block::Callout(callout) => render_callout(callout, area, buf, skip_rows, ctx, line_offset),
         Block::List(list) => render_list(list, area, buf, skip_rows, ctx, line_offset),
         Block::DefinitionList(list) => {

@@ -20,10 +20,11 @@ use ratatui::{
 };
 use ratatui_image::picker::{Picker, cap_parser::QueryStdioOptions};
 
-use bmd::app::App;
-use bmd::error::AppError;
-use bmd::github::{self, GitHubAuth, GitHubUrl};
-use bmd::parse::{MarkupFormat, parse_document, parse_with_path};
+use bmd::{
+    App, AppError, Document, GitHubAuth, GitHubUrl, MarkupFormat, build_pr_listing_markdown,
+    fetch_blob_content, fetch_pr_info, parse_document, parse_github_url, parse_with_path,
+    resolve_auth, rewrite_relative_links,
+};
 
 fn main() {
     if let Err(e) = run() {
@@ -74,7 +75,7 @@ fn run() -> Result<(), AppError> {
 }
 
 type ReadInputResult = (
-    bmd::domain::Document,
+    Document,
     Option<PathBuf>,
     Option<String>,
     Option<GitHubAuth>,
@@ -83,26 +84,26 @@ type ReadInputResult = (
 fn read_input() -> Result<ReadInputResult, AppError> {
     match env::args().nth(1) {
         Some(arg) if arg != "-" => {
-            if let Some(github_url) = github::parse_github_url(&arg) {
-                let auth = github::resolve_auth();
+            if let Some(github_url) = parse_github_url(&arg) {
+                let auth = resolve_auth();
                 match github_url {
                     GitHubUrl::Blob(blob) => {
                         eprintln!("fetching {}...", blob.path);
-                        let content = github::fetch_blob_content(&blob, &auth)
+                        let content = fetch_blob_content(&blob, &auth)
                             .map_err(|e| AppError::GitHubFetch(e.to_string()))?;
                         let format = MarkupFormat::from_path(std::path::Path::new(&blob.path))
                             .unwrap_or(MarkupFormat::Markdown);
                         let mut document = parse_document(format, &content)?;
-                        github::rewrite_relative_links(&mut document, &blob);
+                        rewrite_relative_links(&mut document, &blob);
                         let source_label = Some(blob.path.clone());
                         Ok((document, None, source_label, Some(auth)))
                     }
                     GitHubUrl::PullRequest(pr) => {
                         eprintln!("fetching PR #{}...", pr.number);
-                        let info = github::fetch_pr_info(&pr, &auth)
+                        let info = fetch_pr_info(&pr, &auth)
                             .map_err(|e| AppError::GitHubFetch(e.to_string()))?;
                         let source_label = Some(format!("PR #{}: {}", pr.number, info.title));
-                        let markdown = github::build_pr_listing_markdown(&pr, &info);
+                        let markdown = build_pr_listing_markdown(&pr, &info);
                         let document = parse_document(MarkupFormat::Markdown, &markdown)?;
                         Ok((document, None, source_label, Some(auth)))
                     }

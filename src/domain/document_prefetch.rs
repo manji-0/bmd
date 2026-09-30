@@ -203,14 +203,6 @@ impl DocumentPrefetchSession {
         }
     }
 
-    pub fn ready_path_set(&self) -> HashSet<PathBuf> {
-        self.tasks
-            .iter()
-            .filter(|(_, task)| matches!(task, DocumentPrefetchTask::Ready(_)))
-            .map(|(path, _)| path.clone())
-            .collect()
-    }
-
     pub fn suspend(self) -> DocumentPrefetchSessionSnapshot {
         let mut tasks = self.tasks;
         let mut queue = self.queue;

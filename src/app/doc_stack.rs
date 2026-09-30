@@ -4,11 +4,12 @@ use std::path::PathBuf;
 
 use crate::domain::{
     ChecklistState, DOCUMENT_STACK_MAX_LAYERS, Document, DocumentPrefetchSessionSnapshot,
-    DocumentStackFull, ImageSessionSnapshot, LinkId, LinkJumpStack, LinkJumpStackFull, Marks,
-    MermaidSessionSnapshot, NavStack, PriorAtLinkJump, ViewState,
+    DocumentStackFull, LinkId, LinkJumpStack, LinkJumpStackFull, Marks, NavStack, PriorAtLinkJump,
+    ViewState,
 };
 use crate::render::{DocumentRenderCache, PreviewRenderCache, RenderedDocument};
 
+use super::preview_render::PreviewSnapshots;
 use super::reload::FileWatch;
 
 /// Full viewing state fixed at a document link jump, including render caches.
@@ -20,8 +21,7 @@ use super::reload::FileWatch;
 pub(crate) struct DocumentFrame {
     pub document: Document,
     pub rendered: RenderedDocument,
-    pub mermaid_session: MermaidSessionSnapshot,
-    pub image_session: ImageSessionSnapshot,
+    pub preview_sessions: PreviewSnapshots,
     pub document_prefetch_session: DocumentPrefetchSessionSnapshot,
     pub document_cache: DocumentRenderCache,
     pub preview_render_cache: PreviewRenderCache,
@@ -58,16 +58,8 @@ impl Default for DocStack {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl DocStack {
-    pub fn max_layers() -> usize {
-        DOCUMENT_STACK_MAX_LAYERS
-    }
-
-    pub fn max_frames() -> usize {
-        DOCUMENT_STACK_MAX_LAYERS - 1
-    }
-
+    #[cfg(test)]
     pub fn current_layer(&self) -> usize {
         self.stack.current_layer()
     }
@@ -95,6 +87,7 @@ impl DocStack {
         self.stack.fixed_prior_count()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.stack.is_at_origin()
     }
@@ -107,8 +100,6 @@ mod tests {
     #[test]
     fn empty_stack_counts_current_file_as_layer_one() {
         let stack = DocStack::default();
-        assert_eq!(DocStack::max_layers(), DOCUMENT_STACK_MAX_LAYERS);
-        assert_eq!(DocStack::max_frames(), DOCUMENT_STACK_MAX_LAYERS - 1);
         assert_eq!(stack.current_layer(), 1);
         assert!(stack.is_empty());
     }

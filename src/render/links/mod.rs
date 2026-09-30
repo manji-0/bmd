@@ -3,7 +3,7 @@
 mod hits;
 mod locate;
 
-use crate::domain::{Document, FootnoteId, LinkId, NavTarget};
+use crate::domain::{Document, LinkId, NavTarget};
 
 use super::context::RenderContext;
 
@@ -76,16 +76,4 @@ pub fn collect_visible_links(
             (line >= scroll && line < viewport_end).then_some(id)
         })
         .collect()
-}
-
-pub fn find_footnote_ref_line_offset(
-    document: &Document,
-    width: u16,
-    ctx: &RenderContext,
-    footnote_id: FootnoteId,
-) -> Option<usize> {
-    collect_footnote_hits(document, width, ctx)
-        .into_iter()
-        .find(|hit| hit.id == footnote_id)
-        .map(|hit| hit.line)
 }

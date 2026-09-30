@@ -96,7 +96,7 @@ fn convert_block(owned: ParsedBlock) -> Result<Block, IntoDomainError> {
         ParsedBlock::Paragraph(inlines) => Ok(Block::Paragraph(convert_inlines(inlines)?)),
         ParsedBlock::CodeBlock(code) => Ok(Block::CodeBlock(convert_code_block(code))),
         ParsedBlock::MathBlock(math) => Ok(Block::MathBlock(convert_math_block(math))),
-        ParsedBlock::BlockQuote(blocks) => Ok(Block::BlockQuote(convert_blocks(blocks)?)),
+        ParsedBlock::BlockQuote(blocks) => Ok(Block::Quote(convert_blocks(blocks)?)),
         ParsedBlock::Callout(callout) => Ok(Block::Callout(convert_callout(callout)?)),
         ParsedBlock::List(list) => Ok(Block::List(convert_list(list)?)),
         ParsedBlock::DefinitionList(list) => {

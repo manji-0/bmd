@@ -56,7 +56,7 @@ pub fn measure_block_height(
         Block::Paragraph(inlines) => measure_paragraph_height(inlines, width, ctx),
         Block::CodeBlock(cb) => measure_code_block_height(cb, width),
         Block::MathBlock(math) => measure_math_block_height(math, width),
-        Block::BlockQuote(blocks) => measure_blockquote_height(blocks, width, ctx),
+        Block::Quote(blocks) => measure_blockquote_height(blocks, width, ctx),
         Block::Callout(callout) => measure_callout_height(callout, width, ctx),
         Block::List(list) => measure_list_height(list, width, ctx),
         Block::DefinitionList(list) => measure_definition_list_height(list, width, ctx),

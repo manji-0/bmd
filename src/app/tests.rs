@@ -291,7 +291,7 @@ fn anchor_navigation_stack_push_pop_and_reset() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     let before_first = app.view_state.scroll().offset();
     app.open_current_link();
     let at_middle = app.view_state.scroll().offset();
@@ -301,7 +301,7 @@ fn anchor_navigation_stack_push_pop_and_reset() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(1)]);
+        .with_selected_link(crate::domain::LinkId(1));
     let before_second = app.view_state.scroll().offset();
     assert_eq!(before_second, at_middle);
     app.open_current_link();
@@ -318,12 +318,12 @@ fn anchor_navigation_stack_push_pop_and_reset() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(1)]);
+        .with_selected_link(crate::domain::LinkId(1));
     app.open_current_link();
     assert!(app.view_state.scroll().offset() > before_first);
 
@@ -430,7 +430,7 @@ fn document_stack_back_and_reset() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
     assert_eq!(app.doc_stack.len_frames(), 1);
@@ -438,7 +438,7 @@ fn document_stack_back_and_reset() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     assert_eq!(app.source_label.as_deref(), Some("c.md"));
     assert_eq!(app.doc_stack.len_frames(), 2);
@@ -454,12 +454,12 @@ fn document_stack_back_and_reset() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     app.nav_reset();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
@@ -496,14 +496,14 @@ fn anchor_stack_takes_priority_over_document_stack() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
 
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     assert!(!app.nav_stack.is_empty());
 
@@ -684,12 +684,12 @@ fn nav_reset_drains_anchor_before_returning_to_root_document() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     assert_eq!(app.source_label.as_deref(), Some("c.md"));
     assert_eq!(app.doc_stack.len_frames(), 2);
@@ -764,7 +764,7 @@ fn document_stack_supports_max_depth_and_rejects_overflow() {
         app.view_state = app
             .view_state
             .clone()
-            .select_next_link_in(&[crate::domain::LinkId(0)]);
+            .with_selected_link(crate::domain::LinkId(0));
         app.open_current_link();
         assert_eq!(app.doc_stack.len_frames(), layer - 1);
         assert_eq!(
@@ -776,7 +776,7 @@ fn document_stack_supports_max_depth_and_rejects_overflow() {
     app.view_state = app
         .view_state
         .clone()
-        .select_next_link_in(&[crate::domain::LinkId(0)]);
+        .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     assert_eq!(
         app.status_message.as_deref(),

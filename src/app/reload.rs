@@ -94,10 +94,8 @@ impl App {
         };
 
         let scroll_offset = self.view_state.scroll().offset();
-        let terminal_size = self.view_state.terminal_size();
         self.document = document;
-        self.rendered =
-            RenderedDocument::new(&self.document, &self.picker, terminal_size, Some(&path))?;
+        self.rendered = RenderedDocument::default();
         self.bump_document_revision();
         self.document_cache.invalidate();
         self.preview.cache.clear();
@@ -118,11 +116,7 @@ impl App {
         self.scroll.key_down_at = None;
         self.scroll.images_reenable_at = None;
         self.scroll.show_images = true;
-        self.mermaid_render.begin_document();
-        self.image_render.begin_document();
-        self.document_prefetch.begin_document();
-        self.invalidate_prefetch_viewport();
-        self.maybe_prefetch_visible_links();
+        self.restart_background_work();
         Ok(true)
     }
 }

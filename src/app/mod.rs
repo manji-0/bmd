@@ -5,15 +5,14 @@ mod doc_stack;
 mod document;
 mod document_prefetch;
 mod draw;
-mod image_render;
 mod input;
 mod layout;
 mod marks;
-mod mermaid_render;
 mod navigation;
 mod outline;
 mod pending;
 mod preview;
+mod preview_render;
 mod reload;
 mod scroll;
 mod search;
@@ -24,7 +23,6 @@ mod yank;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::event;
@@ -45,15 +43,27 @@ use crate::render::{
 
 use doc_stack::DocStack;
 use document_prefetch::DocumentPrefetchPool;
-use image_render::ImageRenderPool;
 use layout::terminal_size;
-use mermaid_render::MermaidRenderPool;
 use outline::OutlineUi;
 use pending::PendingInput;
 use preview::PreviewUi;
+use preview_render::PreviewPools;
 use reload::FileWatch;
 use scroll::{ACTIVE_FRAME_INTERVAL, IDLE_POLL_INTERVAL, STATUS_MESSAGE_DURATION, ScrollUi};
 use worker_pool::WorkerPool;
+
+/// Borrow the fields preview workers need without borrowing all of `App`.
+macro_rules! preview_env {
+    ($app:expr) => {
+        $crate::app::preview_render::PreviewEnv {
+            document: &$app.document,
+            picker: &$app.picker,
+            terminal: $app.view_state.terminal_size(),
+            base_path: $app.base_path.as_deref(),
+        }
+    };
+}
+use preview_env;
 
 #[derive(Clone, PartialEq, Eq)]
 struct PrefetchViewportKey {
@@ -84,8 +94,7 @@ pub struct App {
     next_reload_poll: Instant,
     nav_stack: NavStack,
     doc_stack: DocStack,
-    mermaid_render: MermaidRenderPool,
-    image_render: ImageRenderPool,
+    previews: PreviewPools,
     document_prefetch: DocumentPrefetchPool,
     preview: PreviewUi,
     outline: OutlineUi,
@@ -110,6 +119,7 @@ pub struct App {
 
 #[cfg(test)]
 impl App {
+    #[cfg(test)]
     pub(crate) fn document_cache_total_height(&self) -> usize {
         self.document_cache.total_height()
     }
@@ -154,8 +164,7 @@ impl App {
         terminal_size: TerminalSize,
         config: Config,
     ) -> Result<Self, AppError> {
-        let rendered =
-            RenderedDocument::new(&document, &picker, terminal_size, base_path.as_deref())?;
+        let rendered = RenderedDocument::default();
         let view_state = ViewState::new(terminal_size);
         let scroll_visual = view_state.scroll().offset() as f32;
         let now = Instant::now();
@@ -184,8 +193,7 @@ impl App {
             next_reload_poll: now,
             nav_stack: NavStack::default(),
             doc_stack: DocStack::default(),
-            mermaid_render: MermaidRenderPool::new(Arc::clone(&worker_pool)),
-            image_render: ImageRenderPool::new(Arc::clone(&worker_pool)),
+            previews: PreviewPools::new(&worker_pool),
             document_prefetch: DocumentPrefetchPool::new(worker_pool),
             preview: PreviewUi::default(),
             outline: OutlineUi::default(),
@@ -220,22 +228,8 @@ impl App {
 
     pub(crate) fn prefetch_visible_links(&mut self) {
         let visible = self.visible_link_ids();
-        let terminal = self.view_state.terminal_size();
-        self.mermaid_render.prefetch_visible(
-            &visible,
-            &self.document,
-            &self.rendered,
-            &self.picker,
-            terminal,
-        );
-        self.image_render.prefetch_visible(
-            &visible,
-            &self.document,
-            &self.rendered,
-            self.base_path.as_ref(),
-            &self.picker,
-            terminal,
-        );
+        self.previews
+            .prefetch_visible(&visible, &self.rendered, &preview_env!(self));
         self.document_prefetch
             .prefetch_visible(&visible, &self.document, self.base_path.as_ref());
     }
@@ -251,6 +245,14 @@ impl App {
 
     pub(crate) fn invalidate_prefetch_viewport(&mut self) {
         self.last_prefetch_viewport = None;
+    }
+
+    /// Drop background work for the previous document and prefetch the new viewport.
+    pub(crate) fn restart_background_work(&mut self) {
+        self.previews.begin_document();
+        self.document_prefetch.begin_document();
+        self.invalidate_prefetch_viewport();
+        self.maybe_prefetch_visible_links();
     }
 
     fn current_prefetch_viewport(&self) -> PrefetchViewportKey {
@@ -271,23 +273,13 @@ impl App {
     }
 
     pub(crate) fn poll_preview_renders(&mut self) -> bool {
-        let terminal = self.view_state.terminal_size();
-        let mermaid_dirty =
-            self.mermaid_render
-                .poll(&mut self.rendered, &self.document, &self.picker, terminal);
-        let image_dirty = self.image_render.poll(
-            &mut self.rendered,
-            &self.document,
-            self.base_path.as_ref(),
-            &self.picker,
-            terminal,
-        );
+        let preview_dirty = self.previews.poll(&mut self.rendered, &preview_env!(self));
         let document_prefetch_dirty = self.document_prefetch.poll();
         let pending_opened = self.try_complete_pending_preview();
-        if mermaid_dirty || image_dirty {
+        if preview_dirty {
             self.maybe_warm_selected_preview();
         }
-        mermaid_dirty || image_dirty || document_prefetch_dirty || pending_opened
+        preview_dirty || document_prefetch_dirty || pending_opened
     }
 
     pub(crate) fn bump_document_revision(&mut self) {
@@ -327,8 +319,7 @@ impl App {
 
     pub(crate) fn preview_work_pending(&self) -> bool {
         self.preview.pending.is_some()
-            || self.mermaid_render.has_pending()
-            || self.image_render.has_pending()
+            || self.previews.has_pending()
             || self.document_prefetch.has_pending()
     }
 

@@ -1,7 +1,7 @@
 //! In-document anchor navigation as a link-jump stack.
 
 use super::link_jump_stack::{LinkJumpStack, LinkJumpStackFull, PriorAtLinkJump};
-use super::navigation_limits::{ANCHOR_STACK_MAX_LAYERS, new_anchor_link_stack};
+use super::navigation_limits::new_anchor_link_stack;
 
 /// Scroll offset fixed at the moment before an anchor link jump.
 pub type FixedScrollPrior = PriorAtLinkJump<usize>;
@@ -25,14 +25,6 @@ pub use super::link_jump_stack::LinkJumpStackEmpty as AnchorStackEmpty;
 pub use super::navigation_limits::AnchorStackFull;
 
 impl NavStack {
-    pub fn max_layers() -> usize {
-        ANCHOR_STACK_MAX_LAYERS
-    }
-
-    pub fn max_frames() -> usize {
-        ANCHOR_STACK_MAX_LAYERS - 1
-    }
-
     /// Fix the current scroll offset and store it before following an anchor link.
     pub fn fix_prior_on_link_jump(
         &mut self,
@@ -55,10 +47,12 @@ impl NavStack {
         self.0.clear_priors();
     }
 
+    #[cfg(test)]
     pub fn depth(&self) -> usize {
         self.0.fixed_prior_count()
     }
 
+    #[cfg(test)]
     pub fn current_layer(&self) -> usize {
         self.0.current_layer()
     }

@@ -91,6 +91,7 @@ impl DocumentRenderCache {
         self.key = None;
     }
 
+    #[cfg(test)]
     pub fn total_height(&self) -> usize {
         self.total_height
     }

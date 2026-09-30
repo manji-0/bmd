@@ -41,7 +41,7 @@ mod tests {
                 Block::Paragraph(_) => "paragraph",
                 Block::CodeBlock(_) => "code",
                 Block::MathBlock(_) => "math",
-                Block::BlockQuote(_) => "quote",
+                Block::Quote(_) => "quote",
                 Block::Callout(_) => "callout",
                 Block::List(_) => "list",
                 Block::DefinitionList(_) => "definition_list",
@@ -371,9 +371,9 @@ mod tests {
             let quote = doc
                 .blocks
                 .iter()
-                .find(|block| matches!(block, Block::BlockQuote(_)))
+                .find(|block| matches!(block, Block::Quote(_)))
                 .unwrap_or_else(|| panic!("expected blockquote in {doc:?}"));
-            let Block::BlockQuote(children) = quote else {
+            let Block::Quote(children) = quote else {
                 unreachable!();
             };
             assert!(

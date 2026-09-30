@@ -182,16 +182,6 @@ impl ViewState {
         }
     }
 
-    pub fn half_page_down(self, max_scroll: usize) -> Self {
-        let n = (self.terminal_size.height() / 2) as usize;
-        self.scroll_down(n, max_scroll)
-    }
-
-    pub fn half_page_up(self) -> Self {
-        let n = (self.terminal_size.height() / 2) as usize;
-        self.scroll_up(n)
-    }
-
     pub fn jump_to_top(self) -> Self {
         Self {
             scroll: Scroll { offset: 0 },
@@ -439,18 +429,6 @@ impl ViewState {
         }
     }
 
-    /// Select the next link within `visible`, wrapping at the ends.
-    pub fn select_next_link_in(self, visible: &[LinkId]) -> Self {
-        let targets: Vec<NavTarget> = visible.iter().map(|&id| NavTarget::Link(id)).collect();
-        self.select_next_nav_in(&targets)
-    }
-
-    /// Select the previous link within `visible`, wrapping at the ends.
-    pub fn select_prev_link_in(self, visible: &[LinkId]) -> Self {
-        let targets: Vec<NavTarget> = visible.iter().map(|&id| NavTarget::Link(id)).collect();
-        self.select_prev_nav_in(&targets)
-    }
-
     /// Select the next navigation target within `visible`, wrapping at the ends.
     pub fn select_next_nav_in(self, visible: &[NavTarget]) -> Self {
         if visible.is_empty() {
@@ -495,23 +473,9 @@ impl ViewState {
         }
     }
 
-    pub fn clear_link_selection(self) -> Self {
-        Self {
-            selected_nav: None,
-            ..self
-        }
-    }
-
     pub fn with_selected_link(self, id: LinkId) -> Self {
         Self {
             selected_nav: Some(NavTarget::Link(id)),
-            ..self
-        }
-    }
-
-    pub fn with_selected_footnote(self, id: FootnoteId) -> Self {
-        Self {
-            selected_nav: Some(NavTarget::Footnote(id)),
             ..self
         }
     }
@@ -526,10 +490,6 @@ impl ViewState {
 
     pub fn selected_footnote(&self) -> Option<FootnoteId> {
         self.selected_nav.and_then(NavTarget::footnote_id)
-    }
-
-    pub fn selected_nav(&self) -> Option<NavTarget> {
-        self.selected_nav
     }
 
     pub fn terminal_size(&self) -> TerminalSize {

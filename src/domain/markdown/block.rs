@@ -13,7 +13,7 @@ pub enum Block {
     Paragraph(Vec<Inline>),
     CodeBlock(CodeBlock),
     MathBlock(MathBlock),
-    BlockQuote(Vec<Block>),
+    Quote(Vec<Block>),
     Callout(Callout),
     List(List),
     DefinitionList(DefinitionList),
@@ -48,7 +48,7 @@ impl Block {
                 .map(UnicodeWidthStr::width)
                 .max()
                 .unwrap_or(1),
-            Block::BlockQuote(blocks) => blocks
+            Block::Quote(blocks) => blocks
                 .iter()
                 .map(Self::ideal_content_width)
                 .max()

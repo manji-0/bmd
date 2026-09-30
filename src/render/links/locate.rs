@@ -60,7 +60,7 @@ fn block_first_link_line(
             inlines,
             link_id,
         ),
-        Block::BlockQuote(blocks) => {
+        Block::Quote(blocks) => {
             let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
             let mut inner_offset = 0usize;
             for child in blocks {

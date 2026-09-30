@@ -174,7 +174,7 @@ fn parse_headings_all_levels() {
 fn parse_blockquote() {
     let doc = parse("> quoted").unwrap();
     assert_eq!(doc.blocks.len(), 1);
-    let Block::BlockQuote(children) = &doc.blocks[0] else {
+    let Block::Quote(children) = &doc.blocks[0] else {
         panic!("expected blockquote");
     };
     assert_eq!(children.len(), 1);

@@ -125,7 +125,6 @@ impl App {
             return;
         }
         if link.kind.is_preview() {
-            let terminal_size = self.view_state.terminal_size();
             if self.picker.protocol_type() == ratatui_image::picker::ProtocolType::Halfblocks {
                 let outcome = match link.kind {
                     crate::domain::LinkKind::Mermaid => crate::domain::mermaid_diagram_index(&url)
@@ -143,28 +142,8 @@ impl App {
                     self.set_status_message(e.to_string());
                 }
             }
-            match link.kind {
-                crate::domain::LinkKind::Mermaid => {
-                    self.mermaid_render.request(
-                        id,
-                        &self.document,
-                        &self.rendered,
-                        &self.picker,
-                        terminal_size,
-                    );
-                }
-                crate::domain::LinkKind::Image => {
-                    self.image_render.request(
-                        id,
-                        &self.document,
-                        &self.rendered,
-                        self.base_path.as_ref(),
-                        &self.picker,
-                        terminal_size,
-                    );
-                }
-                _ => {}
-            }
+            self.previews
+                .request(id, &self.rendered, &super::preview_env!(self));
             if self.preview_ready_to_open(id) {
                 self.preview.pending = None;
                 self.open_preview_now(id);

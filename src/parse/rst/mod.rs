@@ -950,9 +950,9 @@ mod tests {
         let quote = doc
             .blocks
             .iter()
-            .find(|block| matches!(block, Block::BlockQuote(_)))
+            .find(|block| matches!(block, Block::Quote(_)))
             .expect("expected blockquote");
-        let Block::BlockQuote(children) = quote else {
+        let Block::Quote(children) = quote else {
             unreachable!();
         };
         let Block::Paragraph(inlines) = &children[0] else {

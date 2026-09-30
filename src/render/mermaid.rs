@@ -5,70 +5,19 @@ use std::collections::HashMap;
 use merman::render::{HeadlessRenderer, LayoutOptions, raster::RasterOptions};
 use ratatui_image::protocol::Protocol;
 
-use crate::domain::{Document, LinkKind, MermaidDiagram, TerminalSize};
+use crate::domain::{LinkKind, MermaidDiagram, TerminalSize};
 use crate::error::AppError;
 
 use super::image::{preview_content_size, terminal_image_protocol};
 
 /// Cache of pre-rendered terminal images for floating previews.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct RenderedDocument {
     pub mermaid_images: HashMap<usize, Protocol>,
     pub markdown_images: HashMap<String, Protocol>,
 }
 
 impl RenderedDocument {
-    /// Background workers load markdown images and mermaid diagrams on demand.
-    pub fn new(
-        _document: &Document,
-        _picker: &ratatui_image::picker::Picker,
-        _terminal: TerminalSize,
-        _base_path: Option<&std::path::Path>,
-    ) -> Result<Self, AppError> {
-        Ok(Self {
-            mermaid_images: HashMap::new(),
-            markdown_images: HashMap::new(),
-        })
-    }
-
-    /// Render a mermaid diagram for preview if not already cached.
-    ///
-    /// Returns `true` when the diagram is available in the cache after this call.
-    #[cfg(test)]
-    pub fn ensure_mermaid_preview(
-        &mut self,
-        link_id: usize,
-        document: &Document,
-        picker: &ratatui_image::picker::Picker,
-        terminal: TerminalSize,
-    ) -> bool {
-        if self.mermaid_images.contains_key(&link_id) {
-            return true;
-        }
-        let Some(link) = document.links.get(link_id) else {
-            return false;
-        };
-        if link.kind != LinkKind::Mermaid {
-            return false;
-        };
-        let Some(diagram_idx) = crate::domain::mermaid_diagram_index(link.url.as_str()) else {
-            return false;
-        };
-        let Some(diag) = document.mermaid_diagrams.get(diagram_idx) else {
-            return false;
-        };
-        match render_mermaid_from_source(&diag.source, picker, terminal) {
-            Ok(protocol) => {
-                self.mermaid_images.insert(link_id, protocol);
-                true
-            }
-            Err(e) => {
-                eprintln!("[bmd] failed to render mermaid link {link_id}: {e}");
-                false
-            }
-        }
-    }
-
     pub(crate) fn preview_protocol(
         &self,
         link_id: usize,
@@ -189,15 +138,9 @@ fn rasterize_mermaid(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::MermaidDiagram;
     use crate::domain::TerminalSize;
-    use crate::domain::{Document, Link, LinkKind, LinkUrl, MermaidDiagram, mermaid_diagram_index};
     use ratatui_image::picker::Picker;
-
-    #[test]
-    fn mermaid_diagram_index_parses_bmd_url() {
-        assert_eq!(mermaid_diagram_index("bmd:mermaid:0"), Some(0));
-        assert_eq!(mermaid_diagram_index("https://x"), None);
-    }
 
     #[test]
     fn open_mermaid_externally_saves_a_temp_png() {
@@ -288,31 +231,5 @@ mod tests {
             corrected_fit_ratio <= 1.0 + f64::EPSILON,
             "corrected raster should be large enough that the terminal step only downsamples, got ratio {corrected_fit_ratio}"
         );
-    }
-
-    #[test]
-    fn new_does_not_preload_mermaid() {
-        let document = Document {
-            blocks: vec![],
-            links: vec![Link {
-                url: LinkUrl::new("bmd:mermaid:0".into()).unwrap(),
-                title: None,
-                kind: LinkKind::Mermaid,
-            }],
-            mermaid_diagrams: vec![MermaidDiagram {
-                source: "graph TD; A-->B;".into(),
-            }],
-            footnotes: vec![],
-            footnote_order: vec![],
-            front_matter: None,
-        };
-        let rendered = RenderedDocument::new(
-            &document,
-            &Picker::halfblocks(),
-            TerminalSize::new(80, 24).unwrap(),
-            None,
-        )
-        .unwrap();
-        assert!(rendered.mermaid_images.is_empty());
     }
 }

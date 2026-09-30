@@ -108,7 +108,7 @@ fn block_searchable_lines(block: &Block, width: u16, ctx: &RenderContext) -> Vec
         }
         Block::CodeBlock(cb) => code_block_searchable_lines(cb),
         Block::MathBlock(math) => vec![math.content.clone()],
-        Block::BlockQuote(blocks) => {
+        Block::Quote(blocks) => {
             let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
             let mut lines = Vec::new();
             for child in blocks {

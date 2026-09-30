@@ -97,7 +97,7 @@ fn collect_block_link_hits(
             collect_inline_link_hits(inlines, width as usize, base_x, *line_offset, hits);
             *line_offset += measure_block_height(block, block_idx, width, ctx);
         }
-        Block::BlockQuote(blocks) => {
+        Block::Quote(blocks) => {
             let quote_x = base_x + 2;
             let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
             for child in blocks {
@@ -182,7 +182,7 @@ fn collect_block_footnote_hits(
             collect_inline_footnote_hits(inlines, width as usize, base_x, *line_offset, hits);
             *line_offset += measure_block_height(block, block_idx, width, ctx);
         }
-        Block::BlockQuote(blocks) => {
+        Block::Quote(blocks) => {
             let quote_x = base_x + 2;
             let inner_width = (width as usize).saturating_sub(2).max(1) as u16;
             for child in blocks {

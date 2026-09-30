@@ -6,13 +6,11 @@ use super::link_jump_stack::LinkJumpStack;
 pub const ANCHOR_STACK_MAX_LAYERS: usize = 64;
 
 /// Maximum prior scroll positions stored before anchor jumps.
+#[cfg(test)]
 pub const ANCHOR_STACK_MAX_FRAMES: usize = ANCHOR_STACK_MAX_LAYERS - 1;
 
 /// Maximum document layers in a nested file chain, counting the root as layer 1.
 pub const DOCUMENT_STACK_MAX_LAYERS: usize = 64;
-
-/// Maximum prior-document frames stored on the file stack.
-pub const DOCUMENT_STACK_MAX_FRAMES: usize = DOCUMENT_STACK_MAX_LAYERS - 1;
 
 /// The anchor stack already holds the maximum number of prior scroll positions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -47,7 +45,6 @@ mod tests {
     fn anchor_link_stack_counts_current_section_as_layer_one() {
         let stack = new_anchor_link_stack();
         assert_eq!(stack.current_layer(), 1);
-        assert_eq!(stack.max_layers(), ANCHOR_STACK_MAX_LAYERS);
     }
 
     #[test]
