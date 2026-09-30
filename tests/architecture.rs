@@ -1,94 +1,111 @@
-//! Layer-boundary checks. These run as part of `cargo test` / CI.
+//! Layer-boundary checks for the rules in PLAN.md (層ルール). These run as part of `cargo test`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn rust_files(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    collect_rs(dir, &mut files);
-    files.sort();
-    files
-}
+const MODULES: &[&str] = &[
+    "app",
+    "browser",
+    "clipboard",
+    "config",
+    "domain",
+    "error",
+    "fs",
+    "github",
+    "keymap",
+    "parse",
+    "render",
+];
 
-fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries = fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display()));
-    for entry in entries {
+/// `(source path, crate modules it may reference besides itself)`.
+const LAYERS: &[(&str, &[&str])] = &[
+    ("src/domain", &[]),
+    ("src/error.rs", &["domain"]),
+    ("src/parse", &["domain", "error"]),
+    ("src/render", &["domain", "error"]),
+    ("src/keymap.rs", &["domain", "error"]),
+    ("src/config.rs", &["keymap", "render", "error"]),
+    ("src/fs.rs", &["domain"]),
+    ("src/browser.rs", &["domain", "error"]),
+    ("src/clipboard.rs", &["error"]),
+    ("src/github/url.rs", &[]),
+    ("src/github", &["domain", "parse", "error"]),
+];
+
+fn rust_files(path: &Path, out: &mut Vec<PathBuf>) {
+    if path.is_file() {
+        out.push(path.to_path_buf());
+        return;
+    }
+    for entry in fs::read_dir(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display())) {
         let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_rs(&path, out);
-        } else if path.extension().is_some_and(|ext| ext == "rs") {
-            out.push(path);
+        if path.is_dir() || path.extension().is_some_and(|ext| ext == "rs") {
+            rust_files(&path, out);
         }
     }
 }
 
-fn production_source(src: &str) -> &str {
-    src.split("#[cfg(test)]").next().unwrap_or(src)
+/// Source with unit-test modules stripped; tests may reach across layers.
+fn production_source(path: &Path) -> String {
+    if path.file_name().is_some_and(|name| name == "tests.rs") {
+        return String::new();
+    }
+    let src = fs::read_to_string(path).unwrap();
+    src.split("#[cfg(test)]\nmod tests")
+        .next()
+        .unwrap_or(&src)
+        .to_string()
 }
 
-fn assert_no_needles(path: &Path, src: &str, needles: &[&str]) {
+fn assert_absent(path: &Path, src: &str, needles: &[String]) {
     for needle in needles {
         assert!(
-            !src.contains(needle),
-            "{} must not contain `{needle}`",
+            !src.contains(needle.as_str()),
+            "{} must not reference `{needle}`",
             path.display()
         );
     }
 }
 
 #[test]
-fn domain_does_not_depend_on_outer_layers_or_fs() {
-    let needles = [
-        "use crate::app",
-        "use crate::parse",
-        "use crate::render",
-        "use crate::github",
-        "use crate::config",
-        "use crate::keymap",
-        "use crate::browser",
-        "use crate::clipboard",
-        "use crate::fs",
-        "use std::fs",
-        "std::fs::",
-        "std::process::",
-    ];
-    for path in rust_files(Path::new("src/domain")) {
-        let src = fs::read_to_string(&path).unwrap();
-        assert_no_needles(&path, production_source(&src), &needles);
+fn modules_only_depend_on_allowed_layers() {
+    for (root, allowed) in LAYERS {
+        let own = root
+            .trim_start_matches("src/")
+            .trim_end_matches(".rs")
+            .split('/')
+            .next()
+            .unwrap();
+        let forbidden: Vec<String> = MODULES
+            .iter()
+            .filter(|module| **module != own && !allowed.contains(module))
+            .map(|module| format!("crate::{module}"))
+            .collect();
+        let mut files = Vec::new();
+        rust_files(Path::new(root), &mut files);
+        for path in files {
+            assert_absent(&path, &production_source(&path), &forbidden);
+        }
     }
 }
 
 #[test]
-fn keymap_does_not_import_config() {
-    let src = fs::read_to_string("src/keymap.rs").unwrap();
-    assert_no_needles(
-        Path::new("src/keymap.rs"),
-        production_source(&src),
-        &["use crate::config"],
-    );
-}
-
-#[test]
-fn render_production_does_not_import_parse() {
-    for path in rust_files(Path::new("src/render")) {
-        if path.file_name().is_some_and(|name| name == "tests.rs") {
-            continue;
+fn pure_layers_have_no_io() {
+    let needles = ["use std::fs", "std::fs::", "std::process", "ureq"].map(String::from);
+    for root in ["src/domain", "src/github/url.rs"] {
+        let mut files = Vec::new();
+        rust_files(Path::new(root), &mut files);
+        for path in files {
+            assert_absent(&path, &production_source(&path), &needles);
         }
-        let src = fs::read_to_string(&path).unwrap();
-        assert_no_needles(
+    }
+    let mut files = Vec::new();
+    rust_files(Path::new("src/render"), &mut files);
+    for path in files {
+        assert_absent(
             &path,
-            production_source(&src),
-            &["use crate::parse", "crate::parse::"],
+            &production_source(&path),
+            &["process::Command".into()],
         );
     }
-}
-
-#[test]
-fn github_url_module_has_no_http() {
-    let src = fs::read_to_string("src/github/url.rs").unwrap();
-    assert_no_needles(
-        Path::new("src/github/url.rs"),
-        production_source(&src),
-        &["ureq", "std::process", "use crate::parse"],
-    );
 }

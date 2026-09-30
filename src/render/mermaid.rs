@@ -93,20 +93,19 @@ fn render_mermaid_image(
     terminal_image_protocol(dyn_img, picker, target)
 }
 
-/// Render a mermaid diagram and open it in the OS default viewer.
+/// Render a mermaid diagram to a temporary PNG for an external viewer.
 ///
 /// Used when the terminal's graphics protocol falls back to Halfblocks,
 /// which is too low-fidelity for a diagram of any complexity. Only called on
 /// an explicit user action (pressing `o`) — never from background prefetch —
 /// so an external viewer window doesn't pop up unexpectedly on document load.
-pub(crate) fn open_mermaid_externally(source: &str) -> Result<(), AppError> {
+pub(crate) fn save_mermaid_png(source: &str) -> Result<std::path::PathBuf, AppError> {
     let renderer = HeadlessRenderer::new()
         .with_layout_options(LayoutOptions::headless_svg_defaults())
         .with_diagram_id("bmd-mermaid");
     let dyn_img = rasterize_mermaid(&renderer, source, MERMAID_RASTER_SCALE)?;
-    let path = save_mermaid_temp_png(&dyn_img)
-        .ok_or_else(|| AppError::TerminalImage("failed to save mermaid diagram".into()))?;
-    crate::browser::open_path(&path)
+    save_mermaid_temp_png(&dyn_img)
+        .ok_or_else(|| AppError::TerminalImage("failed to save mermaid diagram".into()))
 }
 
 static MERMAID_TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -161,7 +160,7 @@ mod tests {
         };
 
         let before = count_matching(&prefix);
-        open_mermaid_externally("graph TD; A-->B;").unwrap();
+        save_mermaid_png("graph TD; A-->B;").unwrap();
         let after = count_matching(&prefix);
         assert!(after > before, "expected a new temp PNG to be saved");
 
@@ -182,7 +181,7 @@ mod tests {
     fn render_mermaid_image_has_no_external_open_side_effect() {
         // Background prefetch renders via render_mermaid_from_source and must
         // not launch an external viewer — only the explicit `o`-triggered
-        // open_mermaid_externally() should do that.
+        // save_mermaid_png() should do that.
         let picker = Picker::halfblocks();
         let terminal = TerminalSize::new(80, 24).unwrap();
         assert!(render_mermaid_from_source("graph TD; A-->B;", &picker, terminal).is_ok());

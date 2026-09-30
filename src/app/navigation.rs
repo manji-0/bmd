@@ -126,18 +126,17 @@ impl App {
         }
         if link.kind.is_preview() {
             if self.picker.protocol_type() == ratatui_image::picker::ProtocolType::Halfblocks {
-                let outcome = match link.kind {
+                let path = match link.kind {
                     crate::domain::LinkKind::Mermaid => crate::domain::mermaid_diagram_index(&url)
                         .and_then(|idx| self.document.mermaid_diagrams.get(idx))
-                        .map(|diag| crate::render::open_mermaid_externally(&diag.source)),
-                    crate::domain::LinkKind::Image => {
-                        Some(crate::render::open_markdown_image_externally(
-                            &url,
-                            self.base_path.as_deref(),
-                        ))
-                    }
+                        .map(|diag| crate::render::save_mermaid_png(&diag.source)),
+                    crate::domain::LinkKind::Image => Some(crate::render::resolve_image_path(
+                        &url,
+                        self.base_path.as_deref(),
+                    )),
                     _ => None,
                 };
+                let outcome = path.map(|path| path.and_then(|p| crate::browser::open_path(&p)));
                 if let Some(Err(e)) = outcome {
                     self.set_status_message(e.to_string());
                 }

@@ -17,7 +17,6 @@ mod tests;
 pub use dto::ParsedDocument;
 pub use error::ParseError;
 pub use format::MarkupFormat;
-pub use into_domain::IntoDomainError;
 
 use std::path::Path;
 

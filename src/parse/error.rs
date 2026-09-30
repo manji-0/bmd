@@ -1,6 +1,8 @@
 //! Parse-layer errors before domain validation.
 
 use super::format::MarkupFormat;
+use super::into_domain::IntoDomainError;
+use crate::error::AppError;
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ParseError {
@@ -32,6 +34,24 @@ impl ParseError {
         } else {
             Err(Self::invalid_heading_level(format, level))
         }
+    }
+}
+
+impl From<IntoDomainError> for AppError {
+    fn from(value: IntoDomainError) -> Self {
+        match value {
+            IntoDomainError::Document(e) => Self::Document(e),
+            IntoDomainError::LinkUrl(e) => Self::LinkUrl(e),
+            IntoDomainError::InvalidHeadingLevel { level } => {
+                Self::MarkupParse(format!("invalid heading level {level}"))
+            }
+        }
+    }
+}
+
+impl From<ParseError> for AppError {
+    fn from(value: ParseError) -> Self {
+        Self::MarkupParse(value.to_string())
     }
 }
 

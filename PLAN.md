@@ -64,20 +64,25 @@ src/
 ## 層ルール
 
 <!-- derived-from #モジュール構成 -->
+<!-- constrained-by ./tests/architecture.rs -->
 
 | から | 向いてよい先 |
 |---|---|
-| `parse` | `domain` |
-| `render` | `domain` |
+| `domain` | なし（`std::fs` / `std::process` も禁止） |
+| `error` | `domain` |
+| `parse` | `domain`, `error` |
+| `render` | `domain`, `error`（外部プロセス起動は禁止） |
 | `keymap` | `domain`, `error` |
 | `config` | `keymap`, `render`, `error` |
-| `github/url` | なし（純粋） |
-| `github` その他 | `domain`, `parse` |
+| `github/url` | なし（純粋、HTTP 禁止） |
+| `github` その他 | `domain`, `parse`, `error` |
 | `fs` | `domain` |
-| `app` | `domain`, `parse`, `render`, `keymap`, `config`, `github`, `browser`, `clipboard`, `fs` |
-| `main` | `app`, `parse`, `github`, `error` |
+| `browser` | `domain`, `error` |
+| `clipboard` | `error` |
+| `app` | すべて（合成ルート） |
+| `main` | `lib.rs` の re-export のみ |
 
-禁止: `domain` → 外側、`keymap` → `config`、`render` → `parse`。見出し slug は `domain::slugify_heading` が正本。
+`tests/architecture.rs` がこの表をそのまま検査する（`use crate::X` と インライン `crate::X::` の両方）。見出し slug は `domain::slugify_heading` が正本。
 
 ## ドメインモデル
 

@@ -58,7 +58,7 @@ pub(crate) fn load_markdown_image(
     Ok(image::load_from_memory(&bytes)?)
 }
 
-fn resolve_image_path(src: &str, base_path: Option<&Path>) -> Result<PathBuf, AppError> {
+pub(crate) fn resolve_image_path(src: &str, base_path: Option<&Path>) -> Result<PathBuf, AppError> {
     if src.starts_with("http://") || src.starts_with("https://") {
         return Err(AppError::UnsupportedInput(format!(
             "remote images are not supported: {src}"
@@ -102,20 +102,6 @@ pub(crate) fn render_markdown_image_from_src(
     let target = preview_content_size(terminal);
     let dyn_img = load_markdown_image(src, base_path)?;
     terminal_image_protocol(dyn_img, picker, target)
-}
-
-/// Open the markdown image at `src` in the OS default viewer.
-///
-/// Used when the terminal's graphics protocol falls back to Halfblocks,
-/// which is too low-fidelity to be useful. Only called on an explicit user
-/// action (pressing `o`) — never from background prefetch — so an external
-/// viewer window doesn't pop up unexpectedly on document load.
-pub(crate) fn open_markdown_image_externally(
-    src: &str,
-    base_path: Option<&std::path::Path>,
-) -> Result<(), AppError> {
-    let path = resolve_image_path(src, base_path)?;
-    crate::browser::open_path(&path)
 }
 
 pub(crate) fn render_floating_image(protocol: &Protocol, area: Rect, buf: &mut Buffer, zoom: f32) {
@@ -213,10 +199,6 @@ mod tests {
         let result =
             render_markdown_image_from_src(path.to_str().unwrap(), None, &picker, terminal);
         assert!(result.is_ok());
-
-        // Background prefetch must not launch an external viewer — only the
-        // explicit `o`-triggered open_markdown_image_externally() should.
-        assert!(open_markdown_image_externally(path.to_str().unwrap(), None).is_ok());
 
         let _ = std::fs::remove_file(&path);
     }
