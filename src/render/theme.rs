@@ -85,6 +85,44 @@ impl Theme {
         Ok(builtin_preset(canonical).build(canonical))
     }
 
+    /// Mutable style for a config role name such as `h1` or `link_selected`.
+    pub fn role_mut(&mut self, role: &str) -> Option<&mut Style> {
+        Some(match role {
+            "text" => &mut self.text,
+            "h1" => &mut self.h1,
+            "h1_prefix" => &mut self.h1_prefix,
+            "h2" => &mut self.h2,
+            "h2_prefix" => &mut self.h2_prefix,
+            "h3" => &mut self.h3,
+            "h3_prefix" => &mut self.h3_prefix,
+            "h4" => &mut self.h4,
+            "h4_prefix" => &mut self.h4_prefix,
+            "h5" => &mut self.h5,
+            "h5_prefix" => &mut self.h5_prefix,
+            "h6" => &mut self.h6,
+            "h6_prefix" => &mut self.h6_prefix,
+            "code_inline" => &mut self.code_inline,
+            "code_block" => &mut self.code_block,
+            "code_block_language" => &mut self.code_block_language,
+            "blockquote" => &mut self.blockquote,
+            "list_marker" => &mut self.list_marker,
+            "link" => &mut self.link,
+            "link_selected" => &mut self.link_selected,
+            "image_link" => &mut self.image_link,
+            "image_link_selected" => &mut self.image_link_selected,
+            "rule" => &mut self.rule,
+            "table_header" => &mut self.table_header,
+            "table_cell" => &mut self.table_cell,
+            "table_border" => &mut self.table_border,
+            "mermaid_placeholder" => &mut self.mermaid_placeholder,
+            "math" => &mut self.math,
+            "search_match" => &mut self.search_match,
+            "search_match_selected" => &mut self.search_match_selected,
+            "text_selection" => &mut self.text_selection,
+            _ => return None,
+        })
+    }
+
     /// Styles for a boxed GFM callout of the given kind.
     pub fn callout_styles(&self, kind: CalloutKind) -> CalloutStyles {
         callout_styles_for(self.preset, kind)

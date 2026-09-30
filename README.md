@@ -212,7 +212,7 @@ fg = "cyan"        # overrides preset link foreground only
 underlined = false # removes h1 underline from the preset
 ```
 
-Supported fields per role: `fg`, `bg`, `bold`, `italic`, `underlined`, `dim`, `reversed`, `crossed_out`. Colors may be named (`white`, `blue`, `darkgray`, …) or hex (`#ff8800`). Roles match theme keys (`text`, `h1`, `link`, `code_block`, …).
+Supported fields per role: `fg`, `bg`, `bold`, `italic`, `underlined`, `dim`, `reversed`, `crossed_out`. Colors may be named (`white`, `blue`, `darkgray`, …), hex (`#ff8800`), or a 256-color index (`208`). Roles match theme keys (`text`, `h1`, `link`, `code_block`, `math`, `text_selection`, …); an unknown role is a config error.
 
 ### Keymap
 

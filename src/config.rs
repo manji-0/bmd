@@ -32,35 +32,9 @@ struct ConfigFile {
 #[derive(Debug, Default, Deserialize)]
 struct ThemeSection {
     preset: Option<String>,
-    text: Option<StyleSection>,
-    h1: Option<StyleSection>,
-    h1_prefix: Option<StyleSection>,
-    h2: Option<StyleSection>,
-    h2_prefix: Option<StyleSection>,
-    h3: Option<StyleSection>,
-    h3_prefix: Option<StyleSection>,
-    h4: Option<StyleSection>,
-    h4_prefix: Option<StyleSection>,
-    h5: Option<StyleSection>,
-    h5_prefix: Option<StyleSection>,
-    h6: Option<StyleSection>,
-    h6_prefix: Option<StyleSection>,
-    code_inline: Option<StyleSection>,
-    code_block: Option<StyleSection>,
-    code_block_language: Option<StyleSection>,
-    blockquote: Option<StyleSection>,
-    list_marker: Option<StyleSection>,
-    link: Option<StyleSection>,
-    link_selected: Option<StyleSection>,
-    image_link: Option<StyleSection>,
-    image_link_selected: Option<StyleSection>,
-    rule: Option<StyleSection>,
-    table_header: Option<StyleSection>,
-    table_cell: Option<StyleSection>,
-    table_border: Option<StyleSection>,
-    mermaid_placeholder: Option<StyleSection>,
-    search_match: Option<StyleSection>,
-    search_match_selected: Option<StyleSection>,
+    /// `[theme.<role>]` overrides keyed by [`Theme::role_mut`] names.
+    #[serde(flatten)]
+    roles: HashMap<String, StyleSection>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -136,48 +110,18 @@ impl ThemeSection {
     }
 
     fn apply_overrides(self, mut base: Theme) -> Result<Theme, AppError> {
-        base.text = override_style(base.text, self.text)?;
-        base.h1 = override_style(base.h1, self.h1)?;
-        base.h1_prefix = override_style(base.h1_prefix, self.h1_prefix)?;
-        base.h2 = override_style(base.h2, self.h2)?;
-        base.h2_prefix = override_style(base.h2_prefix, self.h2_prefix)?;
-        base.h3 = override_style(base.h3, self.h3)?;
-        base.h3_prefix = override_style(base.h3_prefix, self.h3_prefix)?;
-        base.h4 = override_style(base.h4, self.h4)?;
-        base.h4_prefix = override_style(base.h4_prefix, self.h4_prefix)?;
-        base.h5 = override_style(base.h5, self.h5)?;
-        base.h5_prefix = override_style(base.h5_prefix, self.h5_prefix)?;
-        base.h6 = override_style(base.h6, self.h6)?;
-        base.h6_prefix = override_style(base.h6_prefix, self.h6_prefix)?;
-        base.code_inline = override_style(base.code_inline, self.code_inline)?;
-        base.code_block = override_style(base.code_block, self.code_block)?;
-        base.code_block_language =
-            override_style(base.code_block_language, self.code_block_language)?;
-        base.blockquote = override_style(base.blockquote, self.blockquote)?;
-        base.list_marker = override_style(base.list_marker, self.list_marker)?;
-        base.link = override_style(base.link, self.link)?;
-        base.link_selected = override_style(base.link_selected, self.link_selected)?;
-        base.image_link = override_style(base.image_link, self.image_link)?;
-        base.image_link_selected =
-            override_style(base.image_link_selected, self.image_link_selected)?;
-        base.rule = override_style(base.rule, self.rule)?;
-        base.table_header = override_style(base.table_header, self.table_header)?;
-        base.table_cell = override_style(base.table_cell, self.table_cell)?;
-        base.table_border = override_style(base.table_border, self.table_border)?;
-        base.mermaid_placeholder =
-            override_style(base.mermaid_placeholder, self.mermaid_placeholder)?;
-        base.search_match = override_style(base.search_match, self.search_match)?;
-        base.search_match_selected =
-            override_style(base.search_match_selected, self.search_match_selected)?;
+        for (role, section) in self.roles {
+            let style = base.role_mut(&role).ok_or_else(|| {
+                AppError::UnsupportedInput(format!("unknown theme role '{role}'"))
+            })?;
+            *style = override_style(*style, section)?;
+        }
         Ok(base)
     }
 }
 
 /// Apply config fields onto a preset style. Unset fields keep the preset value.
-fn override_style(base: Style, section: Option<StyleSection>) -> Result<Style, AppError> {
-    let Some(section) = section else {
-        return Ok(base);
-    };
+fn override_style(base: Style, section: StyleSection) -> Result<Style, AppError> {
     let mut style = base;
     if let Some(fg) = section.fg {
         style.fg = Some(parse_color(&fg)?);
@@ -215,42 +159,8 @@ fn set_modifier(modifiers: Modifier, flag: Modifier, enabled: bool) -> Modifier 
 }
 
 fn parse_color(name: &str) -> Result<Color, AppError> {
-    let lower = name.to_ascii_lowercase();
-    let color = match lower.as_str() {
-        "black" => Color::Black,
-        "red" => Color::Red,
-        "green" => Color::Green,
-        "yellow" => Color::Yellow,
-        "blue" => Color::Blue,
-        "magenta" => Color::Magenta,
-        "cyan" => Color::Cyan,
-        "gray" | "grey" => Color::Gray,
-        "darkgray" | "darkgrey" => Color::DarkGray,
-        "lightred" => Color::LightRed,
-        "lightgreen" => Color::LightGreen,
-        "lightyellow" => Color::LightYellow,
-        "lightblue" => Color::LightBlue,
-        "lightmagenta" => Color::LightMagenta,
-        "lightcyan" => Color::LightCyan,
-        "white" => Color::White,
-        "reset" => Color::Reset,
-        hex if hex.starts_with('#') && hex.len() == 7 => {
-            let r = u8::from_str_radix(&hex[1..3], 16).map_err(invalid_color)?;
-            let g = u8::from_str_radix(&hex[3..5], 16).map_err(invalid_color)?;
-            let b = u8::from_str_radix(&hex[5..7], 16).map_err(invalid_color)?;
-            Color::Rgb(r, g, b)
-        }
-        other => {
-            return Err(AppError::UnsupportedInput(format!(
-                "unknown color '{other}'"
-            )));
-        }
-    };
-    Ok(color)
-}
-
-fn invalid_color<E: std::fmt::Display>(err: E) -> AppError {
-    AppError::UnsupportedInput(format!("invalid color hex: {err}"))
+    name.parse()
+        .map_err(|_| AppError::UnsupportedInput(format!("unknown color '{name}'")))
 }
 
 impl KeymapSection {
@@ -378,6 +288,17 @@ scroll_down = ["e"]
             config.keymap.normal_command(&test_key(KeyCode::Char('j'))),
             Command::None
         );
+    }
+
+    #[test]
+    fn theme_override_rejects_unknown_role_and_color() {
+        for toml in ["[theme.nope]\nfg = \"red\"", "[theme.link]\nfg = \"#12\""] {
+            let file: ConfigFile = toml::from_str(toml).unwrap();
+            assert!(file.into_config().is_err(), "{toml}");
+        }
+        let file: ConfigFile = toml::from_str("[theme.math]\nfg = \"#0a0b0c\"").unwrap();
+        let theme = file.into_config().unwrap().theme;
+        assert_eq!(theme.math.fg, Some(Color::Rgb(10, 11, 12)));
     }
 
     fn test_key(code: KeyCode) -> crossterm::event::KeyEvent {
