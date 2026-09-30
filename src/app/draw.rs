@@ -28,6 +28,12 @@ impl App {
     where
         AppError: From<B::Error>,
     {
+        // The outline sidebar already marks the current heading.
+        let section = if self.outline.visible {
+            None
+        } else {
+            self.section_breadcrumb()
+        };
         terminal.draw(|f| {
             let full_area = f.area();
             let areas = split_layout(full_area, self.view_state.mode(), self.outline.visible);
@@ -78,6 +84,7 @@ impl App {
 
             let status = format_status_bar(StatusBarInput {
                 source_label: self.source_label.as_deref(),
+                section: section.as_deref(),
                 document: &self.document,
                 view_state: &self.view_state,
                 max_scroll: self.max_scroll(),

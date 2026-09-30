@@ -401,3 +401,39 @@ fn ascii_checklist_markers_render_and_toggle_on_click() {
     h.draw();
     assert!(h.row(0).starts_with("[x] open task"), "{}", h.row(0));
 }
+
+#[test]
+fn status_bar_shows_the_enclosing_section() {
+    let mut h = Harness::kitchen_sink();
+    h.draw();
+    assert!(
+        h.status_row().contains("Kitchen sink"),
+        "{}",
+        h.status_row()
+    );
+
+    let level_three = h
+        .app
+        .heading_cache
+        .entries()
+        .iter()
+        .find(|e| e.text == "Level three")
+        .unwrap()
+        .line_offset;
+    let max = h.app.max_scroll();
+    h.app.view_state = h.app.view_state.clone().scroll_to(level_three, max);
+    h.app.snap_scroll_visual();
+    h.draw();
+    let status = h.status_row();
+    assert!(
+        status.contains("Kitchen sink › Links and footnotes › Level three"),
+        "{status}"
+    );
+
+    h.keys("t");
+    assert!(
+        !h.status_row().contains("Level three"),
+        "outline open: {}",
+        h.status_row()
+    );
+}

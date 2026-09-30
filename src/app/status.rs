@@ -13,6 +13,11 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::layout::content_height;
 
+/// Status priority of the section breadcrumb, which shrinks before it is dropped.
+const SECTION_PRIORITY: u8 = 3;
+/// Narrowest the breadcrumb gets before it is dropped instead.
+const SECTION_MIN_WIDTH: usize = 16;
+
 /// Max characters for a selected link URL in the status bar.
 const SELECTED_URL_MAX_CHARS: usize = 48;
 
@@ -58,6 +63,8 @@ const HELP_LABEL_WIDTH: usize = 10;
 /// Inputs for the bottom status line.
 pub(crate) struct StatusBarInput<'a> {
     pub source_label: Option<&'a str>,
+    /// Breadcrumb of headings enclosing the scroll position.
+    pub section: Option<&'a str>,
     pub document: &'a Document,
     pub view_state: &'a ViewState,
     pub max_scroll: usize,
@@ -108,7 +115,11 @@ fn trailing_status(input: &StatusBarInput<'_>, budget: usize) -> String {
     // (priority, text): higher priority survives longer on narrow terminals.
     let mut parts: Vec<(u8, String)> = Vec::new();
     let source = input.source_label.unwrap_or("(stdin)");
-    parts.push((5, source.to_string()));
+    parts.push((6, source.to_string()));
+
+    if let Some(section) = input.section {
+        parts.push((SECTION_PRIORITY, section.to_string()));
+    }
 
     let offset = input.view_state.scroll().offset().min(input.max_scroll);
     let pct = if input.max_scroll == 0 {
@@ -116,7 +127,7 @@ fn trailing_status(input: &StatusBarInput<'_>, budget: usize) -> String {
     } else {
         ((offset as f64 / input.max_scroll as f64) * 100.0).round() as u32
     };
-    parts.push((6, format!("{pct}%")));
+    parts.push((7, format!("{pct}%")));
 
     if input.outline_visible {
         parts.push((1, "outline".to_string()));
@@ -130,13 +141,13 @@ fn trailing_status(input: &StatusBarInput<'_>, budget: usize) -> String {
             active.current_index() + 1
         };
         parts.push((
-            4,
+            5,
             format!("{}/{} '{}'", current, total, active.query().as_str()),
         ));
     }
 
     if let Some(selected) = selected_nav_status(input.document, input.view_state) {
-        parts.push((3, selected));
+        parts.push((4, selected));
     }
 
     if input.doc_stack_depth > 0 {
@@ -154,6 +165,14 @@ fn trailing_status(input: &StatusBarInput<'_>, budget: usize) -> String {
             .min_by_key(|(_, (priority, _))| *priority)
             .map(|(index, _)| index)
             .expect("parts is non-empty");
+        let (priority, text) = &parts[lowest];
+        let overflow = joined_width(&parts) - budget;
+        let shrunk = text.width().saturating_sub(overflow);
+        if *priority == SECTION_PRIORITY && shrunk >= SECTION_MIN_WIDTH {
+            // Keep the innermost heading; it is the one that changes as you read.
+            parts[lowest].1 = truncate_start_to_width(text, shrunk);
+            continue;
+        }
         parts.remove(lowest);
     }
     let overflow = joined_width(&parts).saturating_sub(budget);
@@ -350,6 +369,7 @@ mod tests {
     fn status_text(document: &Document, view_state: &ViewState) -> String {
         format_status_bar(StatusBarInput {
             source_label: Some("doc.md"),
+            section: None,
             document,
             view_state,
             max_scroll: 0,
@@ -420,6 +440,7 @@ mod tests {
             ViewState::new(TerminalSize::new(80, 24).unwrap()).with_selected_link(LinkId(0));
         let line = format_status_bar(StatusBarInput {
             source_label: Some("notes/readme.md"),
+            section: Some("Guide › Install"),
             document: &document,
             view_state: &view_state,
             max_scroll: 0,
@@ -438,6 +459,10 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("outline"), "lowest priority kept: {text}");
+        assert!(
+            !text.contains("Install"),
+            "section outranks the file name: {text}"
+        );
     }
 
     #[test]
@@ -446,6 +471,7 @@ mod tests {
         let view_state = ViewState::new(TerminalSize::new(80, 24).unwrap());
         let line = format_status_bar(StatusBarInput {
             source_label: Some("/very/long/path/to/some/deeply/nested/docs/readme.md"),
+            section: None,
             document: &document,
             view_state: &view_state,
             max_scroll: 0,
@@ -471,5 +497,31 @@ mod tests {
         assert_eq!(truncate_to_width("abcdef", 4), "abc…");
         assert_eq!(truncate_to_width("見出し", 4), "見…");
         assert_eq!(truncate_start_to_width("a/b/file.md", 8), "…file.md");
+    }
+
+    #[test]
+    fn long_section_shrinks_to_its_innermost_heading() {
+        let document = parse("text\n").unwrap();
+        let view_state = ViewState::new(TerminalSize::new(80, 24).unwrap());
+        let line = format_status_bar(StatusBarInput {
+            source_label: Some("doc.md"),
+            section: Some("Getting started › Installing on every platform › From source"),
+            document: &document,
+            view_state: &view_state,
+            max_scroll: 0,
+            doc_stack_depth: 0,
+            status_message: None,
+            outline_visible: false,
+            pending_prompt: None,
+            status_is_error: false,
+            theme: &Theme::default(),
+            width: 50,
+        });
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.width() <= 50, "{text}");
+        assert!(
+            text.contains("…") && text.contains("› From source"),
+            "{text}"
+        );
     }
 }

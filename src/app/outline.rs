@@ -61,6 +61,25 @@ impl App {
             .or_else(|| headings.first().map(|_| 0))
     }
 
+    /// Headings enclosing the scroll position, outermost first, joined with `›`.
+    /// `None` above the first heading.
+    pub(crate) fn section_breadcrumb(&mut self) -> Option<String> {
+        self.refresh_heading_catalog();
+        let scroll = self.view_state.scroll().offset();
+        let headings = self.heading_cache.entries();
+        let current = headings
+            .iter()
+            .rposition(|heading| heading.line_offset <= scroll)?;
+        let mut trail = vec![&headings[current]];
+        for heading in headings[..current].iter().rev() {
+            if heading.level < trail.last().expect("trail is non-empty").level {
+                trail.push(heading);
+            }
+        }
+        let names: Vec<&str> = trail.iter().rev().map(|h| h.text.as_str()).collect();
+        Some(names.join(" › "))
+    }
+
     pub(crate) fn jump_to_outline_heading(&mut self) {
         self.refresh_heading_catalog();
         let slug = self
