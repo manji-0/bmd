@@ -79,7 +79,8 @@ impl App {
             }
 
             if self.help_visible {
-                self.help_scroll = draw_help_overlay(f, areas.main, &self.theme, self.help_scroll);
+                self.help_scroll =
+                    draw_help_overlay(f, areas.main, &self.theme, &self.keymap, self.help_scroll);
             }
 
             let status = format_status_bar(StatusBarInput {

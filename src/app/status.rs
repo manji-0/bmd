@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::domain::{Document, NavTarget, NormalSearch, ViewState};
+use crate::keymap::{BindingMode, Command, Keymap};
 use crate::render::Theme;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -21,41 +22,148 @@ const SECTION_MIN_WIDTH: usize = 16;
 /// Max characters for a selected link URL in the status bar.
 const SELECTED_URL_MAX_CHARS: usize = 48;
 
-/// Help rows as (section, bindings). Each row fits in 76 columns so the
-/// overlay reads without wrapping on an 80-column terminal.
-pub(crate) const HELP_ROWS: &[(&str, &str)] = &[
-    (
-        "Scroll",
-        "j/k ↓/↑ line   d/u PgDn/PgUp half page   g/G top/bottom",
-    ),
-    (
-        "Sections",
-        "[/] prev/next heading   t outline   click outline entry",
-    ),
-    ("Marks", "ma set mark (a-z)   'a jump to mark"),
-    (
-        "Links",
-        "n/N Tab/S-Tab next/prev   o/Enter open   click a link",
-    ),
-    (
-        "Back",
-        "Esc/O close preview, or back one jump (repeat to go further)",
-    ),
-    (
-        "Search",
-        "/ forward   ? backward   Enter jump   n/N next/prev   Esc clear",
-    ),
-    ("Yank", "y then l link / h heading / c code / y selection"),
-    ("Select", "drag to select   y copy selection"),
-    (
-        "Preview",
-        "+/- or Ctrl+pinch zoom   0 reset   Esc/o/O or click outside close",
-    ),
-    (
-        "Other",
-        "click checkbox or footnote   h help   q/Ctrl-c quit",
-    ),
-];
+/// One help row being assembled from key bindings and fixed text.
+struct HelpRow<'k> {
+    keymap: &'k Keymap,
+    items: Vec<String>,
+}
+
+impl<'k> HelpRow<'k> {
+    fn new(keymap: &'k Keymap) -> Self {
+        Self {
+            keymap,
+            items: Vec::new(),
+        }
+    }
+
+    /// `keys desc` for every key bound to `command`; skipped when unbound.
+    fn keys(mut self, mode: BindingMode, command: Command, desc: &str) -> Self {
+        let labels = self.keymap.key_labels(mode, command);
+        if !labels.is_empty() {
+            self.items.push(format!("{} {desc}", labels.join("/")));
+        }
+        self
+    }
+
+    /// Paired commands as `j/k ↓/↑ desc`: the n-th keys of each side together.
+    fn pair(mut self, first: Command, second: Command, desc: &str) -> Self {
+        let a = self.keymap.key_labels(BindingMode::Normal, first);
+        let b = self.keymap.key_labels(BindingMode::Normal, second);
+        let pairs: Vec<String> = a.iter().zip(&b).map(|(a, b)| format!("{a}/{b}")).collect();
+        if !pairs.is_empty() {
+            self.items.push(format!("{} {desc}", pairs.join(" ")));
+        }
+        self
+    }
+
+    /// Like [`Self::pair`] but only the first key of each side, for a reminder
+    /// of keys already listed in full on another row.
+    fn primary_pair(mut self, first: Command, second: Command, desc: &str) -> Self {
+        let a = self.keymap.key_labels(BindingMode::Normal, first);
+        let b = self.keymap.key_labels(BindingMode::Normal, second);
+        if let (Some(a), Some(b)) = (a.first(), b.first()) {
+            self.items.push(format!("{a}/{b} {desc}"));
+        }
+        self
+    }
+
+    fn text(mut self, text: &str) -> Self {
+        self.items.push(text.to_string());
+        self
+    }
+
+    fn build(self) -> String {
+        self.items.join("   ")
+    }
+}
+
+/// Help rows as (section, bindings), generated from the live keymap so
+/// config overrides show up. Keys the keymap does not own (Esc, marks,
+/// yank targets, mouse) are fixed text.
+pub(crate) fn help_rows(keymap: &Keymap) -> Vec<(&'static str, String)> {
+    use BindingMode::{Normal, Preview, Search};
+    use Command as C;
+    let row = || HelpRow::new(keymap);
+    let yank = keymap.key_labels(Normal, C::YankPrefix);
+    let yank = yank.first().map_or("y", String::as_str);
+    let back = std::iter::once("Esc".to_string())
+        .chain(keymap.key_labels(Normal, C::NavBack))
+        .collect::<Vec<_>>()
+        .join("/");
+    let rows = [
+        (
+            "Scroll",
+            row()
+                .pair(C::ScrollDown, C::ScrollUp, "line")
+                .pair(C::HalfPageDown, C::HalfPageUp, "half page")
+                .pair(C::JumpToTop, C::JumpToBottom, "top/bottom"),
+        ),
+        (
+            "Sections",
+            row()
+                .pair(C::PrevHeading, C::NextHeading, "prev/next heading")
+                .keys(Normal, C::ToggleOutline, "outline")
+                .text("click outline entry"),
+        ),
+        ("Marks", row().text("ma set mark (a-z)   'a jump to mark")),
+        (
+            "Links",
+            row()
+                .pair(C::NextLink, C::PrevLink, "next/prev")
+                .keys(Normal, C::OpenLink, "open")
+                .text("click a link"),
+        ),
+        (
+            "Back",
+            row()
+                .text(&format!("{back} close preview, or back one jump"))
+                .keys(Normal, C::NavReset, "back to the first document"),
+        ),
+        (
+            "Search",
+            row()
+                .keys(Normal, C::StartSearchForward, "forward")
+                .keys(Normal, C::StartSearchBackward, "backward")
+                .keys(Search, C::SearchConfirm, "jump")
+                .primary_pair(C::NextLink, C::PrevLink, "next/prev")
+                .text("Esc clear"),
+        ),
+        (
+            "Yank",
+            row().text(&format!(
+                "{yank} then l link / h heading / c code / y selection"
+            )),
+        ),
+        (
+            "Select",
+            row()
+                .text("drag to select")
+                .keys(Normal, C::CopySelection, "copy")
+                .keys(Normal, C::ClearSelection, "clear"),
+        ),
+        (
+            "Preview",
+            row()
+                .keys(Preview, C::PreviewZoomIn, "zoom in")
+                .keys(Preview, C::PreviewZoomOut, "out")
+                .keys(Preview, C::PreviewZoomReset, "reset")
+                .text("Ctrl+pinch zoom")
+                .keys(Preview, C::ClosePreview, "close"),
+        ),
+        (
+            "Other",
+            row()
+                .text("click checkbox or footnote")
+                .keys(Normal, C::ToggleChecklist, "toggle checkbox")
+                .keys(Normal, C::ToggleHelp, "help")
+                .keys(Normal, C::Quit, "quit"),
+        ),
+    ];
+    rows.into_iter()
+        .map(|(label, row)| (label, row.build()))
+        .filter(|(_, body)| !body.is_empty())
+        .collect()
+}
 
 /// Width of the section column in the help overlay.
 const HELP_LABEL_WIDTH: usize = 10;
@@ -269,16 +377,18 @@ pub(crate) fn draw_help_overlay(
     frame: &mut Frame,
     area: Rect,
     theme: &Theme,
+    keymap: &Keymap,
     scroll: usize,
 ) -> usize {
-    let content_width = HELP_ROWS
+    let rows = help_rows(keymap);
+    let content_width = rows
         .iter()
         .map(|(_, body)| HELP_LABEL_WIDTH + body.width())
         .max()
         .unwrap_or(0);
     let width = (content_width as u16).saturating_add(4).min(area.width);
     let inner_width = usize::from(width.saturating_sub(4)).max(1);
-    let lines: Vec<Line> = HELP_ROWS
+    let lines: Vec<Line> = rows
         .iter()
         .flat_map(|(label, body)| help_row_lines(label, body, inner_width, theme))
         .collect();

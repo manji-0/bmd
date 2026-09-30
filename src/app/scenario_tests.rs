@@ -298,11 +298,11 @@ fn help_overlay_rows_are_not_clipped_at_80_columns() {
     let mut h = Harness::kitchen_sink();
     h.keys("h");
     let screen: Vec<String> = (0..HEIGHT).map(|y| h.row(y)).collect();
-    for (label, body) in super::status::HELP_ROWS {
+    for (label, body) in super::status::help_rows(&h.app.keymap) {
         assert!(
             screen
                 .iter()
-                .any(|row| row.contains(label) && row.contains(body)),
+                .any(|row| row.contains(label) && row.contains(body.as_str())),
             "help row '{label}' clipped:\n{}",
             screen.join("\n")
         );
@@ -436,4 +436,29 @@ fn status_bar_shows_the_enclosing_section() {
         "outline open: {}",
         h.status_row()
     );
+}
+
+#[test]
+fn help_overlay_follows_keymap_overrides() {
+    let mut config = Config::default();
+    let overrides = [(
+        "scroll_down".to_string(),
+        crate::keymap::KeyBindingValue::One("e".to_string()),
+    )]
+    .into_iter()
+    .collect();
+    config
+        .keymap
+        .apply_overrides(crate::keymap::Keymap::MODE_NORMAL, overrides)
+        .unwrap();
+    let (_, format, source) = SAMPLES[0];
+    let mut h = Harness::with_config(format, source, WIDTH, HEIGHT, config);
+    h.keys("h");
+    let scroll_row = (0..HEIGHT)
+        .map(|y| h.row(y))
+        .find(|row| row.contains("Scroll"))
+        .unwrap();
+    // One key per side now, so only the first pair remains.
+    assert!(scroll_row.contains("e/k line"), "{scroll_row}");
+    assert!(!scroll_row.contains("j/k"), "{scroll_row}");
 }
