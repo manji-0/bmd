@@ -78,14 +78,14 @@ impl App {
         let content = match std::fs::read_to_string(&path) {
             Ok(content) => content,
             Err(e) => {
-                self.set_status_message(format!("reload failed: {e}"));
+                self.set_status_error(format!("reload failed: {e}"));
                 return Ok(false);
             }
         };
         let document = match parse_with_path(Some(&path), &content) {
             Ok(document) => document,
             Err(e) => {
-                self.set_status_message(format!("reload parse error: {e}"));
+                self.set_status_error(format!("reload parse error: {e}"));
                 if let Some(watch) = &mut self.file_watch {
                     let _ = watch.refresh_timestamp();
                 }

@@ -21,12 +21,12 @@ impl App {
         let resolved = match resolve_document_path(self.base_path.as_deref(), dest) {
             Ok(path) => normalize_document_path(path),
             Err(e) => {
-                self.set_status_message(e.to_string());
+                self.set_status_error(e.to_string());
                 return;
             }
         };
         if !resolved.is_file() {
-            self.set_status_message(format!("file not found: {}", resolved.display()));
+            self.set_status_error(format!("file not found: {}", resolved.display()));
             return;
         }
 
@@ -36,14 +36,14 @@ impl App {
             let content = match std::fs::read_to_string(&resolved) {
                 Ok(content) => content,
                 Err(e) => {
-                    self.set_status_message(format!("read failed: {e}"));
+                    self.set_status_error(format!("read failed: {e}"));
                     return;
                 }
             };
             match parse_with_path(Some(&resolved), &content) {
                 Ok(document) => document,
                 Err(e) => {
-                    self.set_status_message(format!("parse error: {e}"));
+                    self.set_status_error(format!("parse error: {e}"));
                     return;
                 }
             }
@@ -51,12 +51,12 @@ impl App {
 
         let anchor = document_link_path_part(dest).1;
         if self.push_document_prior().is_err() {
-            self.set_status_message(document_stack_limit_message());
+            self.set_status_error(document_stack_limit_message());
             return;
         }
 
         if let Err(e) = self.apply_document(resolved, document) {
-            self.set_status_message(e.to_string());
+            self.set_status_error(e.to_string());
             self.abort_document_jump();
             return;
         }
@@ -77,7 +77,7 @@ impl App {
         let content = match crate::github::fetch_blob_content(blob, &auth) {
             Ok(c) => c,
             Err(e) => {
-                self.set_status_message(format!("fetch failed: {e}"));
+                self.set_status_error(format!("fetch failed: {e}"));
                 return;
             }
         };
@@ -88,7 +88,7 @@ impl App {
         let mut document = match crate::parse::parse_document(format, &content) {
             Ok(doc) => doc,
             Err(e) => {
-                self.set_status_message(format!("parse error: {e}"));
+                self.set_status_error(format!("parse error: {e}"));
                 return;
             }
         };
@@ -96,12 +96,12 @@ impl App {
         crate::github::rewrite_relative_links(&mut document, blob);
 
         if self.push_document_prior().is_err() {
-            self.set_status_message(document_stack_limit_message());
+            self.set_status_error(document_stack_limit_message());
             return;
         }
 
         if let Err(e) = self.apply_github_document(blob, document) {
-            self.set_status_message(e.to_string());
+            self.set_status_error(e.to_string());
             self.abort_document_jump();
             return;
         }
@@ -125,7 +125,7 @@ impl App {
             .unwrap_or_else(|| "(previous document)".into());
         if let Err(err) = self.try_restore_document_frame(frame) {
             let (e, frame) = *err;
-            self.set_status_message(e.to_string());
+            self.set_status_error(e.to_string());
             self.doc_stack.restore_frames(vec![frame]);
             return;
         }
@@ -148,7 +148,7 @@ impl App {
         let rest: Vec<_> = frames.collect();
         if let Err(err) = self.try_restore_document_frame(root) {
             let (e, root) = *err;
-            self.set_status_message(e.to_string());
+            self.set_status_error(e.to_string());
             let mut frames = Vec::with_capacity(rest.len() + 1);
             frames.push(root);
             frames.extend(rest);

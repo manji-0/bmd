@@ -185,7 +185,7 @@ impl App {
                     Ok(name) => self.set_mark(name),
                     Err(_) => {
                         self.pending_input = PendingInput::None;
-                        self.set_status_message("mark name must be a-z".into());
+                        self.set_status_error("mark name must be a-z".into());
                     }
                 }
                 Ok(Some(true))
@@ -195,7 +195,7 @@ impl App {
                     Ok(name) => self.jump_to_mark(name),
                     Err(_) => {
                         self.pending_input = PendingInput::None;
-                        self.set_status_message("mark name must be a-z".into());
+                        self.set_status_error("mark name must be a-z".into());
                     }
                 }
                 Ok(Some(true))
@@ -207,8 +207,7 @@ impl App {
                     'h' => self.yank_heading_slug()?,
                     'c' => self.yank_code_block()?,
                     'y' => self.copy_text_selection()?,
-                    _ => self
-                        .set_status_message("yank: l link  h heading  c code  y selection".into()),
+                    _ => self.set_status_error(format!("yank: unknown target '{c}'")),
                 }
                 Ok(Some(true))
             }
@@ -300,7 +299,6 @@ impl App {
             return self.copy_text_selection();
         }
         self.pending_input = PendingInput::Yank;
-        self.set_status_message("yank: l link  h heading  c code  y selection".into());
         Ok(())
     }
 

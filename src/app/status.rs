@@ -3,33 +3,56 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, Paragraph, Wrap},
+    widgets::{Block, Clear, Padding, Paragraph, Wrap},
 };
 
 use crate::domain::{Document, NavTarget, NormalSearch, ViewState};
+use crate::render::Theme;
 
 use super::layout::content_height;
 
 /// Max characters for a selected link URL in the status bar.
 const SELECTED_URL_MAX_CHARS: usize = 48;
 
-const HELP_TEXT: &str = "\
-bmd — Markdown viewer (press Esc to close)
+/// Help rows as (section, bindings). Each row fits in 76 columns so the
+/// overlay reads without wrapping on an 80-column terminal.
+pub(crate) const HELP_ROWS: &[(&str, &str)] = &[
+    (
+        "Scroll",
+        "j/k ↓/↑ line   d/u PgDn/PgUp half page   g/G top/bottom",
+    ),
+    (
+        "Sections",
+        "[/] prev/next heading   t outline   click outline entry",
+    ),
+    ("Marks", "ma set mark (a-z)   'a jump to mark"),
+    (
+        "Links",
+        "n/N Tab/S-Tab next/prev   o/Enter open   click a link",
+    ),
+    (
+        "Back",
+        "Esc/O close preview, or back one jump (repeat to go further)",
+    ),
+    (
+        "Search",
+        "/ forward   ? backward   Enter jump   n/N next/prev   Esc clear",
+    ),
+    ("Yank", "y then l link / h heading / c code / y selection"),
+    ("Select", "drag to select   y copy selection"),
+    (
+        "Preview",
+        "+/- or Ctrl+pinch zoom   0 reset   Esc/o/O or click outside close",
+    ),
+    (
+        "Other",
+        "click checkbox or footnote   h help   q/Ctrl-c quit",
+    ),
+];
 
-Navigation    j/k ↓↑ scroll   d/u PgDn/PgUp half page   g/G top/bottom   wheel scroll
-Headings      [/] prev/next section   #anchor links jump in-document
-Outline       t toggle sidebar   tracks scroll   click entry to jump
-Marks         ma set mark   'a jump to mark
-Links         n/N next/prev link (scrolls)   Tab/Shift-Tab   o/Enter open   click link
-Back          Esc / O  one step: close preview or back one jump
-              status: back → file.md  or  back → previous position   (repeat to go further)
-Search        / forward   ? backward   live count + highlight while typing   Enter jump   n/N next/prev   Esc clear
-Yank          y then l link / h heading / c code / y selection   (y alone copies active selection)
-Preview       Ctrl+pinch or +/- zoom   0 reset zoom   Esc/o/O close   click outside to close
-Selection     drag to select (highlight only)   y copy when selected
-Other         click checkbox (session)   click footnote preview   h help   Esc close help   q/Ctrl-c quit";
+/// Width of the section column in the help overlay.
+const HELP_LABEL_WIDTH: usize = 10;
 
 /// Inputs for the bottom status line.
 pub(crate) struct StatusBarInput<'a> {
@@ -41,21 +64,31 @@ pub(crate) struct StatusBarInput<'a> {
     pub status_message: Option<&'a str>,
     pub outline_visible: bool,
     pub pending_prompt: Option<&'a str>,
+    pub status_is_error: bool,
+    pub theme: &'a Theme,
 }
 
 pub(crate) fn format_status_bar(input: StatusBarInput<'_>) -> Line<'static> {
-    if let Some(msg) = input.status_message {
-        return Line::from(vec![
-            Span::styled(
-                msg.to_string(),
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("  "),
-            Span::styled(trailing_status(&input), dim_style()),
-        ]);
+    let theme = input.theme;
+    // A pending key prompt or a message leads the line so it survives clipping
+    // on narrow terminals; the trailing position summary is clipped first.
+    let lead = match (input.pending_prompt, input.status_message) {
+        (Some(prompt), _) => Some(Span::styled(prompt.to_string(), theme.status_info)),
+        (None, Some(msg)) => {
+            let style = if input.status_is_error {
+                theme.status_error
+            } else {
+                theme.status_info
+            };
+            Some(Span::styled(msg.to_string(), style))
+        }
+        (None, None) => None,
+    };
+    let trailing = Span::raw(trailing_status(&input));
+    match lead {
+        Some(lead) => Line::from(vec![lead, Span::raw("  "), trailing]),
+        None => Line::from(trailing),
     }
-
-    Line::from(vec![Span::styled(trailing_status(&input), dim_style())])
 }
 
 fn trailing_status(input: &StatusBarInput<'_>) -> String {
@@ -74,10 +107,6 @@ fn trailing_status(input: &StatusBarInput<'_>) -> String {
         ((offset as f64 / input.max_scroll as f64) * 100.0).round() as u32
     };
     parts.push(format!("{pct}%"));
-
-    if let Some(prompt) = input.pending_prompt {
-        parts.push(prompt.to_string());
-    }
 
     if input.outline_visible {
         parts.push("outline".to_string());
@@ -132,29 +161,48 @@ fn truncate_status(text: &str, max_chars: usize) -> String {
     format!("{truncated}…")
 }
 
-fn dim_style() -> Style {
-    Style::default().fg(Color::DarkGray)
-}
-
-pub(crate) fn draw_status_bar(frame: &mut Frame, area: Rect, line: Line<'_>) {
+pub(crate) fn draw_status_bar(frame: &mut Frame, area: Rect, line: Line<'_>, theme: &Theme) {
     if area.height == 0 || area.width == 0 {
         return;
     }
-    let block = Block::default().style(Style::default().bg(Color::Black));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let para = Paragraph::new(line).wrap(Wrap { trim: true });
-    frame.render_widget(para, inner);
+    let para = Paragraph::new(line).style(theme.status_bar);
+    frame.render_widget(para, area);
 }
 
-pub(crate) fn draw_help_overlay(frame: &mut Frame, area: Rect) {
-    let popup = super::layout::centered_rect(70, 70, area);
+pub(crate) fn draw_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
+    let lines: Vec<Line> = HELP_ROWS
+        .iter()
+        .map(|(label, body)| {
+            Line::from(vec![
+                Span::styled(format!("{label:<HELP_LABEL_WIDTH$}"), theme.status_info),
+                Span::styled(*body, theme.text),
+            ])
+        })
+        .collect();
+    let content_width = lines.iter().map(Line::width).max().unwrap_or(0);
+    let width = (content_width as u16).saturating_add(4).min(area.width);
+    // Rows wrap on terminals narrower than the content; grow the popup to match.
+    let inner_width = usize::from(width.saturating_sub(4)).max(1);
+    let wrapped_rows: usize = lines
+        .iter()
+        .map(|line| line.width().div_ceil(inner_width).max(1))
+        .sum();
+    let height = (wrapped_rows as u16).saturating_add(2).min(area.height);
+    let popup = Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    };
     frame.render_widget(Clear, popup);
-    let block = Block::bordered().title("Help");
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-    let para = Paragraph::new(HELP_TEXT);
-    frame.render_widget(para, inner);
+    let block = Block::bordered()
+        .border_style(theme.popup_border)
+        .title(Span::styled(" bmd help — Esc to close ", theme.status_info))
+        .padding(Padding::horizontal(1));
+    let para = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(para, popup);
 }
 
 pub(crate) fn scroll_link_target(
@@ -183,6 +231,8 @@ mod tests {
             status_message: None,
             outline_visible: false,
             pending_prompt: None,
+            status_is_error: false,
+            theme: &Theme::default(),
         })
         .spans
         .iter()

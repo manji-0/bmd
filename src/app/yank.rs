@@ -13,7 +13,7 @@ impl App {
             return Ok(());
         };
         let Some(link) = self.document.links.get(id.0) else {
-            self.set_status_message(format!("dangling link {id}"));
+            self.set_status_error(format!("dangling link {id}"));
             return Ok(());
         };
         let url = link.url.as_str().to_string();

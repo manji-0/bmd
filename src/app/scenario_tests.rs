@@ -257,3 +257,63 @@ fn mouse_drag_selects_text_and_wheel_scrolls() {
     h.mouse(MouseEventKind::ScrollUp, 5, 5);
     assert_eq!(h.scroll(), 0);
 }
+
+impl Harness {
+    fn row(&self, y: u16) -> String {
+        let buf = self.terminal.backend().buffer();
+        (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()
+    }
+
+    fn status_row(&self) -> String {
+        self.row(HEIGHT - 1)
+    }
+}
+
+#[test]
+fn pending_key_prompts_appear_once_in_the_status_bar() {
+    let mut h = Harness::kitchen_sink();
+    for (keys, prompt) in [("y", "yank: l link"), ("m", "m — mark"), ("'", "' — jump")] {
+        h.keys(keys);
+        let status = h.status_row();
+        assert_eq!(status.matches(prompt).count(), 1, "{keys}: {status}");
+        assert!(
+            status.starts_with(prompt),
+            "{keys}: prompt should lead: {status}"
+        );
+        h.key(KeyCode::Esc);
+        assert!(!h.status_row().contains(prompt), "{keys}: Esc keeps prompt");
+    }
+}
+
+#[test]
+fn help_overlay_rows_are_not_clipped_at_80_columns() {
+    let mut h = Harness::kitchen_sink();
+    h.keys("h");
+    let screen: Vec<String> = (0..HEIGHT).map(|y| h.row(y)).collect();
+    for (label, body) in super::status::HELP_ROWS {
+        assert!(
+            screen
+                .iter()
+                .any(|row| row.contains(label) && row.contains(body)),
+            "help row '{label}' clipped:\n{}",
+            screen.join("\n")
+        );
+    }
+}
+
+#[test]
+fn status_messages_use_theme_info_and_error_styles() {
+    let mut h = Harness::kitchen_sink();
+    let fg_at_status_start = |h: &Harness| h.terminal.backend().buffer()[(0, HEIGHT - 1)].fg;
+
+    h.app.set_status_message("copied".into());
+    h.draw();
+    assert_eq!(Some(fg_at_status_start(&h)), h.app.theme.status_info.fg);
+
+    h.app.set_status_error("failed".into());
+    h.draw();
+    assert_eq!(Some(fg_at_status_start(&h)), h.app.theme.status_error.fg);
+
+    let bg = h.terminal.backend().buffer()[(WIDTH - 1, HEIGHT - 1)].bg;
+    assert_eq!(Some(bg), h.app.theme.status_bar.bg);
+}

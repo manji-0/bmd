@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
+    style::Style,
     widgets::{Block, Clear, Widget},
 };
 use ratatui_image::protocol::Protocol;
@@ -42,6 +43,7 @@ impl PreviewRenderCache {
         link_id: LinkId,
         terminal: TerminalSize,
         title: &str,
+        border: Style,
         protocol: &Protocol,
     ) -> &Buffer {
         let key = PreviewCacheKey {
@@ -54,7 +56,9 @@ impl PreviewRenderCache {
             let area = Rect::new(0, 0, layout.width, layout.height);
             let mut buffer = Buffer::empty(area);
             Clear.render(area, &mut buffer);
-            let block = Block::bordered().title(title.to_string());
+            let block = Block::bordered()
+                .border_style(border)
+                .title(title.to_string());
             let inner = block.inner(area);
             block.render(area, &mut buffer);
             render_floating_image(protocol, inner, &mut buffer, 1.0);
@@ -120,7 +124,7 @@ mod tests {
         let terminal = TerminalSize::new(80, 30).unwrap();
         let mut cache = PreviewRenderCache::default();
         let protocol = dummy_protocol();
-        cache.ensure(LinkId(0), terminal, "title", &protocol);
+        cache.ensure(LinkId(0), terminal, "title", Style::default(), &protocol);
 
         let mut screen = Buffer::empty(Rect::new(0, 0, 80, 30));
         assert!(cache.blit(LinkId(0), terminal, screen.area, &mut screen));
@@ -131,7 +135,13 @@ mod tests {
     fn clear_drops_entries() {
         let terminal = TerminalSize::new(80, 30).unwrap();
         let mut cache = PreviewRenderCache::default();
-        cache.ensure(LinkId(0), terminal, "title", &dummy_protocol());
+        cache.ensure(
+            LinkId(0),
+            terminal,
+            "title",
+            Style::default(),
+            &dummy_protocol(),
+        );
         cache.clear();
         let mut screen = Buffer::empty(Rect::new(0, 0, 80, 30));
         assert!(!cache.blit(LinkId(0), terminal, screen.area, &mut screen));

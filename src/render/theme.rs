@@ -57,6 +57,10 @@ pub struct Theme {
     pub search_match: Style,
     pub search_match_selected: Style,
     pub text_selection: Style,
+    pub status_bar: Style,
+    pub status_info: Style,
+    pub status_error: Style,
+    pub popup_border: Style,
 }
 
 impl Default for Theme {
@@ -111,6 +115,10 @@ impl Theme {
             "search_match" => &mut self.search_match,
             "search_match_selected" => &mut self.search_match_selected,
             "text_selection" => &mut self.text_selection,
+            "status_bar" => &mut self.status_bar,
+            "status_info" => &mut self.status_info,
+            "status_error" => &mut self.status_error,
+            "popup_border" => &mut self.popup_border,
             _ => return None,
         })
     }
@@ -159,6 +167,10 @@ fn builtin_preset(name: &str) -> Palette {
             table_header: Color::White,
             table_border: Color::DarkGray,
             mermaid: Color::Yellow,
+            status_fg: Color::Gray,
+            status_bg: Color::Black,
+            status_info: Color::Cyan,
+            status_error: Color::Red,
         },
         "light" => Palette {
             text: rgb(0x1e, 0x1e, 0x1e),
@@ -186,6 +198,10 @@ fn builtin_preset(name: &str) -> Palette {
             table_header: rgb(0x11, 0x11, 0x11),
             table_border: rgb(0xc0, 0xc0, 0xc0),
             mermaid: rgb(0x0e, 0x63, 0x8c),
+            status_fg: rgb(0x4a, 0x4a, 0x4a),
+            status_bg: rgb(0xe4, 0xe4, 0xe4),
+            status_info: rgb(0x05, 0x63, 0xc1),
+            status_error: rgb(0xc7, 0x00, 0x39),
         },
         // Cursor Dark Midnight — from Cursor IDE theme-cursor (VS Code JSON sources)
         "cursor-midnight" => Palette {
@@ -214,6 +230,10 @@ fn builtin_preset(name: &str) -> Palette {
             table_header: rgb(0xec, 0xef, 0xf4),
             table_border: rgb(0x43, 0x4c, 0x5e),
             mermaid: rgb(0x88, 0xc0, 0xd0),
+            status_fg: rgb(0x7b, 0x88, 0xa1),
+            status_bg: rgb(0x19, 0x1c, 0x22),
+            status_info: rgb(0x88, 0xc0, 0xd0),
+            status_error: rgb(0xbf, 0x61, 0x6a),
         },
         other => panic!("unknown built-in preset '{other}'"),
     }
@@ -245,6 +265,10 @@ struct Palette {
     table_header: Color,
     table_border: Color,
     mermaid: Color,
+    status_fg: Color,
+    status_bg: Color,
+    status_info: Color,
+    status_error: Color,
 }
 
 impl Palette {
@@ -293,6 +317,10 @@ impl Palette {
             table_border: fg(self.table_border),
             mermaid_placeholder: fg(self.mermaid),
             math: fg(self.code_fg).italic(),
+            status_bar: fg(self.status_fg).bg(self.status_bg),
+            status_info: fg(self.status_info).add_modifier(bold),
+            status_error: fg(self.status_error).add_modifier(bold),
+            popup_border: fg(self.table_border),
         }
     }
 }

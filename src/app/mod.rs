@@ -90,6 +90,8 @@ pub struct App {
     source_label: Option<String>,
     help_visible: bool,
     status_message: Option<String>,
+    /// Whether `status_message` reports a failure (drawn with `status_error`).
+    status_is_error: bool,
     status_message_until: Option<Instant>,
     /// Live match count while typing `/`/`?` (`None` when not applicable).
     live_search_match_count: Option<usize>,
@@ -191,6 +193,7 @@ impl App {
             source_label,
             help_visible: false,
             status_message: None,
+            status_is_error: false,
             status_message_until: None,
             live_search_match_count: None,
             picker,
@@ -336,7 +339,16 @@ impl App {
     }
 
     pub(crate) fn set_status_message(&mut self, msg: String) {
+        self.show_status(msg, false);
+    }
+
+    pub(crate) fn set_status_error(&mut self, msg: String) {
+        self.show_status(msg, true);
+    }
+
+    fn show_status(&mut self, msg: String, is_error: bool) {
         self.status_message = Some(msg);
+        self.status_is_error = is_error;
         self.status_message_until = Some(Instant::now() + STATUS_MESSAGE_DURATION);
     }
 

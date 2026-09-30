@@ -73,7 +73,7 @@ impl App {
             }
 
             if self.help_visible {
-                draw_help_overlay(f, areas.main);
+                draw_help_overlay(f, areas.main, &self.theme);
             }
 
             let status = format_status_bar(StatusBarInput {
@@ -85,8 +85,10 @@ impl App {
                 status_message: self.status_message.as_deref(),
                 outline_visible: self.outline.visible,
                 pending_prompt: self.pending_input.prompt(),
+                status_is_error: self.status_is_error,
+                theme: &self.theme,
             });
-            draw_status_bar(f, areas.status, status);
+            draw_status_bar(f, areas.status, status, &self.theme);
 
             if let UiMode::SearchInput { direction, query } = self.view_state.mode() {
                 let prompt = super::search::format_search_prompt(
@@ -142,7 +144,9 @@ impl App {
                 area,
             );
             frame.render_widget(Clear, popup);
-            let block = Block::bordered().title(title);
+            let block = Block::bordered()
+                .border_style(self.theme.popup_border)
+                .title(title);
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
             frame.render_widget(Paragraph::new(preview_external_open_message()), inner);
@@ -161,9 +165,13 @@ impl App {
             );
 
             if (self.preview.zoom - 1.0).abs() < f32::EPSILON {
-                self.preview
-                    .cache
-                    .ensure(link_id, terminal, &title, protocol);
+                self.preview.cache.ensure(
+                    link_id,
+                    terminal,
+                    &title,
+                    self.theme.popup_border,
+                    protocol,
+                );
                 if self
                     .preview
                     .cache
@@ -174,7 +182,9 @@ impl App {
             }
 
             frame.render_widget(Clear, popup);
-            let block = Block::bordered().title(title);
+            let block = Block::bordered()
+                .border_style(self.theme.popup_border)
+                .title(title);
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
             crate::render::render_floating_image(
@@ -193,7 +203,9 @@ impl App {
                 area,
             );
             frame.render_widget(Clear, popup);
-            let block = Block::bordered().title(title);
+            let block = Block::bordered()
+                .border_style(self.theme.popup_border)
+                .title(title);
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
             let message = preview_failed_message(link.kind);
@@ -214,7 +226,9 @@ impl App {
             area,
         );
         frame.render_widget(Clear, popup);
-        let block = Block::bordered().title("Table of Contents");
+        let block = Block::bordered()
+            .border_style(self.theme.popup_border)
+            .title("Table of Contents");
         let inner = block.inner(popup);
         frame.render_widget(block, popup);
 
@@ -267,7 +281,9 @@ impl App {
         );
         frame.render_widget(Clear, popup);
         let title = footnote_preview_title(&self.document, footnote_id);
-        let block = Block::bordered().title(title);
+        let block = Block::bordered()
+            .border_style(self.theme.popup_border)
+            .title(title);
         let inner = block.inner(popup);
         frame.render_widget(block, popup);
 

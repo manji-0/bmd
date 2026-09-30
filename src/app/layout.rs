@@ -128,7 +128,3 @@ pub(crate) fn split_main_and_prompt(
     let areas = split_layout(area, mode, outline_visible);
     (areas.main, areas.prompt)
 }
-
-pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    crate::render::centered_rect(percent_x, percent_y, r)
-}

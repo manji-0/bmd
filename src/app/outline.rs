@@ -120,7 +120,9 @@ impl App {
         let entries = self.heading_cache.entries();
 
         frame.render_widget(Clear, area);
-        let block = Block::bordered().title("Outline");
+        let block = Block::bordered()
+            .border_style(self.theme.popup_border)
+            .title("Outline");
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
