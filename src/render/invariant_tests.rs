@@ -4,8 +4,9 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 use super::document::render_document;
+use super::nav_hits::collect_nav_hits;
 use super::{RenderContext, SyntaxAssets, Theme, find_search_matches, measure_document_height};
-use crate::domain::{ChecklistState, ChecklistStyle, Document};
+use crate::domain::{ChecklistState, ChecklistStyle, Document, Inline, NavTarget};
 use crate::parse::{MarkupFormat, parse_document};
 
 const WIDTHS: [u16; 4] = [24, 40, 80, 132];
@@ -64,6 +65,7 @@ impl Fixture {
             search_query: None,
             selected_match_line_offset: None,
             checklist_state: &self.checklist,
+            nav_probe: false,
         }
     }
 }
@@ -126,6 +128,39 @@ fn search_matches_land_on_rows_containing_the_query() {
                     "{name}@{width}: row {line} {text:?} lacks {query:?}"
                 );
             }
+        }
+    });
+}
+
+#[test]
+fn every_referenced_link_and_footnote_has_a_disjoint_hit() {
+    for_each_sample(|name, document, ctx, width| {
+        let hits = collect_nav_hits(document, width, ctx);
+        let mut referenced = Vec::new();
+        document.visit_inlines(|_, inline| match inline {
+            Inline::Link(id, _) => referenced.push(NavTarget::Link(*id)),
+            Inline::FootnoteReference(id, _) => referenced.push(NavTarget::Footnote(*id)),
+            _ => {}
+        });
+        assert!(!referenced.is_empty() || name != "kitchen-sink.md");
+        for target in referenced {
+            assert!(
+                hits.iter().any(|hit| hit.target == target),
+                "{name}@{width}: {target:?} has no hit"
+            );
+        }
+        for pair in hits.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            assert!(
+                a.line < b.line || a.x + a.width <= b.x,
+                "{name}@{width}: overlapping hits {a:?} {b:?}"
+            );
+        }
+        for hit in &hits {
+            assert!(
+                hit.x + hit.width <= width as usize,
+                "{name}@{width}: {hit:?} overflows"
+            );
         }
     });
 }

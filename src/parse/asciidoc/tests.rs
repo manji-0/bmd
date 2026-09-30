@@ -253,3 +253,21 @@ fn parse_asciidoc_video_and_audio_blocks() {
         .collect();
     assert_eq!(link_blocks.len(), 2);
 }
+
+#[test]
+fn parse_asciidoc_block_image_keeps_a_visible_label() {
+    for (source, label) in [
+        ("image::a/pic.png[Alt text]\n", "Alt text"),
+        (".Caption\nimage::a/pic.png[]\n", "Caption"),
+        ("image::a/pic.png[]\n", "pic"),
+    ] {
+        let doc = parse(source).unwrap().into_domain().unwrap();
+        let [Block::Paragraph(inlines)] = doc.blocks.as_slice() else {
+            panic!("{source:?}: {:?}", doc.blocks);
+        };
+        let [Inline::Link(_, children)] = inlines.as_slice() else {
+            panic!("{source:?}: {inlines:?}");
+        };
+        assert_eq!(children, &[Inline::Text(label.into())], "{source:?}");
+    }
+}

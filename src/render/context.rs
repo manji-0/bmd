@@ -23,6 +23,8 @@ pub struct RenderContext<'a> {
     pub search_query: Option<String>,
     pub selected_match_line_offset: Option<usize>,
     pub checklist_state: &'a ChecklistState,
+    /// Tag link and footnote spans for [`super::nav_hits`] instead of styling them.
+    pub nav_probe: bool,
 }
 
 impl<'a> RenderContext<'a> {
@@ -43,6 +45,7 @@ impl<'a> RenderContext<'a> {
             search_query: active_search_query(view_state.normal_search()),
             selected_match_line_offset: active_search_match_line_offset(view_state.normal_search()),
             checklist_state,
+            nav_probe: false,
         }
     }
 }

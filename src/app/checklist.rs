@@ -7,7 +7,7 @@ use crate::clipboard::copy_to_clipboard;
 use crate::domain::{TextPoint, TextSelection};
 use crate::error::AppError;
 use crate::render::checklist::checklist_at_click;
-use crate::render::{PREVIEW_POPUP_PERCENT, centered_rect, extract_selected_text, link_at_click};
+use crate::render::{PREVIEW_POPUP_PERCENT, centered_rect, extract_selected_text, link_at};
 
 use super::App;
 use super::layout::{split_layout, split_main_and_prompt};
@@ -146,17 +146,21 @@ impl App {
         let local_col = (column - main_area.x) as usize;
         let local_row = (row - main_area.y) as usize;
         let logical_row = self.scroll.visual.floor() as usize + local_row;
-        let ctx = self.render_context();
         let width = self.document_width();
-
-        if let Some(item) = checklist_at_click(&self.document, width, &ctx, logical_row, local_col)
-        {
+        let item = checklist_at_click(
+            &self.document,
+            width,
+            &self.render_context(),
+            logical_row,
+            local_col,
+        );
+        if let Some(item) = item {
             self.checklist_state.toggle(item);
             self.document_cache.invalidate();
             return Ok(true);
         }
 
-        if let Some(link_id) = link_at_click(&self.document, width, &ctx, logical_row, local_col) {
+        if let Some(link_id) = link_at(self.nav_hits(), logical_row, local_col) {
             self.open_link_by_id(link_id);
             return Ok(true);
         }

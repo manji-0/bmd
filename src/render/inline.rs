@@ -7,14 +7,28 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::{HeadingLevel, Inline};
+use crate::domain::{HeadingLevel, Inline, LinkId, NavTarget};
 
 use super::context::RenderContext;
 use super::math::render_latex;
+use super::nav_hits::{is_probe_style, probe_style};
 use super::theme::Theme;
 
 pub(crate) fn footnote_marker_style(ctx: &RenderContext) -> Style {
     ctx.theme.code_inline
+}
+
+fn link_style(ctx: &RenderContext, id: LinkId) -> Style {
+    let preview = ctx
+        .links
+        .get(id.0)
+        .is_some_and(|link| link.kind.is_preview());
+    match (preview, ctx.selected_link == Some(id)) {
+        (true, true) => ctx.theme.image_link_selected,
+        (true, false) => ctx.theme.image_link,
+        (false, true) => ctx.theme.link_selected,
+        (false, false) => ctx.theme.link,
+    }
 }
 
 pub(crate) fn heading_styles(level: HeadingLevel, theme: &Theme) -> (Style, Style) {
@@ -133,26 +147,30 @@ fn wrap_styled_line(
     let mut current_spans: Vec<Span<'static>> = Vec::new();
     let mut current_width = 0usize;
 
-    for (word, style) in words {
-        if word.width() <= width {
-            append_word_with_space(
-                &mut current_spans,
-                &mut current_width,
-                &mut wrapped,
-                &word,
-                style,
-                width,
-            );
-        } else {
-            for grapheme in word.graphemes(true) {
-                append_grapheme(
-                    &mut current_spans,
-                    &mut current_width,
-                    &mut wrapped,
-                    grapheme,
-                    style,
-                    width,
-                );
+    for word in words {
+        let word_width: usize = word.iter().map(|(text, _)| text.width()).sum();
+        if !current_spans.is_empty() && current_width + 1 + word_width.min(width) > width {
+            wrapped.push(Line::from(std::mem::take(&mut current_spans)));
+            current_width = 0;
+        }
+        if let Some(last) = current_spans.last() {
+            let space_style = if last.style == word[0].1 {
+                last.style
+            } else {
+                undecorated(last.style)
+            };
+            append_span_text(&mut current_spans, " ", space_style);
+            current_width += 1;
+        }
+        for (text, style) in word {
+            for grapheme in text.graphemes(true) {
+                let grapheme_width = grapheme.width();
+                if current_width > 0 && current_width + grapheme_width > width {
+                    wrapped.push(Line::from(std::mem::take(&mut current_spans)));
+                    current_width = 0;
+                }
+                append_span_text(&mut current_spans, grapheme, style);
+                current_width += grapheme_width;
             }
         }
     }
@@ -171,56 +189,32 @@ fn wrap_styled_line(
         .collect()
 }
 
-fn words_from_spans(spans: &[Span<'_>]) -> Vec<(String, Style)> {
-    spans
-        .iter()
-        .flat_map(|span| {
-            span.content
-                .split_whitespace()
-                .map(|word| (word.to_string(), span.style))
-                .collect::<Vec<_>>()
-        })
-        .collect()
+/// `style` without line decorations, for a space between differently styled words.
+fn undecorated(style: Style) -> Style {
+    let mut style = style.remove_modifier(Modifier::UNDERLINED | Modifier::CROSSED_OUT);
+    style.underline_color = None;
+    style
 }
 
-fn append_word_with_space(
-    current_spans: &mut Vec<Span<'static>>,
-    current_width: &mut usize,
-    wrapped: &mut Vec<Line<'static>>,
-    word: &str,
-    style: Style,
-    width: usize,
-) {
-    let word_width = word.width();
-    let gap = usize::from(!current_spans.is_empty());
-    if !current_spans.is_empty() && *current_width + gap + word_width > width {
-        wrapped.push(Line::from(std::mem::take(current_spans)));
-        *current_width = 0;
+/// Split spans into words at whitespace. A word is a maximal run of
+/// non-whitespace text and may span several styles (`**bold**,` is one word).
+fn words_from_spans(spans: &[Span<'_>]) -> Vec<Vec<(String, Style)>> {
+    let mut words = Vec::new();
+    let mut word: Vec<(String, Style)> = Vec::new();
+    for span in spans {
+        for (idx, piece) in span.content.split(char::is_whitespace).enumerate() {
+            if idx > 0 && !word.is_empty() {
+                words.push(std::mem::take(&mut word));
+            }
+            if !piece.is_empty() {
+                word.push((piece.to_string(), span.style));
+            }
+        }
     }
-    if !current_spans.is_empty() {
-        let space_style = current_spans.last().map(|s| s.style).unwrap_or(style);
-        append_span_text(current_spans, " ", space_style);
-        *current_width += 1;
+    if !word.is_empty() {
+        words.push(word);
     }
-    append_span_text(current_spans, word, style);
-    *current_width += word_width;
-}
-
-fn append_grapheme(
-    current_spans: &mut Vec<Span<'static>>,
-    current_width: &mut usize,
-    wrapped: &mut Vec<Line<'static>>,
-    grapheme: &str,
-    style: Style,
-    width: usize,
-) {
-    let grapheme_width = grapheme.width();
-    if !current_spans.is_empty() && *current_width + grapheme_width > width {
-        wrapped.push(Line::from(std::mem::take(current_spans)));
-        *current_width = 0;
-    }
-    append_span_text(current_spans, grapheme, style);
-    *current_width += grapheme_width;
+    words
 }
 
 fn append_span_text(spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
@@ -459,7 +453,11 @@ fn inlines_to_segments(
             }),
             Inline::Code(code) => out.push(Segment {
                 text: code.clone(),
-                style: ctx.theme.code_inline,
+                style: if is_probe_style(base_style) {
+                    base_style
+                } else {
+                    ctx.theme.code_inline
+                },
                 force_break_after: false,
             }),
             Inline::Strong(children) => {
@@ -493,26 +491,17 @@ fn inlines_to_segments(
                 );
             }
             Inline::Link(id, children) => {
-                let style = match ctx.links.get(id.0) {
-                    Some(link) if link.kind.is_preview() => {
-                        if ctx.selected_link == Some(*id) {
-                            ctx.theme.image_link_selected
-                        } else {
-                            ctx.theme.image_link
-                        }
-                    }
-                    _ => {
-                        if ctx.selected_link == Some(*id) {
-                            ctx.theme.link_selected
-                        } else {
-                            ctx.theme.link
-                        }
-                    }
+                let style = if ctx.nav_probe {
+                    probe_style(NavTarget::Link(*id)).unwrap_or(base_style)
+                } else {
+                    link_style(ctx, *id)
                 };
                 inlines_to_segments(children, ctx, style, out);
             }
             Inline::FootnoteReference(id, display) => {
-                let style = if ctx.selected_footnote == Some(*id) {
+                let style = if ctx.nav_probe {
+                    probe_style(NavTarget::Footnote(*id)).unwrap_or(base_style)
+                } else if ctx.selected_footnote == Some(*id) {
                     ctx.theme.link_selected
                 } else {
                     footnote_marker_style(ctx)

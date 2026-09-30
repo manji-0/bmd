@@ -264,12 +264,23 @@ impl App {
         }
     }
 
-    pub(crate) fn visible_link_ids(&self) -> Vec<crate::domain::LinkId> {
-        let ctx = self.render_context();
+    /// Link and footnote-reference positions in the current layout.
+    pub(crate) fn nav_hits(&mut self) -> &[crate::render::NavHit] {
         let width = self.document_width();
+        let ctx = RenderContext::new(
+            &self.theme,
+            &self.syntax_assets,
+            &self.document.links,
+            &self.view_state,
+            &self.checklist_state,
+        );
+        self.document_cache.nav_hits(&self.document, &ctx, width)
+    }
+
+    pub(crate) fn visible_link_ids(&mut self) -> Vec<crate::domain::LinkId> {
         let scroll = self.view_state.scroll().offset();
-        let visible_lines = self.content_height() as usize;
-        crate::render::collect_visible_links(&self.document, width, &ctx, scroll, visible_lines)
+        let lines = self.content_height() as usize;
+        crate::render::visible_links(self.nav_hits(), scroll, lines)
     }
 
     pub(crate) fn poll_preview_renders(&mut self) -> bool {

@@ -4,8 +4,6 @@ mod block;
 mod inline;
 mod table;
 
-use std::collections::HashMap;
-
 use super::front_matter::FrontMatter;
 use super::link::{DocumentError, Link, LinkId, LinkKind};
 use super::preview_load::mermaid_diagram_index;
@@ -116,262 +114,57 @@ impl Document {
         }
     }
 
+    /// Visit every inline of the body depth first, with its top-level block index.
+    pub fn visit_inlines(&self, mut f: impl FnMut(usize, &Inline)) {
+        for (block_index, block) in self.blocks.iter().enumerate() {
+            visit_block_inlines(block, &mut |inline| f(block_index, inline));
+        }
+    }
+
     fn validate_links(&self) -> Result<(), DocumentError> {
-        let count = self.links.len();
-        for (block_idx, block) in self.blocks.iter().enumerate() {
-            Self::validate_block_links(block, block_idx, count)?;
-        }
-        Ok(())
-    }
-
-    fn validate_block_links(
-        block: &Block,
-        block_idx: usize,
-        link_count: usize,
-    ) -> Result<(), DocumentError> {
-        match block {
-            Block::Paragraph(inlines)
-            | Block::Heading(Heading {
-                content: inlines, ..
-            }) => {
-                Self::validate_inlines_links(inlines, block_idx, link_count)?;
+        let mut result = Ok(());
+        self.visit_inlines(|block_index, inline| {
+            if let Inline::Link(link_id, _) = inline
+                && link_id.0 >= self.links.len()
+                && result.is_ok()
+            {
+                result = Err(DocumentError::DanglingLink {
+                    block_index,
+                    link_id: *link_id,
+                });
             }
-            Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
-            Block::Quote(blocks) => {
-                for child in blocks {
-                    Self::validate_block_links(child, block_idx, link_count)?;
-                }
-            }
-            Block::Callout(callout) => {
-                for child in &callout.body {
-                    Self::validate_block_links(child, block_idx, link_count)?;
-                }
-            }
-            Block::List(list) => {
-                for item in &list.items {
-                    for child in &item.content {
-                        Self::validate_block_links(child, block_idx, link_count)?;
-                    }
-                }
-            }
-            Block::DefinitionList(list) => {
-                for item in &list.items {
-                    Self::validate_inlines_links(&item.term, block_idx, link_count)?;
-                    for definition in &item.definitions {
-                        for child in definition {
-                            Self::validate_block_links(child, block_idx, link_count)?;
-                        }
-                    }
-                }
-            }
-            Block::Table(table) => {
-                for cell in &table.headers {
-                    Self::validate_inlines_links(cell, block_idx, link_count)?;
-                }
-                for row in &table.rows {
-                    for cell in row {
-                        Self::validate_inlines_links(cell, block_idx, link_count)?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_inlines_links(
-        inlines: &[Inline],
-        block_idx: usize,
-        link_count: usize,
-    ) -> Result<(), DocumentError> {
-        for inline in inlines {
-            match inline {
-                Inline::Link(id, children) => {
-                    if id.0 >= link_count {
-                        return Err(DocumentError::DanglingLink {
-                            block_index: block_idx,
-                            link_id: *id,
-                        });
-                    }
-                    Self::validate_inlines_links(children, block_idx, link_count)?;
-                }
-                Inline::Strong(children)
-                | Inline::Emphasis(children)
-                | Inline::Strikethrough(children)
-                | Inline::Subscript(children)
-                | Inline::Superscript(children) => {
-                    Self::validate_inlines_links(children, block_idx, link_count)?;
-                }
-                Inline::Text(_)
-                | Inline::Code(_)
-                | Inline::Math(_)
-                | Inline::HardBreak
-                | Inline::SoftBreak
-                | Inline::FootnoteReference(_, _) => {}
-            }
-        }
-        Ok(())
+        });
+        result
     }
 
     fn validate_footnotes(&self) -> Result<(), DocumentError> {
-        let count = self.footnotes.len();
-        let referenced: HashMap<FootnoteId, ()> = self
-            .footnote_order
-            .iter()
-            .copied()
-            .map(|id| (id, ()))
-            .collect();
-        for (block_idx, block) in self.blocks.iter().enumerate() {
-            Self::validate_block_footnotes(block, block_idx, count, &referenced, &self.footnotes)?;
-        }
-        Ok(())
-    }
-
-    fn validate_block_footnotes(
-        block: &Block,
-        block_idx: usize,
-        footnote_count: usize,
-        referenced: &HashMap<FootnoteId, ()>,
-        footnotes: &[FootnoteDefinition],
-    ) -> Result<(), DocumentError> {
-        match block {
-            Block::Paragraph(inlines)
-            | Block::Heading(Heading {
-                content: inlines, ..
-            }) => {
-                Self::validate_inlines_footnotes(
-                    inlines,
-                    block_idx,
-                    footnote_count,
-                    referenced,
-                    footnotes,
-                )?;
+        let mut result = Ok(());
+        self.visit_inlines(|block_index, inline| {
+            let Inline::FootnoteReference(footnote_id, _) = inline else {
+                return;
+            };
+            if result.is_err() {
+                return;
             }
-            Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
-            Block::Quote(blocks) => {
-                for child in blocks {
-                    Self::validate_block_footnotes(
-                        child,
-                        block_idx,
-                        footnote_count,
-                        referenced,
-                        footnotes,
-                    )?;
+            match self.footnotes.get(footnote_id.0) {
+                None => {
+                    result = Err(DocumentError::DanglingFootnote {
+                        block_index,
+                        footnote_id: *footnote_id,
+                    });
                 }
+                Some(definition)
+                    if definition.content.is_empty()
+                        && self.footnote_order.contains(footnote_id) =>
+                {
+                    result = Err(DocumentError::UndefinedFootnote {
+                        footnote_id: *footnote_id,
+                    });
+                }
+                Some(_) => {}
             }
-            Block::Callout(callout) => {
-                for child in &callout.body {
-                    Self::validate_block_footnotes(
-                        child,
-                        block_idx,
-                        footnote_count,
-                        referenced,
-                        footnotes,
-                    )?;
-                }
-            }
-            Block::List(list) => {
-                for item in &list.items {
-                    for child in &item.content {
-                        Self::validate_block_footnotes(
-                            child,
-                            block_idx,
-                            footnote_count,
-                            referenced,
-                            footnotes,
-                        )?;
-                    }
-                }
-            }
-            Block::DefinitionList(list) => {
-                for item in &list.items {
-                    Self::validate_inlines_footnotes(
-                        &item.term,
-                        block_idx,
-                        footnote_count,
-                        referenced,
-                        footnotes,
-                    )?;
-                    for definition in &item.definitions {
-                        for child in definition {
-                            Self::validate_block_footnotes(
-                                child,
-                                block_idx,
-                                footnote_count,
-                                referenced,
-                                footnotes,
-                            )?;
-                        }
-                    }
-                }
-            }
-            Block::Table(table) => {
-                for cell in &table.headers {
-                    Self::validate_inlines_footnotes(
-                        cell,
-                        block_idx,
-                        footnote_count,
-                        referenced,
-                        footnotes,
-                    )?;
-                }
-                for row in &table.rows {
-                    for cell in row {
-                        Self::validate_inlines_footnotes(
-                            cell,
-                            block_idx,
-                            footnote_count,
-                            referenced,
-                            footnotes,
-                        )?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_inlines_footnotes(
-        inlines: &[Inline],
-        block_idx: usize,
-        footnote_count: usize,
-        referenced: &HashMap<FootnoteId, ()>,
-        footnotes: &[FootnoteDefinition],
-    ) -> Result<(), DocumentError> {
-        for inline in inlines {
-            match inline {
-                Inline::FootnoteReference(id, _) => {
-                    if id.0 >= footnote_count {
-                        return Err(DocumentError::DanglingFootnote {
-                            block_index: block_idx,
-                            footnote_id: *id,
-                        });
-                    }
-                    if referenced.contains_key(id) && footnotes[id.0].content.is_empty() {
-                        return Err(DocumentError::UndefinedFootnote { footnote_id: *id });
-                    }
-                }
-                Inline::Link(_, children)
-                | Inline::Strong(children)
-                | Inline::Emphasis(children)
-                | Inline::Strikethrough(children)
-                | Inline::Subscript(children)
-                | Inline::Superscript(children) => {
-                    Self::validate_inlines_footnotes(
-                        children,
-                        block_idx,
-                        footnote_count,
-                        referenced,
-                        footnotes,
-                    )?;
-                }
-                Inline::Text(_)
-                | Inline::Code(_)
-                | Inline::Math(_)
-                | Inline::HardBreak
-                | Inline::SoftBreak => {}
-            }
-        }
-        Ok(())
+        });
+        result
     }
 
     fn validate_mermaid_links(&self) -> Result<(), DocumentError> {
@@ -391,6 +184,63 @@ impl Document {
             }
         }
         Ok(())
+    }
+}
+
+fn visit_block_inlines(block: &Block, f: &mut dyn FnMut(&Inline)) {
+    let visit_all = |blocks: &[Block], f: &mut dyn FnMut(&Inline)| {
+        for child in blocks {
+            visit_block_inlines(child, f);
+        }
+    };
+    match block {
+        Block::Paragraph(inlines)
+        | Block::Heading(Heading {
+            content: inlines, ..
+        }) => {
+            visit_inlines(inlines, f);
+        }
+        Block::CodeBlock(_) | Block::MathBlock(_) | Block::Rule => {}
+        Block::Quote(blocks) => visit_all(blocks, f),
+        Block::Callout(callout) => visit_all(&callout.body, f),
+        Block::List(list) => {
+            for item in &list.items {
+                visit_all(&item.content, f);
+            }
+        }
+        Block::DefinitionList(list) => {
+            for item in &list.items {
+                visit_inlines(&item.term, f);
+                for definition in &item.definitions {
+                    visit_all(definition, f);
+                }
+            }
+        }
+        Block::Table(table) => {
+            for cell in table.headers.iter().chain(table.rows.iter().flatten()) {
+                visit_inlines(cell, f);
+            }
+        }
+    }
+}
+
+fn visit_inlines(inlines: &[Inline], f: &mut dyn FnMut(&Inline)) {
+    for inline in inlines {
+        f(inline);
+        match inline {
+            Inline::Link(_, children)
+            | Inline::Strong(children)
+            | Inline::Emphasis(children)
+            | Inline::Strikethrough(children)
+            | Inline::Subscript(children)
+            | Inline::Superscript(children) => visit_inlines(children, f),
+            Inline::Text(_)
+            | Inline::Code(_)
+            | Inline::Math(_)
+            | Inline::HardBreak
+            | Inline::SoftBreak
+            | Inline::FootnoteReference(_, _) => {}
+        }
     }
 }
 

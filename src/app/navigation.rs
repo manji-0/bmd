@@ -59,18 +59,10 @@ impl App {
         self.maybe_warm_selected_preview();
     }
 
-    fn visible_nav_targets(&self) -> Vec<crate::domain::NavTarget> {
-        let ctx = self.render_context();
-        let width = self.document_width();
+    fn visible_nav_targets(&mut self) -> Vec<crate::domain::NavTarget> {
         let scroll = self.view_state.scroll().offset();
-        let visible_lines = self.content_height() as usize;
-        crate::render::collect_visible_nav_targets(
-            &self.document,
-            width,
-            &ctx,
-            scroll,
-            visible_lines,
-        )
+        let lines = self.content_height() as usize;
+        crate::render::visible_nav_targets(self.nav_hits(), scroll, lines)
     }
 
     pub(crate) fn next_heading(&mut self) {

@@ -144,6 +144,24 @@ fn build_front_matter(
     })
 }
 
+/// Visible label for a block image: `[alt]`, then `.Title`, then the file stem
+/// (Asciidoctor's default), so the link always has text to select.
+fn image_alt_text(image: &acdc_parser::Image<'_>, url: &str) -> String {
+    if let Some(AttributeValue::String(alt)) = image.metadata.attributes.get("alt")
+        && !alt.is_empty()
+    {
+        return alt.to_string();
+    }
+    let title = acdc_parser::inlines_to_string(&image.title);
+    if !title.is_empty() {
+        return title;
+    }
+    std::path::Path::new(url).file_stem().map_or_else(
+        || url.to_string(),
+        |stem| stem.to_string_lossy().into_owned(),
+    )
+}
+
 fn attribute_value_yaml(value: &AttributeValue<'_>) -> String {
     match value {
         AttributeValue::String(text) => text.to_string(),
@@ -228,8 +246,8 @@ fn map_block(
         })],
         AdocBlock::ThematicBreak(_) => vec![ParsedBlock::Rule],
         AdocBlock::Image(image) => {
-            let alt = acdc_parser::inlines_to_string(&image.title);
             let url = source_to_string(&image.source);
+            let alt = image_alt_text(image, &url);
             let link_id = state
                 .parts
                 .push_link(ParsedLink::new(url, None, ParsedLinkKind::Image));
