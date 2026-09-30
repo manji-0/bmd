@@ -234,10 +234,16 @@ impl PreviewPools {
         self.image.session = mem::take(&mut self.image.session).begin_document();
     }
 
-    pub(crate) fn suspend(&self) -> PreviewSnapshots {
+    /// Consume the live sessions into snapshots, leaving empty sessions at the next
+    /// generation so in-flight completions for the suspended document are stale.
+    pub(crate) fn suspend(&mut self) -> PreviewSnapshots {
+        let (mermaid, mermaid_snapshot) = mem::take(&mut self.mermaid.session).detach_snapshot();
+        let (image, image_snapshot) = mem::take(&mut self.image.session).detach_snapshot();
+        self.mermaid.session = mermaid;
+        self.image.session = image;
         PreviewSnapshots {
-            mermaid: self.mermaid.session.clone().suspend(),
-            image: self.image.session.clone().suspend(),
+            mermaid: mermaid_snapshot,
+            image: image_snapshot,
         }
     }
 

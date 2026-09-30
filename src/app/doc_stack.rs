@@ -5,10 +5,11 @@ use std::path::PathBuf;
 use crate::domain::{
     ChecklistState, DOCUMENT_STACK_MAX_LAYERS, Document, DocumentPrefetchSessionSnapshot,
     DocumentStackFull, LinkId, LinkJumpStack, LinkJumpStackFull, Marks, NavStack, PriorAtLinkJump,
-    ViewState,
+    TextSelection, ViewState,
 };
 use crate::render::{DocumentRenderCache, PreviewRenderCache, RenderedDocument};
 
+use super::outline::OutlineUi;
 use super::preview_render::PreviewSnapshots;
 use super::reload::FileWatch;
 
@@ -26,6 +27,8 @@ pub(crate) struct DocumentFrame {
     pub document_cache: DocumentRenderCache,
     pub preview_render_cache: PreviewRenderCache,
     pub pending_preview: Option<LinkId>,
+    pub preview_zoom: f32,
+    pub toc_selected: usize,
     pub view_state: ViewState,
     pub scroll_visual: f32,
     pub scroll_anim_speed: f32,
@@ -35,6 +38,8 @@ pub(crate) struct DocumentFrame {
     pub file_watch: Option<FileWatch>,
     pub nav_stack: NavStack,
     pub marks: Marks,
+    pub outline: OutlineUi,
+    pub text_selection: Option<TextSelection>,
 }
 
 /// Document state fixed at the moment before a document link jump.
@@ -63,22 +68,30 @@ impl DocStack {
     }
 
     /// Fix the current document and store it before following a document link.
+    ///
+    /// On overflow the prior frame is returned so worker sessions consumed
+    /// into it can be restored onto the live pools.
     pub fn fix_prior_on_link_jump(
         &mut self,
         prior: FixedDocumentPrior,
-    ) -> Result<(), DocumentStackFull> {
+    ) -> Result<(), (DocumentStackFull, Box<DocumentFrame>)> {
         self.stack
             .fix_prior_on_link_jump(prior)
-            .map_err(|LinkJumpStackFull| DocumentStackFull)
+            .map_err(|(LinkJumpStackFull, prior)| (DocumentStackFull, Box::new(prior.into_inner())))
     }
 
     pub fn pop(&mut self) -> Option<DocumentFrame> {
         self.stack.restore_latest_prior().ok()
     }
 
-    /// Take the root document frame without cloning it; clears remaining priors.
-    pub fn take_root_prior(&mut self) -> Option<DocumentFrame> {
-        self.stack.take_oldest_prior().ok()
+    /// Take every stored document frame, oldest (root) first.
+    pub fn take_all_frames(&mut self) -> Vec<DocumentFrame> {
+        self.stack.take_all_priors()
+    }
+
+    /// Put frames back after a failed restore, oldest first.
+    pub fn restore_frames(&mut self, frames: Vec<DocumentFrame>) {
+        self.stack.restore_priors(frames);
     }
 
     pub fn len_frames(&self) -> usize {

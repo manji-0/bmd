@@ -119,20 +119,35 @@ fn scan_hits(buf: &Buffer) -> Vec<Hit> {
     hits
 }
 
-/// Navigation targets with a hit in `[scroll, scroll + lines)`, in reading order, each once.
+/// Link targets for `n`/`N` cycling in reading order, each once. Footnote
+/// references are excluded so link hopping is not interrupted; they open by click.
+pub fn nav_targets(hits: &[Hit]) -> Vec<NavTarget> {
+    link_targets_in(hits, 0, usize::MAX)
+}
+
+/// Link targets with a hit in `[scroll, scroll + lines)`, in reading order, each once.
 pub fn visible_nav_targets(hits: &[Hit], scroll: usize, lines: usize) -> Vec<NavTarget> {
+    link_targets_in(hits, scroll, lines)
+}
+
+fn link_targets_in(hits: &[Hit], scroll: usize, lines: usize) -> Vec<NavTarget> {
+    let end = scroll.saturating_add(lines);
     let mut out: Vec<NavTarget> = Vec::new();
-    for hit in hits
-        .iter()
-        .filter(|hit| (scroll..scroll + lines).contains(&hit.line))
-    {
-        if let HitTarget::Nav(target) = hit.target
+    for hit in hits.iter().filter(|hit| (scroll..end).contains(&hit.line)) {
+        if let HitTarget::Nav(target @ NavTarget::Link(_)) = hit.target
             && !out.contains(&target)
         {
             out.push(target);
         }
     }
     out
+}
+
+/// First rendered line of `target`.
+pub fn target_line(hits: &[Hit], target: NavTarget) -> Option<usize> {
+    hits.iter()
+        .find(|hit| hit.target == HitTarget::Nav(target))
+        .map(|hit| hit.line)
 }
 
 /// Links with a hit in `[scroll, scroll + lines)`, each once.

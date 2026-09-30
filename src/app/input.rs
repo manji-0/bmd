@@ -68,12 +68,6 @@ impl App {
             }
 
             if (key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat)
-                && let Some(handled) = self.handle_outline_key(key)
-            {
-                return Ok(handled);
-            }
-
-            if (key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat)
                 && let Some(handled) = self.handle_mark_prefix_key(key)
             {
                 return Ok(handled);
@@ -228,7 +222,10 @@ impl App {
 
         if self.help_visible && self.view_state.mode().is_normal() {
             match command {
-                Command::CloseHelp | Command::SearchCancel | Command::NavReset => {
+                Command::CloseHelp
+                | Command::SearchCancel
+                | Command::NavBack
+                | Command::NavReset => {
                     self.help_visible = false;
                 }
                 Command::Quit => self.should_quit = true,
@@ -266,14 +263,13 @@ impl App {
             Command::PreviewZoomIn => self.adjust_preview_zoom(PREVIEW_ZOOM_STEP),
             Command::PreviewZoomOut => self.adjust_preview_zoom(1.0 / PREVIEW_ZOOM_STEP),
             Command::PreviewZoomReset => self.reset_preview_zoom(),
-            Command::NavBack => self.nav_back(),
+            Command::NavBack => {
+                self.clear_text_selection();
+                self.nav_back();
+            }
             Command::NavReset => {
                 self.clear_text_selection();
-                if self.outline.focused {
-                    self.unfocus_outline();
-                } else {
-                    self.nav_reset();
-                }
+                self.nav_reset();
             }
             Command::StartSearchForward => {
                 self.pending_input = PendingInput::None;
@@ -319,7 +315,7 @@ impl App {
                 self.toc_select_next();
                 Some(true)
             }
-            KeyCode::Char('N') | KeyCode::Char('p') | KeyCode::BackTab | KeyCode::Up => {
+            KeyCode::Char('N') | KeyCode::BackTab | KeyCode::Up => {
                 self.toc_select_prev();
                 Some(true)
             }

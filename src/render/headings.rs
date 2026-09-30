@@ -1,4 +1,4 @@
-//! Heading position discovery for navigation.
+//! Heading catalog for outline, yank, and in-document heading jumps.
 
 use crate::domain::{
     Block, Document, Heading, HeadingLevel, Inline, normalize_anchor_slug, slugify_heading,
@@ -7,79 +7,106 @@ use crate::domain::{
 use super::context::RenderContext;
 use super::measure::block_tops;
 
-/// Cached heading offsets for repeated j/k navigation.
+/// One outline-visible heading: layout offset plus display/jump metadata.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeadingEntry {
+    pub line_offset: usize,
+    pub level: HeadingLevel,
+    pub text: String,
+    pub slug: String,
+}
+
+/// Cached heading catalog. Line offsets depend on wrap width and checklist height.
 #[derive(Clone, Default)]
-pub struct HeadingOffsetCache {
-    key: Option<HeadingOffsetCacheKey>,
-    headings: Vec<(usize, HeadingLevel)>,
+pub struct HeadingCatalogCache {
+    key: Option<HeadingCatalogCacheKey>,
+    headings: Vec<HeadingEntry>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
-struct HeadingOffsetCacheKey {
+struct HeadingCatalogCacheKey {
     document_revision: u64,
     width: u16,
     checklist_revision: u64,
 }
 
-impl HeadingOffsetCache {
-    pub fn get_or_collect(
+impl HeadingCatalogCache {
+    pub fn refresh(
         &mut self,
         document_revision: u64,
         width: u16,
         checklist_revision: u64,
         document: &Document,
         ctx: &RenderContext,
-    ) -> &[(usize, HeadingLevel)] {
-        let key = HeadingOffsetCacheKey {
+    ) {
+        let key = HeadingCatalogCacheKey {
             document_revision,
             width,
             checklist_revision,
         };
         if self.key.as_ref() != Some(&key) {
-            self.headings = collect_heading_offsets(document, width, ctx);
+            self.headings = collect_heading_catalog(document, width, ctx);
             self.key = Some(key);
         }
+    }
+
+    pub fn entries(&self) -> &[HeadingEntry] {
         &self.headings
     }
 }
 
-/// Collect logical line offsets of each heading in document order.
-pub fn collect_heading_offsets(
+/// Collect outline-visible headings in document order.
+///
+/// Headings with empty plain text are omitted so outline indices match
+/// `[` / `]` / yank / current-section highlighting.
+pub fn collect_heading_catalog(
     document: &Document,
     width: u16,
     ctx: &RenderContext,
-) -> Vec<(usize, HeadingLevel)> {
+) -> Vec<HeadingEntry> {
     if width == 0 {
         return Vec::new();
     }
     block_tops(document, width, ctx)
-        .filter_map(|(top, block, _)| match block {
-            Block::Heading(h) => Some((top, h.level)),
-            _ => None,
+        .filter_map(|(line_offset, block, _)| {
+            let Block::Heading(h) = block else {
+                return None;
+            };
+            let text = Inline::plain_text(&h.content);
+            (!text.is_empty()).then(|| HeadingEntry {
+                line_offset,
+                level: h.level,
+                text,
+                slug: heading_anchor_slug(h),
+            })
         })
         .collect()
 }
 
 /// Next heading line strictly after `scroll`.
-pub fn next_heading_line(headings: &[(usize, HeadingLevel)], scroll: usize) -> Option<usize> {
+pub fn next_heading_line(headings: &[HeadingEntry], scroll: usize) -> Option<usize> {
     headings
         .iter()
-        .find(|(offset, _)| *offset > scroll)
-        .map(|(offset, _)| *offset)
+        .find(|heading| heading.line_offset > scroll)
+        .map(|heading| heading.line_offset)
 }
 
 /// Previous heading line strictly before `scroll`, or the first heading when at the top.
-pub fn prev_heading_line(headings: &[(usize, HeadingLevel)], scroll: usize) -> Option<usize> {
+pub fn prev_heading_line(headings: &[HeadingEntry], scroll: usize) -> Option<usize> {
     if scroll == 0 {
-        return headings.first().map(|(offset, _)| *offset);
+        return headings.first().map(|heading| heading.line_offset);
     }
     headings
         .iter()
-        .rfind(|(offset, _)| *offset < scroll)
-        .map(|(offset, _)| *offset)
+        .rfind(|heading| heading.line_offset < scroll)
+        .map(|heading| heading.line_offset)
 }
 
 /// Find a heading line offset matching a markdown anchor slug (`#section`).
+///
+/// This walks every heading block, including headings whose plain text is empty.
+/// The outline catalog omits those, so a fragment can still land on an explicit
+/// id that `[` / `]` / yank never see.
 pub fn find_heading_line_by_anchor(
     document: &Document,
     width: u16,
@@ -96,10 +123,11 @@ pub fn find_heading_line_by_anchor(
     })
 }
 
-fn heading_anchor_slug(heading: &Heading) -> String {
+pub(crate) fn heading_anchor_slug(heading: &Heading) -> String {
     heading
         .anchor
         .as_ref()
+        .filter(|anchor| !anchor.is_empty())
         .map(|anchor| normalize_anchor_slug(anchor))
         .unwrap_or_else(|| slugify_heading(&Inline::plain_text(&heading.content)))
 }
@@ -107,12 +135,11 @@ fn heading_anchor_slug(heading: &Heading) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::{ChecklistState, ChecklistStyle, TerminalSize, ViewState};
+    use crate::render::{RenderContext, SyntaxAssets, Theme};
 
     #[test]
-    fn heading_offset_cache_reuses_collected_offsets() {
-        use crate::domain::TerminalSize;
-        use crate::render::{HeadingOffsetCache, RenderContext, SyntaxAssets, Theme};
-
+    fn heading_catalog_cache_reuses_collected_entries() {
         let document = Document {
             blocks: vec![
                 crate::domain::Block::Heading(crate::domain::Heading {
@@ -132,9 +159,8 @@ mod tests {
             footnote_order: vec![],
             front_matter: None,
         };
-        let view_state = crate::domain::ViewState::new(TerminalSize::new(80, 24).unwrap());
-        let checklist_state =
-            crate::domain::ChecklistState::new(crate::domain::ChecklistStyle::Unicode);
+        let view_state = ViewState::new(TerminalSize::new(80, 24).unwrap());
+        let checklist_state = ChecklistState::new(ChecklistStyle::Unicode);
         let theme = Theme::default();
         let syntax_assets = SyntaxAssets::new();
         let ctx = RenderContext::new(
@@ -144,15 +170,56 @@ mod tests {
             &view_state,
             &checklist_state,
         );
-        let mut cache = HeadingOffsetCache::default();
-        let first = cache
-            .get_or_collect(0, 80, checklist_state.revision(), &document, &ctx)
-            .to_vec();
-        let second = cache
-            .get_or_collect(0, 80, checklist_state.revision(), &document, &ctx)
-            .to_vec();
+        let mut cache = HeadingCatalogCache::default();
+        cache.refresh(0, 80, checklist_state.revision(), &document, &ctx);
+        let first = cache.entries().to_vec();
+        cache.refresh(0, 80, checklist_state.revision(), &document, &ctx);
+        let second = cache.entries();
         assert_eq!(first, second);
         assert_eq!(first.len(), 2);
+        assert_eq!(first[0].slug, "one");
+        assert_eq!(first[1].slug, "two");
+    }
+
+    #[test]
+    fn catalog_skips_empty_heading_text() {
+        let document = Document {
+            blocks: vec![
+                crate::domain::Block::Heading(crate::domain::Heading {
+                    level: crate::domain::HeadingLevel::H1,
+                    content: vec![],
+                    anchor: Some("empty-id".into()),
+                }),
+                crate::domain::Block::Heading(crate::domain::Heading {
+                    level: crate::domain::HeadingLevel::H2,
+                    content: vec![crate::domain::Inline::Text("Kept".into())],
+                    anchor: None,
+                }),
+            ],
+            links: vec![],
+            mermaid_diagrams: vec![],
+            footnotes: vec![],
+            footnote_order: vec![],
+            front_matter: None,
+        };
+        let view_state = ViewState::new(TerminalSize::new(80, 24).unwrap());
+        let checklist_state = ChecklistState::new(ChecklistStyle::Unicode);
+        let theme = Theme::default();
+        let syntax_assets = SyntaxAssets::new();
+        let ctx = RenderContext::new(
+            &theme,
+            &syntax_assets,
+            &document.links,
+            &view_state,
+            &checklist_state,
+        );
+        let catalog = collect_heading_catalog(&document, 80, &ctx);
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].text, "Kept");
+        assert_eq!(
+            find_heading_line_by_anchor(&document, 80, &ctx, "empty-id"),
+            Some(0)
+        );
     }
 
     #[test]

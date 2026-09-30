@@ -31,6 +31,11 @@ impl MarkName {
 }
 
 /// Session scroll marks for the current document.
+///
+/// Values are logical layout-line offsets at the wrap width when the mark was
+/// set. A later wrap or outline-width change can land the same offset on a
+/// different heading; jumps clamp to the current max scroll. Reload clears
+/// marks because the document identity changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Marks {
     slots: [Option<usize>; 26],

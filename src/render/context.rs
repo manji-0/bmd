@@ -5,7 +5,7 @@ use syntect::parsing::SyntaxSet;
 
 use crate::domain::{ChecklistState, FootnoteId, LinkId, ViewState};
 
-use super::search_state::{active_search_match_line_offset, active_search_query};
+use super::search_state::{active_search_match_line_offset, render_search_query};
 use super::syntax::SyntaxAssets;
 use super::theme::Theme;
 
@@ -42,8 +42,14 @@ impl<'a> RenderContext<'a> {
             links,
             selected_link: view_state.selected_link(),
             selected_footnote: view_state.selected_footnote(),
-            search_query: active_search_query(view_state.normal_search()),
-            selected_match_line_offset: active_search_match_line_offset(view_state.normal_search()),
+            // Live `/`/`?` input highlights matches while typing; selected emphasis
+            // only applies after Enter confirms into NormalSearch::Active.
+            search_query: render_search_query(view_state),
+            selected_match_line_offset: if view_state.mode().is_search_input() {
+                None
+            } else {
+                active_search_match_line_offset(view_state.normal_search())
+            },
             checklist_state,
             nav_probe: false,
         }

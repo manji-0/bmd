@@ -17,10 +17,6 @@ impl<T> PriorAtLinkJump<T> {
     pub fn into_inner(self) -> T {
         self.0
     }
-
-    pub fn as_inner(&self) -> &T {
-        &self.0
-    }
 }
 
 /// Stack is full; another link jump would exceed [`LinkJumpStack::max_layers`].
@@ -41,10 +37,13 @@ pub struct LinkJumpStack<T> {
 }
 
 impl<T> LinkJumpStack<T> {
+    /// `max_layers` counts the live current item as layer 1. Values below 1
+    /// are treated as 1 (origin only, no stored priors).
     pub fn with_max_layers(max_layers: usize) -> Self {
+        let max_frames = max_layers.max(1).saturating_sub(1);
         Self {
-            priors: Vec::new(),
-            max_frames: max_layers.saturating_sub(1),
+            priors: Vec::with_capacity(max_frames),
+            max_frames,
         }
     }
 
@@ -64,12 +63,15 @@ impl<T> LinkJumpStack<T> {
     }
 
     /// Store the position/document fixed at this link jump.
+    ///
+    /// On overflow the prior is returned so callers that moved unique state
+    /// into it can put that state back.
     pub fn fix_prior_on_link_jump(
         &mut self,
         prior: PriorAtLinkJump<T>,
-    ) -> Result<(), LinkJumpStackFull> {
+    ) -> Result<(), (LinkJumpStackFull, PriorAtLinkJump<T>)> {
         if self.fixed_prior_count() >= self.max_frames {
-            return Err(LinkJumpStackFull);
+            return Err((LinkJumpStackFull, prior));
         }
         self.priors.push(prior);
         Ok(())
@@ -83,27 +85,37 @@ impl<T> LinkJumpStack<T> {
             .ok_or(LinkJumpStackEmpty)
     }
 
-    pub fn reset_to_oldest_prior(&mut self) -> Result<T, LinkJumpStackEmpty>
-    where
-        T: Clone,
-    {
-        let origin = self
-            .priors
-            .first()
-            .map(|prior| prior.as_inner().clone())
-            .ok_or(LinkJumpStackEmpty)?;
-        self.priors.clear();
-        Ok(origin)
+    /// Take every fixed prior, oldest first. The live current item stays outside.
+    pub fn take_all_priors(&mut self) -> Vec<T> {
+        std::mem::take(&mut self.priors)
+            .into_iter()
+            .map(PriorAtLinkJump::into_inner)
+            .collect()
     }
 
-    /// Take the oldest fixed prior and clear the rest without cloning it.
-    pub fn take_oldest_prior(&mut self) -> Result<T, LinkJumpStackEmpty> {
-        if self.priors.is_empty() {
-            return Err(LinkJumpStackEmpty);
-        }
-        let origin = PriorAtLinkJump::into_inner(self.priors.remove(0));
-        self.priors.clear();
-        Ok(origin)
+    /// Replace the stored priors. Extra values beyond [`Self::max_frames`] are dropped
+    /// (oldest kept). Callers should pass a list previously taken from this stack.
+    pub fn restore_priors(&mut self, values: Vec<T>) {
+        debug_assert!(
+            values.len() <= self.max_frames,
+            "restored prior count exceeds stack capacity"
+        );
+        self.priors = values
+            .into_iter()
+            .take(self.max_frames)
+            .map(PriorAtLinkJump::fix)
+            .collect();
+    }
+
+    /// Take the oldest (origin) prior and discard every newer prior.
+    ///
+    /// Used for reset-to-origin of Copy-sized stacks. Do not use this for
+    /// nested-file restore — that must keep intermediate frames via
+    /// [`Self::take_all_priors`].
+    pub fn take_origin_prior(&mut self) -> Result<T, LinkJumpStackEmpty> {
+        let mut iter = std::mem::take(&mut self.priors).into_iter();
+        let origin = iter.next().ok_or(LinkJumpStackEmpty)?;
+        Ok(origin.into_inner())
     }
 
     pub fn clear_priors(&mut self) {
@@ -139,7 +151,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_returns_oldest_fixed_prior() {
+    fn take_origin_prior_discards_newer_priors() {
         let mut stack = LinkJumpStack::with_max_layers(4);
         stack
             .fix_prior_on_link_jump(PriorAtLinkJump::fix(10))
@@ -147,12 +159,21 @@ mod tests {
         stack
             .fix_prior_on_link_jump(PriorAtLinkJump::fix(20))
             .unwrap();
-        assert_eq!(stack.reset_to_oldest_prior(), Ok(10));
+        assert_eq!(stack.take_origin_prior(), Ok(10));
         assert!(stack.is_at_origin());
     }
 
     #[test]
-    fn take_oldest_prior_moves_without_clone() {
+    fn zero_max_layers_is_origin_only() {
+        let mut stack = LinkJumpStack::with_max_layers(0);
+        assert_eq!(
+            stack.fix_prior_on_link_jump(PriorAtLinkJump::fix(1)),
+            Err((LinkJumpStackFull, PriorAtLinkJump::fix(1)))
+        );
+    }
+
+    #[test]
+    fn take_all_priors_preserves_order_for_rollback() {
         let mut stack = LinkJumpStack::with_max_layers(4);
         stack
             .fix_prior_on_link_jump(PriorAtLinkJump::fix(10))
@@ -160,8 +181,13 @@ mod tests {
         stack
             .fix_prior_on_link_jump(PriorAtLinkJump::fix(20))
             .unwrap();
-        assert_eq!(stack.take_oldest_prior(), Ok(10));
+        let taken = stack.take_all_priors();
+        assert_eq!(taken, vec![10, 20]);
         assert!(stack.is_at_origin());
+        stack.restore_priors(taken);
+        assert_eq!(stack.fixed_prior_count(), 2);
+        assert_eq!(stack.restore_latest_prior(), Ok(20));
+        assert_eq!(stack.restore_latest_prior(), Ok(10));
     }
 
     #[test]
@@ -176,7 +202,7 @@ mod tests {
         assert_eq!(stack.current_layer(), 3);
         assert_eq!(
             stack.fix_prior_on_link_jump(PriorAtLinkJump::fix(3)),
-            Err(LinkJumpStackFull)
+            Err((LinkJumpStackFull, PriorAtLinkJump::fix(3)))
         );
     }
 }

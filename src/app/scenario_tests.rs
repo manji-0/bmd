@@ -147,7 +147,7 @@ fn keyboard_tour_visits_every_mode_on_every_sample() {
 
         h.keys("h");
         assert!(h.app.help_visible, "{name}: help");
-        h.keys("H");
+        h.key(KeyCode::Esc);
         assert!(!h.app.help_visible, "{name}: close help");
 
         h.keys("/b");

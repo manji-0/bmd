@@ -78,7 +78,6 @@ impl App {
             } else {
                 self.text_selection = Some(TextSelection::new(drag.anchor, drag.cursor));
             }
-            self.copy_text_selection()?;
             return Ok(true);
         }
 
@@ -102,7 +101,6 @@ impl App {
             return false;
         };
         self.outline.selected = index;
-        self.outline.focused = true;
         self.jump_to_outline_heading();
         true
     }
@@ -156,7 +154,11 @@ impl App {
                 self.open_link_by_id(link_id);
                 Ok(true)
             }
-            _ => Ok(false),
+            Some(HitTarget::Nav(NavTarget::Footnote(footnote_id))) => {
+                self.open_footnote(footnote_id);
+                Ok(true)
+            }
+            None => Ok(false),
         }
     }
 

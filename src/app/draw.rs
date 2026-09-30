@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use crate::domain::{PreviewKind, PreviewLoadStatus, SearchDirection, UiMode};
+use crate::domain::{PreviewKind, PreviewLoadStatus, UiMode};
 use crate::error::AppError;
 use crate::render::{
     CachedMarkdownView, RenderContext, footnote_preview_title, paint_selection_overlay,
@@ -78,22 +78,22 @@ impl App {
 
             let status = format_status_bar(StatusBarInput {
                 source_label: self.source_label.as_deref(),
+                document: &self.document,
                 view_state: &self.view_state,
                 max_scroll: self.max_scroll(),
                 doc_stack_depth: self.doc_stack.len_frames(),
                 status_message: self.status_message.as_deref(),
                 outline_visible: self.outline.visible,
-                outline_focused: self.outline.focused,
                 pending_prompt: self.pending_input.prompt(),
             });
             draw_status_bar(f, areas.status, status);
 
             if let UiMode::SearchInput { direction, query } = self.view_state.mode() {
-                let prefix = match direction {
-                    SearchDirection::Forward => "/",
-                    SearchDirection::Backward => "?",
-                };
-                let prompt = format!("{}{}", prefix, query);
+                let prompt = super::search::format_search_prompt(
+                    *direction,
+                    query,
+                    self.live_search_match_count,
+                );
                 let para = Paragraph::new(prompt);
                 f.render_widget(para, areas.prompt);
             }
@@ -201,8 +201,13 @@ impl App {
         }
     }
 
-    fn draw_toc_preview(&self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
-        let entries = self.collect_toc_entries();
+    fn draw_toc_preview(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+        self.refresh_heading_catalog();
+        let selected = self.preview.toc_selected;
+        let normal_style = self.theme.text;
+        let selected_style = self.theme.link_selected;
+        let prefix_style = Style::default().add_modifier(Modifier::DIM);
+        let entries = self.heading_cache.entries();
         let popup = crate::render::centered_rect(
             crate::render::PREVIEW_POPUP_PERCENT,
             crate::render::PREVIEW_POPUP_PERCENT,
@@ -218,26 +223,21 @@ impl App {
             return;
         }
 
-        let selected = self.preview.toc_selected;
-        let normal_style = self.theme.text;
-        let selected_style = self.theme.link_selected;
-        let prefix_style = Style::default().add_modifier(Modifier::DIM);
-
         let lines: Vec<Line> = entries
             .iter()
             .enumerate()
-            .map(|(i, (level, text, _slug))| {
-                let indent = "  ".repeat(level.as_u8().saturating_sub(1) as usize);
-                let prefix = level.prefix();
+            .map(|(i, entry)| {
+                let indent = "  ".repeat(entry.level.as_u8().saturating_sub(1) as usize);
+                let prefix = entry.level.prefix();
                 if i == selected {
                     Line::from(vec![
                         Span::styled(format!("{indent}{prefix}"), selected_style),
-                        Span::styled(text.as_str(), selected_style),
+                        Span::styled(entry.text.as_str(), selected_style),
                     ])
                 } else {
                     Line::from(vec![
                         Span::styled(format!("{indent}{prefix}"), prefix_style),
-                        Span::styled(text.as_str(), normal_style),
+                        Span::styled(entry.text.as_str(), normal_style),
                     ])
                 }
             })

@@ -40,7 +40,7 @@ use crate::domain::{
 use crate::error::AppError;
 use crate::keymap::Keymap;
 use crate::render::{
-    DocumentRenderCache, HeadingOffsetCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
+    DocumentRenderCache, HeadingCatalogCache, RenderContext, RenderedDocument, SyntaxAssets, Theme,
 };
 
 use doc_stack::DocStack;
@@ -91,6 +91,8 @@ pub struct App {
     help_visible: bool,
     status_message: Option<String>,
     status_message_until: Option<Instant>,
+    /// Live match count while typing `/`/`?` (`None` when not applicable).
+    live_search_match_count: Option<usize>,
     picker: Picker,
     pub(crate) file_watch: Option<FileWatch>,
     next_reload_poll: Instant,
@@ -110,7 +112,7 @@ pub struct App {
     selection_drag: Option<checklist::SelectionDrag>,
     last_prefetch_viewport: Option<PrefetchViewportKey>,
     document_revision: u64,
-    heading_cache: HeadingOffsetCache,
+    heading_cache: HeadingCatalogCache,
     pub(crate) github_auth: Option<crate::github::GitHubAuth>,
     should_quit: bool,
     #[cfg(test)]
@@ -190,6 +192,7 @@ impl App {
             help_visible: false,
             status_message: None,
             status_message_until: None,
+            live_search_match_count: None,
             picker,
             file_watch,
             next_reload_poll: now,
@@ -205,7 +208,7 @@ impl App {
             selection_drag: None,
             last_prefetch_viewport: None,
             document_revision: 0,
-            heading_cache: HeadingOffsetCache::default(),
+            heading_cache: HeadingCatalogCache::default(),
             github_auth: None,
             should_quit: false,
             #[cfg(test)]
@@ -299,7 +302,7 @@ impl App {
         self.document_revision = self.document_revision.wrapping_add(1);
     }
 
-    pub(crate) fn heading_offsets(&mut self) -> Vec<(usize, crate::domain::HeadingLevel)> {
+    pub(crate) fn refresh_heading_catalog(&mut self) {
         let document_revision = self.document_revision;
         let width = self.document_width();
         let checklist_revision = self.checklist_state.revision();
@@ -310,15 +313,13 @@ impl App {
             &self.view_state,
             &self.checklist_state,
         );
-        self.heading_cache
-            .get_or_collect(
-                document_revision,
-                width,
-                checklist_revision,
-                &self.document,
-                &ctx,
-            )
-            .to_vec()
+        self.heading_cache.refresh(
+            document_revision,
+            width,
+            checklist_revision,
+            &self.document,
+            &ctx,
+        );
     }
 
     /// Content width available for document wrapping (excludes outline sidebar).

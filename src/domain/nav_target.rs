@@ -1,8 +1,11 @@
-//! In-document navigation targets (links and footnote references).
+//! In-document navigation targets (links; footnotes via click/selection only).
 
 use super::{FootnoteId, LinkId};
 
 /// A selectable in-document navigation target.
+///
+/// Keyboard `n`/`N` cycling uses links only. Footnotes remain a `NavTarget` so
+/// click selection and status labeling can still identify them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NavTarget {
     Link(LinkId),

@@ -272,6 +272,16 @@ impl<S: PreviewSource> PreviewLoadSession<S> {
         (session, applied, spawns)
     }
 
+    /// Move this session into a snapshot and leave an empty session at the next
+    /// generation so in-flight completions for the captured document are stale.
+    pub fn detach_snapshot(self) -> (Self, PreviewSessionSnapshot<S>) {
+        let live = Self {
+            generation: self.generation.next(),
+            ..Self::default()
+        };
+        (live, self.suspend())
+    }
+
     /// Re-queue in-flight tasks before pushing this document onto the navigation stack.
     pub fn suspend(mut self) -> PreviewSessionSnapshot<S> {
         for (link_id, task) in &mut self.tasks {
@@ -542,6 +552,20 @@ mod tests {
         assert_eq!(spawns[0].link_id, LinkId(0));
         assert_eq!(status(&session, 1), PreviewLoadStatus::Ready);
         assert!(session.has_in_flight());
+    }
+
+    #[test]
+    fn detach_snapshot_makes_in_flight_completions_stale_until_resume() {
+        let doc = document(1, 0);
+        let (session, spawns) = MermaidSession::default().request(LinkId(0), &doc, false);
+        let generation = spawns[0].generation;
+        let (live, snapshot) = session.detach_snapshot();
+        assert!(!live.has_in_flight());
+        let (_, applied) = complete(live, &spawns[0], Ok(()), &doc);
+        assert!(applied.is_stale());
+        let (restored, resumed) = MermaidSession::resume(snapshot, &doc, |_| false);
+        assert_eq!(resumed[0].generation, generation);
+        assert_eq!(status(&restored, 0), PreviewLoadStatus::Loading);
     }
 
     #[test]

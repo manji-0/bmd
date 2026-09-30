@@ -1,8 +1,9 @@
 //! Layered back/reset navigation: anchor stack before document stack.
 //!
-//! Back (`O`) and reset (`Esc`) always consult the anchor stack first. Document
-//! navigation applies only after the anchor stack top layer is current (no pending
-//! anchor link jumps).
+//! Default keys Esc and `O` both step back one layer (`plan_back`). Optional
+//! full drain uses `plan_reset` (`nav_reset` in config; unbound by default).
+//! Both plans consult the anchor stack first. Document navigation applies only
+//! after the anchor stack top layer is current (no pending anchor link jumps).
 
 use super::NavStack;
 
@@ -20,66 +21,37 @@ impl AnchorIdle {
     }
 }
 
-/// Active navigation layer for the next back/reset command.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NavLayer {
-    /// Consume or reset in-document anchor jumps.
-    Anchor,
-    /// Pop or reset the nested document stack.
-    Document,
-}
-
-/// Planned back (`O`) step before mutating application state.
+/// Planned back (`Esc` / `O`) step before mutating application state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavBackPlan {
     AnchorStep,
-    DocumentStep,
+    DocumentStep(AnchorIdle),
     Idle,
 }
 
-/// Planned reset (`Esc`) step before mutating application state.
+/// Planned full reset (`nav_reset`) step before mutating application state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavResetPlan {
     AnchorReset,
-    DocumentReset,
+    DocumentReset(AnchorIdle),
     Idle,
 }
 
 /// Resolve which layer handles the next back command.
 pub fn plan_back(anchor: &NavStack, document_depth: usize) -> NavBackPlan {
-    match active_layer(anchor) {
-        NavLayer::Anchor => NavBackPlan::AnchorStep,
-        NavLayer::Document if document_depth > 0 => NavBackPlan::DocumentStep,
-        NavLayer::Document => NavBackPlan::Idle,
+    match AnchorIdle::from_stack(anchor) {
+        None => NavBackPlan::AnchorStep,
+        Some(idle) if document_depth > 0 => NavBackPlan::DocumentStep(idle),
+        Some(_) => NavBackPlan::Idle,
     }
 }
 
 /// Resolve which layer handles the next reset command.
 pub fn plan_reset(anchor: &NavStack, document_depth: usize) -> NavResetPlan {
-    match active_layer(anchor) {
-        NavLayer::Anchor => NavResetPlan::AnchorReset,
-        NavLayer::Document if document_depth > 0 => NavResetPlan::DocumentReset,
-        NavLayer::Document => NavResetPlan::Idle,
-    }
-}
-
-/// Document back is valid only with an idle anchor stack and a non-empty file stack.
-pub fn plan_document_back(idle: AnchorIdle, document_depth: usize) -> Option<()> {
-    let _ = idle;
-    (document_depth > 0).then_some(())
-}
-
-/// Document reset is valid only with an idle anchor stack and a non-empty file stack.
-pub fn plan_document_reset(idle: AnchorIdle, document_depth: usize) -> Option<()> {
-    let _ = idle;
-    (document_depth > 0).then_some(())
-}
-
-fn active_layer(anchor: &NavStack) -> NavLayer {
-    if anchor.is_empty() {
-        NavLayer::Document
-    } else {
-        NavLayer::Anchor
+    match AnchorIdle::from_stack(anchor) {
+        None => NavResetPlan::AnchorReset,
+        Some(idle) if document_depth > 0 => NavResetPlan::DocumentReset(idle),
+        Some(_) => NavResetPlan::Idle,
     }
 }
 
@@ -103,10 +75,8 @@ mod tests {
     fn document_layer_requires_idle_anchor() {
         let anchor = NavStack::default();
         let idle = AnchorIdle::from_stack(&anchor).unwrap();
-        assert_eq!(plan_back(&anchor, 2), NavBackPlan::DocumentStep);
-        assert_eq!(plan_reset(&anchor, 2), NavResetPlan::DocumentReset);
-        assert!(plan_document_back(idle, 2).is_some());
-        assert!(plan_document_reset(idle, 2).is_some());
+        assert_eq!(plan_back(&anchor, 2), NavBackPlan::DocumentStep(idle));
+        assert_eq!(plan_reset(&anchor, 2), NavResetPlan::DocumentReset(idle));
     }
 
     #[test]
@@ -126,7 +96,6 @@ mod tests {
         let origin = anchor.step_reset().unwrap();
         assert_eq!(origin, 5);
         let idle = AnchorIdle::from_stack(&anchor).unwrap();
-        assert_eq!(plan_reset(&anchor, 2), NavResetPlan::DocumentReset);
-        assert!(plan_document_reset(idle, 2).is_some());
+        assert_eq!(plan_reset(&anchor, 2), NavResetPlan::DocumentReset(idle));
     }
 }

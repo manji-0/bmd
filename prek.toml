@@ -24,7 +24,7 @@ hooks = [
     id = "cargo-clippy",
     name = "cargo clippy",
     language = "system",
-    entry = "cargo clippy --all-targets -- -D warnings",
+    entry = "cargo clippy --all-targets --locked -- -D warnings",
     types = ["rust"],
     pass_filenames = false,
     env = { RUSTFLAGS = "-C linker=clang" },

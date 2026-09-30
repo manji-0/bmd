@@ -1,7 +1,10 @@
 use super::blocks::render_code_block;
 use super::document::render_document;
-use super::headings::collect_heading_offsets;
-use super::hits::{Hit, HitTarget, collect_hits, hit_at, visible_links, visible_nav_targets};
+use super::headings::collect_heading_catalog;
+use super::hits::{
+    Hit, HitTarget, collect_hits, hit_at, nav_targets, target_line, visible_links,
+    visible_nav_targets,
+};
 use super::inline::{highlight_span, highlight_text, inlines_to_text, inlines_to_wrapped_lines};
 use super::measure::measure_block_height;
 use super::measure::measure_code_block_height;
@@ -89,6 +92,25 @@ fn wrapped_line_count(line: &Line, width: usize) -> usize {
 
 fn find_matches(document: &Document, width: u16, query: &str) -> Vec<SearchMatch> {
     find_search_matches(document, width, query, &test_render_context())
+}
+
+#[test]
+fn render_context_highlights_while_typing_search_input() {
+    let theme = Theme::default();
+    let syntax_assets = SyntaxAssets::new();
+    let links: &[Link] = &[];
+    let checklist_state = ChecklistState::new(ChecklistStyle::Unicode);
+    let size = TerminalSize::new(80, 24).unwrap();
+    let view_state = ViewState::new(size)
+        .start_search(SearchDirection::Forward)
+        .append_search_input('n')
+        .unwrap()
+        .append_search_input('e')
+        .unwrap();
+
+    let ctx = RenderContext::new(&theme, &syntax_assets, links, &view_state, &checklist_state);
+    assert_eq!(ctx.search_query.as_deref(), Some("ne"));
+    assert_eq!(ctx.selected_match_line_offset, None);
 }
 
 #[test]
@@ -717,13 +739,13 @@ fn render_table_row_width_matches_frame_when_content_overflows() {
 }
 
 #[test]
-fn collect_heading_offsets_finds_each_heading() {
+fn collect_heading_catalog_finds_each_heading() {
     let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
     let ctx = test_render_context();
-    let headings = collect_heading_offsets(&doc, 80, &ctx);
+    let headings = collect_heading_catalog(&doc, 80, &ctx);
     assert_eq!(headings.len(), 2);
-    assert_eq!(headings[0].1, HeadingLevel::H1);
-    assert!(headings[1].0 > headings[0].0);
+    assert_eq!(headings[0].level, HeadingLevel::H1);
+    assert!(headings[1].line_offset > headings[0].line_offset);
 }
 
 #[test]
@@ -750,11 +772,14 @@ fn heading_navigation_picks_adjacent_sections() {
     )
     .unwrap();
     let ctx = test_render_context();
-    let headings = collect_heading_offsets(&doc, 80, &ctx);
-    assert_eq!(next_heading_line(&headings, 0), Some(headings[1].0));
+    let headings = collect_heading_catalog(&doc, 80, &ctx);
     assert_eq!(
-        prev_heading_line(&headings, headings[1].0),
-        Some(headings[0].0)
+        next_heading_line(&headings, 0),
+        Some(headings[1].line_offset)
+    );
+    assert_eq!(
+        prev_heading_line(&headings, headings[1].line_offset),
+        Some(headings[0].line_offset)
     );
 }
 
@@ -765,7 +790,7 @@ fn find_heading_line_by_anchor_matches_slug() {
     assert_eq!(slugify_heading("Hello World"), "hello-world");
     assert_eq!(
         find_heading_line_by_anchor(&doc, 80, &ctx, "foo-bar"),
-        Some(collect_heading_offsets(&doc, 80, &ctx)[1].0)
+        Some(collect_heading_catalog(&doc, 80, &ctx)[1].line_offset)
     );
 }
 
@@ -775,7 +800,7 @@ fn find_heading_line_by_anchor_uses_explicit_id() {
     let ctx = test_render_context();
     assert_eq!(
         find_heading_line_by_anchor(&doc, 80, &ctx, "custom-anchor"),
-        Some(collect_heading_offsets(&doc, 80, &ctx)[0].0)
+        Some(collect_heading_catalog(&doc, 80, &ctx)[0].line_offset)
     );
     assert_eq!(
         find_heading_line_by_anchor(&doc, 80, &ctx, "hello-world"),
@@ -869,7 +894,7 @@ fn footnote_nav_collects_reference_and_definition_lines() {
 }
 
 #[test]
-fn collect_visible_nav_targets_orders_links_and_footnotes() {
+fn collect_nav_targets_excludes_footnotes() {
     let doc = Document::new(
         vec![Block::Paragraph(vec![
             Inline::FootnoteReference(FootnoteId(0), 1),
@@ -890,14 +915,65 @@ fn collect_visible_nav_targets_orders_links_and_footnotes() {
         None,
     )
     .unwrap();
-    let visible = visible_nav_targets(&hits(&doc), 0, 10);
+    let hits = hits(&doc);
+    let targets = nav_targets(&hits);
+    assert_eq!(targets, vec![NavTarget::Link(LinkId(0))]);
+    assert_eq!(visible_nav_targets(&hits, 0, 10), targets);
+    let hit = hits
+        .iter()
+        .find(|hit| hit.target == HitTarget::Nav(NavTarget::Footnote(FootnoteId(0))))
+        .unwrap();
     assert_eq!(
-        visible,
-        vec![
-            NavTarget::Footnote(FootnoteId(0)),
-            NavTarget::Link(LinkId(0))
-        ]
+        hit_at(&hits, hit.line, hit.x),
+        Some(HitTarget::Nav(NavTarget::Footnote(FootnoteId(0))))
     );
+}
+
+#[test]
+fn collect_nav_targets_includes_offscreen_links() {
+    let doc = Document::new(
+        vec![
+            Block::Paragraph(vec![Inline::Link(
+                LinkId(0),
+                vec![Inline::Text("top".into())],
+            )]),
+            Block::Paragraph(vec![Inline::Text("filler".into())]),
+            Block::Paragraph(vec![Inline::Link(
+                LinkId(1),
+                vec![Inline::Text("bottom".into())],
+            )]),
+        ],
+        vec![
+            Link {
+                url: LinkUrl::new("https://a".into()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            },
+            Link {
+                url: LinkUrl::new("https://b".into()).unwrap(),
+                title: None,
+                kind: LinkKind::Web,
+            },
+        ],
+        vec![],
+        vec![],
+        vec![],
+        None,
+    )
+    .unwrap();
+    let hits = hits(&doc);
+    let top_line = target_line(&hits, NavTarget::Link(LinkId(0))).unwrap();
+    let bottom_line = target_line(&hits, NavTarget::Link(LinkId(1))).unwrap();
+    assert!(bottom_line > top_line);
+
+    let all = nav_targets(&hits);
+    assert_eq!(
+        all,
+        vec![NavTarget::Link(LinkId(0)), NavTarget::Link(LinkId(1))]
+    );
+
+    let visible = visible_nav_targets(&hits, top_line, 1);
+    assert_eq!(visible, vec![NavTarget::Link(LinkId(0))]);
 }
 
 #[test]

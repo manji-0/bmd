@@ -27,7 +27,7 @@
 | テキスト幅 | `unicode-width`, `unicode-segmentation` | CJK 対応の幅計算。 |
 | 設定 | `toml` + `serde` | `~/.config/bmd/config.toml`。 |
 | クリップボード | `arboard` | yank。 |
-| GitHub fetch | `ureq` | blob / PR を HTTP で取得。 |
+| GitHub fetch | `ureq` | blob を HTTP で取得（PR listing は `--pr-listing` のときのみ）。 |
 
 ### mermaid 表示戦略
 
@@ -55,7 +55,7 @@ src/
 ├── fs.rs            # DocumentFs の std::fs アダプタ
 ├── keymap.rs        # Command とキー解決（config を import しない）
 ├── config.rs        # TOML → Theme + Keymap
-├── github/          # url（純粋）/ fetch（HTTP）/ listing / rewrite
+├── github/          # url（純粋）/ fetch（HTTP）/ listing（`--pr-listing`）/ rewrite
 ├── browser.rs       # open / xdg-open
 ├── clipboard.rs     # yank アダプタ
 └── error.rs         # AppError

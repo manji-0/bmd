@@ -2,8 +2,8 @@
 
 use crate::browser::open_link;
 use crate::domain::{
-    AnchorIdle, AnchorStackEmpty, AnchorStackFull, FixedScrollPrior, NavBackPlan, NavResetPlan,
-    anchor_stack_limit_message, plan_back, plan_document_back, plan_document_reset, plan_reset,
+    AnchorStackEmpty, AnchorStackFull, FixedScrollPrior, NavBackPlan, NavResetPlan,
+    anchor_stack_limit_message, plan_back, plan_reset,
 };
 use crate::render::{find_heading_line_by_anchor, next_heading_line, prev_heading_line};
 
@@ -48,37 +48,50 @@ impl App {
     }
 
     pub(crate) fn next_link(&mut self) {
-        let visible = self.visible_nav_targets();
-        self.view_state = self.view_state.clone().select_next_nav_in(&visible);
+        let targets = self.document_nav_targets();
+        self.view_state = self.view_state.clone().select_next_nav_in(&targets);
+        self.scroll_to_selected_nav();
         self.maybe_warm_selected_preview();
     }
 
     pub(crate) fn prev_link(&mut self) {
-        let visible = self.visible_nav_targets();
-        self.view_state = self.view_state.clone().select_prev_nav_in(&visible);
+        let targets = self.document_nav_targets();
+        self.view_state = self.view_state.clone().select_prev_nav_in(&targets);
+        self.scroll_to_selected_nav();
         self.maybe_warm_selected_preview();
     }
 
-    pub(crate) fn visible_nav_targets(&mut self) -> Vec<crate::domain::NavTarget> {
-        let scroll = self.view_state.scroll().offset();
-        let lines = self.content_height() as usize;
-        crate::render::visible_nav_targets(self.hits(), scroll, lines)
+    fn document_nav_targets(&mut self) -> Vec<crate::domain::NavTarget> {
+        crate::render::nav_targets(self.hits())
+    }
+
+    fn scroll_to_selected_nav(&mut self) {
+        let Some(target) = self.view_state.selected_nav() else {
+            return;
+        };
+        if let Some(line) = crate::render::target_line(self.hits(), target) {
+            self.scroll_to_line(line);
+        }
     }
 
     pub(crate) fn next_heading(&mut self) {
-        let headings = self.heading_offsets();
+        self.refresh_heading_catalog();
         let scroll = self.view_state.scroll().offset();
-        if let Some(line) = next_heading_line(&headings, scroll) {
+        let line = {
+            let headings = self.heading_cache.entries();
+            next_heading_line(headings, scroll)
+                .or_else(|| headings.last().map(|heading| heading.line_offset))
+        };
+        if let Some(line) = line {
             self.scroll_to_line(line);
-        } else if let Some((line, _)) = headings.last() {
-            self.scroll_to_line(*line);
         }
     }
 
     pub(crate) fn prev_heading(&mut self) {
-        let headings = self.heading_offsets();
+        self.refresh_heading_catalog();
         let scroll = self.view_state.scroll().offset();
-        if let Some(line) = prev_heading_line(&headings, scroll) {
+        let line = prev_heading_line(self.heading_cache.entries(), scroll);
+        if let Some(line) = line {
             self.scroll_to_line(line);
         }
     }
@@ -94,7 +107,7 @@ impl App {
             return;
         }
         let Some(id) = self.view_state.selected_link() else {
-            self.set_status_message("no link or footnote selected — press n to select".into());
+            self.set_status_message("no link selected — press n to select".into());
             return;
         };
         let Some(link) = self.document.links.get(id.0).cloned() else {
@@ -164,40 +177,26 @@ impl App {
     }
 
     /// Pop one scroll position from the anchor stack, or the previous document.
+    ///
+    /// Esc and `O` share this one-step back model. Status reports the destination
+    /// (`back → file.md` / `back → previous position`).
     pub(crate) fn nav_back(&mut self) {
-        let document_depth = self.doc_stack.len_frames();
-        match plan_back(&self.nav_stack, document_depth) {
+        match plan_back(&self.nav_stack, self.doc_stack.len_frames()) {
             NavBackPlan::AnchorStep => self.apply_anchor_back(),
-            NavBackPlan::DocumentStep => {
-                let Some(idle) = AnchorIdle::from_stack(&self.nav_stack) else {
-                    return;
-                };
-                let Some(()) = plan_document_back(idle, document_depth) else {
-                    return;
-                };
-                self.doc_back(idle);
-            }
-            NavBackPlan::Idle => self.set_status_message("navigation stack empty".into()),
+            NavBackPlan::DocumentStep(idle) => self.doc_back(idle),
+            NavBackPlan::Idle => self.set_status_message("nothing to go back to".into()),
         }
     }
 
     /// Reset the anchor stack, or return to the root document on the file stack.
     ///
-    /// Anchor jumps must be fully reset before the document stack is consulted.
+    /// Not bound by default (Esc/`O` step back one layer). Remap `nav_reset` in
+    /// config when a full drain is wanted. Anchor jumps reset before documents.
     pub(crate) fn nav_reset(&mut self) {
-        let document_depth = self.doc_stack.len_frames();
-        match plan_reset(&self.nav_stack, document_depth) {
+        match plan_reset(&self.nav_stack, self.doc_stack.len_frames()) {
             NavResetPlan::AnchorReset => self.apply_anchor_reset(),
-            NavResetPlan::DocumentReset => {
-                let Some(idle) = AnchorIdle::from_stack(&self.nav_stack) else {
-                    return;
-                };
-                let Some(()) = plan_document_reset(idle, document_depth) else {
-                    return;
-                };
-                self.doc_reset(idle);
-            }
-            NavResetPlan::Idle => {}
+            NavResetPlan::DocumentReset(idle) => self.doc_reset(idle),
+            NavResetPlan::Idle => self.set_status_message("nothing to reset".into()),
         }
     }
 
@@ -207,20 +206,23 @@ impl App {
                 let max = self.max_scroll();
                 self.view_state = self.view_state.clone().scroll_to(offset, max);
                 self.snap_scroll_visual();
+                self.set_status_message("back → previous position".into());
             }
             Err(AnchorStackEmpty) => {
-                self.set_status_message("navigation stack empty".into());
+                self.set_status_message("nothing to go back to".into());
             }
         }
     }
 
     fn apply_anchor_reset(&mut self) {
         let Ok(origin) = self.nav_stack.step_reset() else {
+            self.set_status_message("nothing to reset".into());
             return;
         };
         let max = self.max_scroll();
         self.view_state = self.view_state.clone().scroll_to(origin, max);
         self.snap_scroll_visual();
+        self.set_status_message("reset → previous position".into());
     }
 
     pub(crate) fn follow_anchor(&mut self, anchor: &str) {
@@ -238,41 +240,23 @@ impl App {
         self.scroll_to_line(line);
     }
 
-    pub(crate) fn collect_toc_entries(&self) -> Vec<(crate::domain::HeadingLevel, String, String)> {
-        use crate::domain::{Block, Heading, Inline, slugify_heading};
-        let mut entries = Vec::new();
-        for block in &self.document.blocks {
-            if let Block::Heading(Heading {
-                level,
-                content,
-                anchor,
-            }) = block
-            {
-                let text = Inline::plain_text(content);
-                let slug = match anchor {
-                    Some(a) if !a.is_empty() => a.clone(),
-                    _ => slugify_heading(&text),
-                };
-                if !text.is_empty() {
-                    entries.push((*level, text, slug));
-                }
-            }
-        }
-        entries
-    }
-
     pub(crate) fn jump_to_toc_heading(&mut self) {
-        let entries = self.collect_toc_entries();
-        let Some((_, _, slug)) = entries.get(self.preview.toc_selected) else {
+        self.refresh_heading_catalog();
+        let slug = self
+            .heading_cache
+            .entries()
+            .get(self.preview.toc_selected)
+            .map(|entry| entry.slug.clone());
+        let Some(slug) = slug else {
             return;
         };
-        let slug = slug.clone();
         self.close_preview();
         self.follow_anchor(&slug);
     }
 
     pub(crate) fn toc_select_next(&mut self) {
-        let count = self.collect_toc_entries().len();
+        self.refresh_heading_catalog();
+        let count = self.heading_cache.entries().len();
         if count == 0 {
             return;
         }
@@ -280,7 +264,8 @@ impl App {
     }
 
     pub(crate) fn toc_select_prev(&mut self) {
-        let count = self.collect_toc_entries().len();
+        self.refresh_heading_catalog();
+        let count = self.heading_cache.entries().len();
         if count == 0 {
             return;
         }

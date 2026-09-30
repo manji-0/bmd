@@ -32,7 +32,7 @@ impl NavStack {
     ) -> Result<(), AnchorStackFull> {
         self.0
             .fix_prior_on_link_jump(prior)
-            .map_err(|LinkJumpStackFull| AnchorStackFull)
+            .map_err(|(LinkJumpStackFull, _)| AnchorStackFull)
     }
 
     pub fn step_back(&mut self) -> Result<usize, AnchorStackEmpty> {
@@ -40,7 +40,7 @@ impl NavStack {
     }
 
     pub fn step_reset(&mut self) -> Result<usize, AnchorStackEmpty> {
-        self.0.reset_to_oldest_prior()
+        self.0.take_origin_prior()
     }
 
     pub fn clear(&mut self) {

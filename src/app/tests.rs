@@ -2,7 +2,7 @@ use super::App;
 use crate::config::Config;
 use crate::domain::{
     ANCHOR_STACK_MAX_FRAMES, AnchorIdle, Block, DOCUMENT_STACK_MAX_LAYERS, Document, Heading,
-    HeadingLevel, Inline, Link, LinkKind, LinkUrl, SearchDirection, TerminalSize,
+    HeadingLevel, Inline, Link, LinkKind, LinkUrl, NormalSearch, SearchDirection, TerminalSize,
     anchor_stack_limit_message, document_stack_limit_message,
 };
 use crate::fs::normalize_document_path;
@@ -178,7 +178,7 @@ fn short_document_cannot_scroll() {
 }
 
 #[test]
-fn next_link_only_selects_links_in_viewport() {
+fn next_link_selects_offscreen_and_scrolls() {
     let mut input = String::from("# Top\n\n[visible link](https://example.com/a)\n\n");
     for i in 0..80 {
         input.push_str(&format!("paragraph {}\n\n", i));
@@ -189,10 +189,41 @@ fn next_link_only_selects_links_in_viewport() {
     let scroll_before = app.view_state.scroll().offset();
 
     app.next_link();
-    assert_eq!(app.view_state.scroll().offset(), scroll_before);
     assert_eq!(
         app.view_state.selected_link(),
         Some(crate::domain::LinkId(0))
+    );
+    assert_eq!(app.view_state.scroll().offset(), scroll_before);
+
+    app.next_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(1))
+    );
+    assert!(
+        app.view_state.scroll().offset() > scroll_before,
+        "next link should scroll to the off-screen target"
+    );
+}
+
+#[test]
+fn prev_link_wraps_to_last_and_scrolls() {
+    let mut input = String::from("# Top\n\n[first link](https://example.com/a)\n\n");
+    for i in 0..80 {
+        input.push_str(&format!("paragraph {}\n\n", i));
+    }
+    input.push_str("[last link](https://example.com/b)\n");
+    let doc = parse(&input).unwrap();
+    let mut app = new_test_app(doc);
+
+    app.prev_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(1))
+    );
+    assert!(
+        app.view_state.scroll().offset() > 0,
+        "prev from none should select the last target and scroll to it"
     );
 
     app.next_link();
@@ -200,6 +231,28 @@ fn next_link_only_selects_links_in_viewport() {
         app.view_state.selected_link(),
         Some(crate::domain::LinkId(0))
     );
+}
+
+#[test]
+fn next_link_skips_footnote_references() {
+    let doc =
+        parse("See[^note] and [site](https://example.com).\n\n[^note]: Footnote body.\n").unwrap();
+    let mut app = new_test_app(doc);
+
+    app.next_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(0))
+    );
+    assert_eq!(app.view_state.selected_footnote(), None);
+
+    app.next_link();
+    assert_eq!(
+        app.view_state.selected_link(),
+        Some(crate::domain::LinkId(0)),
+        "only one link; wrap should stay on the link, never a footnote"
+    );
+    assert_eq!(app.view_state.selected_footnote(), None);
 }
 
 #[test]
@@ -245,6 +298,68 @@ fn search_command_flow_scrolls_to_match() {
 }
 
 #[test]
+fn live_search_feedback_updates_count_without_jumping() {
+    let doc = parse(
+        "# Title\n\n\
+         unique_beta once\n\n\
+         unique_beta twice\n\n\
+         nowhere else\n",
+    )
+    .unwrap();
+    let mut app = new_test_app(doc);
+    let start_scroll = app.view_state.scroll().offset();
+
+    app.start_search(SearchDirection::Forward);
+    assert_eq!(app.live_search_match_count, None);
+
+    for c in "unique_beta".chars() {
+        app.append_search_input(c);
+    }
+    assert_eq!(app.live_search_match_count, Some(2));
+    assert_eq!(
+        app.view_state.scroll().offset(),
+        start_scroll,
+        "typing must not jump until Enter"
+    );
+    assert!(app.view_state.mode().is_search_input());
+    assert!(!app.view_state.is_search_active());
+
+    // Render context should highlight while still in search input.
+    let ctx = app.render_context();
+    assert_eq!(ctx.search_query.as_deref(), Some("unique_beta"));
+    assert_eq!(ctx.selected_match_line_offset, None);
+
+    app.append_search_input('z');
+    assert_eq!(app.live_search_match_count, Some(0));
+
+    app.backspace_search_input();
+    assert_eq!(app.live_search_match_count, Some(2));
+
+    app.confirm_search();
+    assert_eq!(app.live_search_match_count, None);
+    assert!(app.view_state.is_search_active());
+    if let NormalSearch::Active(active) = app.view_state.normal_search() {
+        assert_eq!(active.matches().len(), 2);
+    } else {
+        panic!("expected active search after confirm");
+    }
+}
+
+#[test]
+fn live_search_feedback_clears_on_cancel() {
+    let doc = parse("needle here\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.start_search(SearchDirection::Forward);
+    for c in "needle".chars() {
+        app.append_search_input(c);
+    }
+    assert_eq!(app.live_search_match_count, Some(1));
+    app.cancel_search();
+    assert_eq!(app.live_search_match_count, None);
+    assert!(app.view_state.mode().is_normal());
+}
+
+#[test]
 fn anchor_navigation_stack_push_pop_and_reset() {
     let mut input = String::from("# Top\n\n");
     for i in 0..60 {
@@ -281,10 +396,18 @@ fn anchor_navigation_stack_push_pop_and_reset() {
 
     app.nav_back();
     assert_eq!(app.view_state.scroll().offset(), before_second);
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("back → previous position")
+    );
 
     app.nav_back();
     assert_eq!(app.view_state.scroll().offset(), before_first);
     assert!(app.nav_stack.is_empty());
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("back → previous position")
+    );
 
     app.view_state = app
         .view_state
@@ -301,6 +424,10 @@ fn anchor_navigation_stack_push_pop_and_reset() {
     app.nav_reset();
     assert_eq!(app.view_state.scroll().offset(), before_first);
     assert!(app.nav_stack.is_empty());
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("reset → previous position")
+    );
 }
 
 #[test]
@@ -417,10 +544,12 @@ fn document_stack_back_and_reset() {
     app.nav_back();
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
     assert_eq!(app.doc_stack.len_frames(), 1);
+    assert_eq!(app.status_message.as_deref(), Some("back → b.md"));
 
     app.nav_back();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
     assert!(app.doc_stack.len_frames() == 0);
+    assert_eq!(app.status_message.as_deref(), Some("back → a.md"));
 
     app.view_state = app
         .view_state
@@ -435,6 +564,7 @@ fn document_stack_back_and_reset() {
     app.nav_reset();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
     assert!(app.doc_stack.len_frames() == 0);
+    assert_eq!(app.status_message.as_deref(), Some("reset → a.md"));
 
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -481,8 +611,20 @@ fn anchor_stack_takes_priority_over_document_stack() {
     app.nav_back();
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
     assert!(app.doc_stack.len_frames() != 0);
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("back → previous position")
+    );
 
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn nav_back_idle_reports_nothing_to_go_back_to() {
+    let doc = parse("# Alone\n\nno links\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.nav_back();
+    assert_eq!(app.status_message.as_deref(), Some("nothing to go back to"));
 }
 
 #[test]
@@ -551,6 +693,34 @@ fn open_document_link_rolls_back_stack_on_apply_failure() {
     assert!(app.status_message.is_some());
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
     assert!(app.doc_stack.len_frames() == 0);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn open_document_link_restores_prefetch_session_on_apply_failure() {
+    let dir = temp_markdown_dir("doc-apply-fail-prefetch");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child\n\n").unwrap();
+
+    let mut app = file_backed_app(&dir, "parent.md", "# Parent\n\n[open child](child.md)\n");
+    let child_path = normalize_document_path(dir.join("child.md"));
+
+    wait_for_background_work(&mut app);
+    assert!(app.prefetched_document_ready(&child_path));
+
+    app.fail_apply_document = true;
+    app.open_document_link("child.md");
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("parent.md"));
+    assert_eq!(app.doc_stack.len_frames(), 0);
+    assert!(app.prefetched_document_ready(&child_path));
+
+    app.open_document_link("child.md");
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+    assert_eq!(first_heading_text(&app.document).as_deref(), Some("Child"));
 
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -625,6 +795,51 @@ fn doc_reset_preserves_stack_when_restore_fails() {
 }
 
 #[test]
+fn doc_reset_preserves_all_frames_when_restore_fails() {
+    let dir = temp_markdown_dir("doc-reset-fail-nested");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    let c = dir.join("c.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\n[open c](c.md)\n").unwrap();
+    std::fs::write(&c, "# C\n\ncontent\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+        Config::default(),
+    )
+    .unwrap();
+
+    app.open_document_link("b.md");
+    app.open_document_link("c.md");
+    assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    assert_eq!(app.doc_stack.len_frames(), 2);
+
+    app.fail_document_restore = true;
+    app.doc_reset(anchor_idle(&app));
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    assert_eq!(app.doc_stack.len_frames(), 2);
+
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    assert_eq!(app.doc_stack.len_frames(), 1);
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert!(app.doc_stack.is_empty());
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn nav_reset_drains_anchor_before_returning_to_root_document() {
     let dir = temp_markdown_dir("doc-anchor-drain");
     let _ = std::fs::remove_dir_all(&dir);
@@ -669,10 +884,15 @@ fn nav_reset_drains_anchor_before_returning_to_root_document() {
     app.nav_reset();
     assert_eq!(app.source_label.as_deref(), Some("c.md"));
     assert!(app.nav_stack.is_empty());
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("reset → previous position")
+    );
 
     app.nav_reset();
     assert_eq!(app.source_label.as_deref(), Some("a.md"));
     assert!(app.doc_stack.is_empty());
+    assert_eq!(app.status_message.as_deref(), Some("reset → a.md"));
 
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -1052,16 +1272,42 @@ fn prefetched_child_navigation_round_trip_restores_parent() {
 }
 
 #[test]
-fn toggle_outline_opens_and_focuses() {
+fn toggle_outline_opens_without_focus_mode() {
     let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
     let mut app = new_test_app(doc);
     assert!(!app.outline.visible);
     app.toggle_outline();
     assert!(app.outline.visible);
-    assert!(app.outline.focused);
     app.toggle_outline();
     assert!(!app.outline.visible);
-    assert!(!app.outline.focused);
+}
+
+#[test]
+fn outline_open_leaves_document_keys_to_keymap() {
+    use crate::keymap::Command;
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+
+    let doc = parse("# One\n\n## Two\n\nbody\n").unwrap();
+    let mut app = new_test_app(doc);
+    app.toggle_outline();
+    assert!(app.outline.visible);
+
+    let map = |key: KeyEvent| {
+        app.keymap.map_event(
+            Event::Key(key),
+            app.view_state.mode(),
+            app.view_state.normal_search(),
+        )
+    };
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('j'))), Command::ScrollDown);
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('k'))), Command::ScrollUp);
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('n'))), Command::NextLink);
+    assert_eq!(
+        map(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT)),
+        Command::PrevLink
+    );
+    assert_eq!(map(KeyEvent::from(KeyCode::Char('p'))), Command::None);
+    assert_eq!(map(KeyEvent::from(KeyCode::Tab)), Command::NextLink);
 }
 
 #[test]
@@ -1069,11 +1315,10 @@ fn outline_jump_follows_heading() {
     let doc = parse("# One\n\npara\n\n## Two\n\nmore\n").unwrap();
     let mut app = new_test_app(doc);
     app.toggle_outline();
-    app.outline_select_next();
+    app.outline.selected = 1;
     let before = app.view_state.scroll().offset();
     app.jump_to_outline_heading();
     assert!(app.view_state.scroll().offset() >= before);
-    assert!(!app.outline.focused);
     assert!(app.outline.visible);
 }
 
@@ -1139,4 +1384,160 @@ fn document_width_shrinks_when_outline_open() {
     app.toggle_outline();
     let shrunk = app.document_width();
     assert!(shrunk < full);
+}
+
+#[test]
+fn document_jump_restores_outline_and_text_selection() {
+    use crate::domain::{TextPoint, TextSelection};
+
+    let dir = temp_markdown_dir("uc-frame-chrome");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child\n\n").unwrap();
+
+    let mut app = file_backed_app(&dir, "parent.md", "# Parent\n\n[open child](child.md)\n");
+    app.toggle_outline();
+    assert!(app.outline.visible);
+    app.text_selection = Some(TextSelection::new(
+        TextPoint::new(0, 0),
+        TextPoint::new(0, 3),
+    ));
+    app.preview.zoom = 2.0;
+    app.preview.toc_selected = 7;
+
+    app.open_document_link("child.md");
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+    assert!(app.outline.visible);
+    assert!(app.text_selection.is_none());
+    assert!((app.preview.zoom - 1.0).abs() < f32::EPSILON);
+    assert_eq!(app.preview.toc_selected, 0);
+
+    app.toggle_outline();
+    assert!(!app.outline.visible);
+
+    app.doc_back(anchor_idle(&app));
+    assert_eq!(app.source_label.as_deref(), Some("parent.md"));
+    assert!(app.outline.visible);
+    let selection = app.text_selection.expect("restored selection");
+    assert_eq!(selection.anchor, TextPoint::new(0, 0));
+    assert_eq!(selection.cursor, TextPoint::new(0, 3));
+    assert!((app.preview.zoom - 2.0).abs() < f32::EPSILON);
+    assert_eq!(app.preview.toc_selected, 7);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn drag_select_highlights_without_auto_copy() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let doc = parse("# Hello World\n\nSome selectable body text here.\n").unwrap();
+    let mut app = new_test_app(doc);
+    let backend = ratatui::backend::TestBackend::new(80, 30);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    app.draw_frame(&mut terminal).unwrap();
+
+    assert!(
+        app.handle_mouse_event(0, 0, MouseEventKind::Down(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(8, 0, MouseEventKind::Drag(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(8, 0, MouseEventKind::Up(MouseButton::Left))
+            .unwrap()
+    );
+
+    let selection = app.text_selection.expect("drag should leave a selection");
+    assert!(!selection.is_empty());
+    assert!(
+        app.status_message.is_none(),
+        "drag release must not auto-copy (got {:?})",
+        app.status_message
+    );
+
+    app.copy_text_selection().unwrap();
+    assert!(
+        app.status_message
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("copied "),
+        "explicit yank/copy should still work (got {:?})",
+        app.status_message
+    );
+}
+
+#[test]
+fn click_without_drag_toggles_checklist() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let doc = parse("- [ ] task\n").unwrap();
+    let mut app = new_test_app(doc);
+    let before = app.checklist_state.revision();
+
+    assert!(
+        app.handle_mouse_event(0, 0, MouseEventKind::Down(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(0, 0, MouseEventKind::Up(MouseButton::Left))
+            .unwrap()
+    );
+
+    assert!(app.text_selection.is_none());
+    assert_eq!(app.checklist_state.revision(), before + 1);
+}
+
+#[test]
+fn click_without_drag_opens_document_link() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let dir = temp_markdown_dir("click-open-link");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("child.md"), "# Child\n\n").unwrap();
+
+    // "Click [here](child.md) now" — link text "here" starts at column 7 (matches render hit test).
+    let mut app = file_backed_app(&dir, "parent.md", "Click [here](child.md) now\n");
+    assert!(
+        app.handle_mouse_event(7, 0, MouseEventKind::Down(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(7, 0, MouseEventKind::Up(MouseButton::Left))
+            .unwrap()
+    );
+
+    assert_eq!(app.source_label.as_deref(), Some("child.md"));
+    assert!(app.text_selection.is_none());
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn click_footnote_marker_opens_preview() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let doc = parse("x[^note]\n\n[^note]: Footnote body.\n").unwrap();
+    let mut app = new_test_app(doc);
+    let hits = app.hits().to_vec();
+    assert_eq!(hits.len(), 1);
+    let col = hits[0].x as u16;
+    let row = hits[0].line as u16;
+
+    assert!(
+        app.handle_mouse_event(col, row, MouseEventKind::Down(MouseButton::Left))
+            .unwrap()
+    );
+    assert!(
+        app.handle_mouse_event(col, row, MouseEventKind::Up(MouseButton::Left))
+            .unwrap()
+    );
+
+    assert_eq!(
+        app.view_state.mode().preview_footnote(),
+        Some(crate::domain::FootnoteId(0))
+    );
 }

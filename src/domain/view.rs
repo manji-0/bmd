@@ -429,18 +429,18 @@ impl ViewState {
         }
     }
 
-    /// Select the next navigation target within `visible`, wrapping at the ends.
-    pub fn select_next_nav_in(self, visible: &[NavTarget]) -> Self {
-        if visible.is_empty() {
+    /// Select the next navigation target within `targets`, wrapping at the ends.
+    pub fn select_next_nav_in(self, targets: &[NavTarget]) -> Self {
+        if targets.is_empty() {
             return self;
         }
         let next = match self.selected_nav {
-            None => visible[0],
-            Some(current) => visible
+            None => targets[0],
+            Some(current) => targets
                 .iter()
                 .position(|&id| id == current)
-                .map(|idx| visible[(idx + 1) % visible.len()])
-                .unwrap_or(visible[0]),
+                .map(|idx| targets[(idx + 1) % targets.len()])
+                .unwrap_or(targets[0]),
         };
         Self {
             selected_nav: Some(next),
@@ -448,24 +448,24 @@ impl ViewState {
         }
     }
 
-    /// Select the previous navigation target within `visible`, wrapping at the ends.
-    pub fn select_prev_nav_in(self, visible: &[NavTarget]) -> Self {
-        if visible.is_empty() {
+    /// Select the previous navigation target within `targets`, wrapping at the ends.
+    pub fn select_prev_nav_in(self, targets: &[NavTarget]) -> Self {
+        if targets.is_empty() {
             return self;
         }
         let prev = match self.selected_nav {
-            None => *visible.last().expect("visible is non-empty"),
-            Some(current) => visible
+            None => *targets.last().expect("targets is non-empty"),
+            Some(current) => targets
                 .iter()
                 .position(|&id| id == current)
                 .map(|idx| {
                     if idx == 0 {
-                        *visible.last().expect("visible is non-empty")
+                        *targets.last().expect("targets is non-empty")
                     } else {
-                        visible[idx - 1]
+                        targets[idx - 1]
                     }
                 })
-                .unwrap_or(*visible.last().expect("visible is non-empty")),
+                .unwrap_or(*targets.last().expect("targets is non-empty")),
         };
         Self {
             selected_nav: Some(prev),
@@ -486,6 +486,18 @@ impl ViewState {
 
     pub fn selected_link(&self) -> Option<LinkId> {
         self.selected_nav.and_then(NavTarget::link_id)
+    }
+
+    #[cfg(test)]
+    pub fn with_selected_footnote(self, id: FootnoteId) -> Self {
+        Self {
+            selected_nav: Some(NavTarget::Footnote(id)),
+            ..self
+        }
+    }
+
+    pub fn selected_nav(&self) -> Option<NavTarget> {
+        self.selected_nav
     }
 
     pub fn selected_footnote(&self) -> Option<FootnoteId> {

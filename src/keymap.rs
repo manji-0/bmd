@@ -77,6 +77,7 @@ pub fn command_from_name(name: &str) -> Option<Command> {
         "prev_heading" => Some(Command::PrevHeading),
         "open_link" => Some(Command::OpenLink),
         "nav_back" => Some(Command::NavBack),
+        "nav_reset" => Some(Command::NavReset),
         "start_search_forward" => Some(Command::StartSearchForward),
         "start_search_backward" => Some(Command::StartSearchBackward),
         "toggle_help" => Some(Command::ToggleHelp),
@@ -359,8 +360,9 @@ impl Keymap {
             return Command::SearchCancel;
         }
 
+        // Esc matches browser/cancel muscle memory: one dismiss/back step (same as O).
         if key.code == KeyCode::Esc && key.modifiers.is_empty() {
-            return Command::NavReset;
+            return Command::NavBack;
         }
 
         let resolved = resolve_key(&key);
@@ -451,7 +453,6 @@ fn default_normal_bindings() -> Vec<(KeySpec, Command)> {
         k("tab", Command::NextLink),
         k("N", Command::PrevLink),
         k("backtab", Command::PrevLink),
-        k("p", Command::PrevLink),
         k("[", Command::PrevHeading),
         k("]", Command::NextHeading),
         k("o", Command::OpenLink),
@@ -460,8 +461,10 @@ fn default_normal_bindings() -> Vec<(KeySpec, Command)> {
         k("/", Command::StartSearchForward),
         k("?", Command::StartSearchBackward),
         k("h", Command::ToggleHelp),
-        k("H", Command::CloseHelp),
-        k("x", Command::ToggleChecklist),
+        // CloseHelp is intentionally unbound: Esc (nav_back) already dismisses
+        // the help overlay; a separate H close key is noise (or bind close_help).
+        // ToggleChecklist is intentionally unbound: top-visible-line toggle is
+        // undiscoverable; click a checkbox instead (or bind toggle_checklist).
         k("t", Command::ToggleOutline),
         k("y", Command::YankPrefix),
         k("q", Command::Quit),
@@ -477,6 +480,7 @@ fn default_preview_bindings() -> Vec<(KeySpec, Command)> {
     vec![
         k("esc", Command::ClosePreview),
         k("o", Command::ClosePreview),
+        k("O", Command::ClosePreview),
         k("+", Command::PreviewZoomIn),
         k("=", Command::PreviewZoomIn),
         k("-", Command::PreviewZoomOut),
@@ -517,7 +521,7 @@ mod tests {
         assert_eq!(map(shift('G')), Command::JumpToBottom);
         assert_eq!(map(key('n')), Command::NextLink);
         assert_eq!(map(shift('N')), Command::PrevLink);
-        assert_eq!(map(key('p')), Command::PrevLink);
+        assert_eq!(map(key('p')), Command::None);
         assert_eq!(map(key('o')), Command::OpenLink);
         assert_eq!(map(key('q')), Command::Quit);
     }
@@ -529,14 +533,20 @@ mod tests {
     }
 
     #[test]
-    fn help_close_uses_shift_h() {
-        assert_eq!(map(shift('H')), Command::CloseHelp);
+    fn help_close_unbound_by_default() {
+        assert_eq!(map(shift('H')), Command::None);
+        assert_eq!(map(key('h')), Command::ToggleHelp);
     }
 
     #[test]
     fn outline_and_yank_bindings() {
         assert_eq!(map(key('t')), Command::ToggleOutline);
         assert_eq!(map(key('y')), Command::YankPrefix);
+    }
+
+    #[test]
+    fn checklist_toggle_unbound_by_default() {
+        assert_eq!(map(key('x')), Command::None);
     }
 
     #[test]
@@ -626,20 +636,34 @@ mod tests {
     }
 
     #[test]
-    fn inactive_search_esc_resets_navigation() {
+    fn inactive_search_esc_steps_back_one() {
         assert_eq!(
             map_event(
                 Event::Key(KeyEvent::from(KeyCode::Esc)),
                 &UiMode::Normal,
                 &NormalSearch::inactive()
             ),
-            Command::NavReset
+            Command::NavBack
         );
     }
 
     #[test]
     fn shift_o_navigates_back() {
         assert_eq!(map(shift('O')), Command::NavBack);
+    }
+
+    #[test]
+    fn preview_shift_o_closes_overlay() {
+        assert_eq!(
+            map_event(
+                Event::Key(shift('O')),
+                &UiMode::Preview {
+                    kind: crate::domain::PreviewKind::Link(crate::domain::LinkId(0))
+                },
+                &NormalSearch::inactive()
+            ),
+            Command::ClosePreview
+        );
     }
 
     #[test]

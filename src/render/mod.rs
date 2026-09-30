@@ -32,9 +32,9 @@ pub use cache::{CachedMarkdownView, DocumentRenderCache};
 pub use context::RenderContext;
 pub use footnotes::{footnote_preview_title, render_footnote_preview};
 pub use headings::{
-    HeadingOffsetCache, find_heading_line_by_anchor, next_heading_line, prev_heading_line,
+    HeadingCatalogCache, find_heading_line_by_anchor, next_heading_line, prev_heading_line,
 };
-pub use hits::{Hit, HitTarget, hit_at, visible_links, visible_nav_targets};
+pub use hits::{Hit, HitTarget, hit_at, nav_targets, target_line, visible_links};
 pub(crate) use image::render_markdown_image_from_src;
 pub(crate) use image::{
     PREVIEW_POPUP_PERCENT, centered_rect, render_floating_image, resolve_image_path,

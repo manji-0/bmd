@@ -50,10 +50,7 @@ pub use marks::{MarkName, Marks};
 pub use mode::{NormalSearch, PreviewKind, UiMode};
 pub use nav_stack::{AnchorStackEmpty, FixedScrollPrior, NavStack};
 pub use nav_target::NavTarget;
-pub use navigation::{
-    AnchorIdle, NavBackPlan, NavResetPlan, plan_back, plan_document_back, plan_document_reset,
-    plan_reset,
-};
+pub use navigation::{AnchorIdle, NavBackPlan, NavResetPlan, plan_back, plan_reset};
 pub use navigation_limits::{
     AnchorStackFull, DOCUMENT_STACK_MAX_LAYERS, DocumentStackFull, anchor_stack_limit_message,
     document_stack_limit_message,

@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use crate::domain::{
-    AnchorIdle, ChecklistState, ChecklistStyle, DocumentStackFull, document_link_path_part,
-    document_stack_limit_message, plan_document_back, plan_document_reset, resolve_document_path,
+    AnchorIdle, ChecklistState, ChecklistStyle, DocumentPrefetchSessionSnapshot, DocumentStackFull,
+    document_link_path_part, document_stack_limit_message, resolve_document_path,
 };
 use crate::error::AppError;
 use crate::fs::normalize_document_path;
@@ -13,6 +13,7 @@ use crate::render::{DocumentRenderCache, RenderedDocument};
 
 use super::App;
 use super::doc_stack::DocumentFrame;
+use super::preview_render::PreviewSnapshots;
 use super::reload::FileWatch;
 
 impl App {
@@ -49,15 +50,14 @@ impl App {
         };
 
         let anchor = document_link_path_part(dest).1;
-        let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
-        if let Err(DocumentStackFull) = self.doc_stack.fix_prior_on_link_jump(prior) {
+        if self.push_document_prior().is_err() {
             self.set_status_message(document_stack_limit_message());
             return;
         }
 
         if let Err(e) = self.apply_document(resolved, document) {
             self.set_status_message(e.to_string());
-            self.doc_stack.pop();
+            self.abort_document_jump();
             return;
         }
 
@@ -95,15 +95,14 @@ impl App {
 
         crate::github::rewrite_relative_links(&mut document, blob);
 
-        let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
-        if let Err(DocumentStackFull) = self.doc_stack.fix_prior_on_link_jump(prior) {
+        if self.push_document_prior().is_err() {
             self.set_status_message(document_stack_limit_message());
             return;
         }
 
         if let Err(e) = self.apply_github_document(blob, document) {
             self.set_status_message(e.to_string());
-            self.doc_stack.pop();
+            self.abort_document_jump();
             return;
         }
 
@@ -116,46 +115,47 @@ impl App {
         if AnchorIdle::from_stack(&self.nav_stack) != Some(idle) {
             return;
         }
-        let Some(()) = plan_document_back(idle, self.doc_stack.len_frames()) else {
-            self.set_status_message("document stack empty".into());
-            return;
-        };
         let Some(frame) = self.doc_stack.pop() else {
-            self.set_status_message("document stack empty".into());
+            self.set_status_message("nothing to go back to".into());
             return;
         };
-        match self.try_restore_document_frame(frame) {
-            Ok(()) => {}
-            Err(err) => {
-                let (e, frame) = *err;
-                self.set_status_message(e.to_string());
-                self.doc_stack
-                    .fix_prior_on_link_jump(super::doc_stack::FixedDocumentPrior::fix(frame))
-                    .expect("restore rollback");
-            }
+        let dest = frame
+            .source_label
+            .clone()
+            .unwrap_or_else(|| "(previous document)".into());
+        if let Err(err) = self.try_restore_document_frame(frame) {
+            let (e, frame) = *err;
+            self.set_status_message(e.to_string());
+            self.doc_stack.restore_frames(vec![frame]);
+            return;
         }
+        self.set_status_message(format!("back → {dest}"));
     }
 
     pub(crate) fn doc_reset(&mut self, idle: AnchorIdle) {
         if AnchorIdle::from_stack(&self.nav_stack) != Some(idle) {
             return;
         }
-        let Some(()) = plan_document_reset(idle, self.doc_stack.len_frames()) else {
+        let mut frames = self.doc_stack.take_all_frames().into_iter();
+        let Some(root) = frames.next() else {
+            self.set_status_message("nothing to reset".into());
             return;
         };
-        let Some(root) = self.doc_stack.take_root_prior() else {
+        let dest = root
+            .source_label
+            .clone()
+            .unwrap_or_else(|| "(root document)".into());
+        let rest: Vec<_> = frames.collect();
+        if let Err(err) = self.try_restore_document_frame(root) {
+            let (e, root) = *err;
+            self.set_status_message(e.to_string());
+            let mut frames = Vec::with_capacity(rest.len() + 1);
+            frames.push(root);
+            frames.extend(rest);
+            self.doc_stack.restore_frames(frames);
             return;
-        };
-        match self.try_restore_document_frame(root) {
-            Ok(()) => {}
-            Err(err) => {
-                let (e, frame) = *err;
-                self.set_status_message(e.to_string());
-                self.doc_stack
-                    .fix_prior_on_link_jump(super::doc_stack::FixedDocumentPrior::fix(frame))
-                    .expect("restore rollback");
-            }
         }
+        self.set_status_message(format!("reset → {dest}"));
     }
 
     fn apply_github_document(
@@ -180,12 +180,43 @@ impl App {
         self.help_visible = false;
         self.clear_marks();
         self.pending_input = super::pending::PendingInput::None;
-        self.outline.focused = false;
+        self.reset_transient_view_ui();
         self.restart_background_work();
         Ok(())
     }
 
-    fn capture_document_frame(&self) -> DocumentFrame {
+    fn push_document_prior(&mut self) -> Result<(), DocumentStackFull> {
+        let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
+        match self.doc_stack.fix_prior_on_link_jump(prior) {
+            Ok(()) => Ok(()),
+            Err((DocumentStackFull, prior)) => {
+                let prior = *prior;
+                self.resume_worker_sessions(
+                    prior.preview_sessions,
+                    prior.document_prefetch_session,
+                );
+                Err(DocumentStackFull)
+            }
+        }
+    }
+
+    fn abort_document_jump(&mut self) {
+        if let Some(frame) = self.doc_stack.pop() {
+            self.resume_worker_sessions(frame.preview_sessions, frame.document_prefetch_session);
+        }
+    }
+
+    fn resume_worker_sessions(
+        &mut self,
+        preview_sessions: PreviewSnapshots,
+        document_prefetch_session: DocumentPrefetchSessionSnapshot,
+    ) {
+        self.previews
+            .resume(preview_sessions, &self.rendered, &super::preview_env!(self));
+        self.document_prefetch.resume(document_prefetch_session);
+    }
+
+    fn capture_document_frame(&mut self) -> DocumentFrame {
         DocumentFrame {
             document: self.document.clone(),
             rendered: self.rendered.clone(),
@@ -194,6 +225,8 @@ impl App {
             document_cache: self.document_cache.clone(),
             preview_render_cache: self.preview.cache.clone(),
             pending_preview: self.preview.pending,
+            preview_zoom: self.preview.zoom,
+            toc_selected: self.preview.toc_selected,
             view_state: self.view_state.clone(),
             scroll_visual: self.scroll.visual,
             scroll_anim_speed: self.scroll.anim_speed,
@@ -203,6 +236,8 @@ impl App {
             file_watch: self.file_watch.clone(),
             nav_stack: self.nav_stack.clone(),
             marks: self.marks.clone(),
+            outline: self.outline,
+            text_selection: self.text_selection,
         }
     }
 
@@ -234,9 +269,20 @@ impl App {
         self.help_visible = false;
         self.clear_marks();
         self.pending_input = super::pending::PendingInput::None;
-        self.outline.focused = false;
+        self.reset_transient_view_ui();
         self.restart_background_work();
         Ok(())
+    }
+
+    /// Reset UI that must not leak into a newly opened document.
+    ///
+    /// Outline visibility is kept so a sidebar stays open across file jumps;
+    /// selection index is cleared and will resync from scroll on the next draw.
+    fn reset_transient_view_ui(&mut self) {
+        self.clear_text_selection();
+        self.outline.selected = 0;
+        self.reset_preview_zoom();
+        self.preview.toc_selected = 0;
     }
 
     fn try_restore_document_frame(
@@ -257,6 +303,8 @@ impl App {
         self.document_cache = frame.document_cache;
         self.preview.cache = frame.preview_render_cache;
         self.preview.pending = frame.pending_preview;
+        self.preview.zoom = frame.preview_zoom;
+        self.preview.toc_selected = frame.toc_selected;
         self.scroll.visual = frame.scroll_visual;
         self.scroll.anim_speed = frame.scroll_anim_speed;
         self.checklist_state = frame.checklist_state;
@@ -265,17 +313,14 @@ impl App {
         self.file_watch = frame.file_watch;
         self.nav_stack = frame.nav_stack;
         self.marks = frame.marks;
+        self.outline = frame.outline;
+        self.text_selection = frame.text_selection;
+        self.selection_drag = None;
         self.pending_input = super::pending::PendingInput::None;
-        self.outline.focused = false;
         self.scroll.key_down_at = None;
         self.help_visible = false;
-        self.previews.resume(
-            frame.preview_sessions,
-            &self.rendered,
-            &super::preview_env!(self),
-        );
-        self.document_prefetch
-            .resume(frame.document_prefetch_session);
+        self.invalidate_prefetch_viewport();
+        self.resume_worker_sessions(frame.preview_sessions, frame.document_prefetch_session);
         Ok(())
     }
 }

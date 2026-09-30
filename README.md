@@ -1,6 +1,6 @@
 # bmd
 
-A terminal TUI for reading Markdown. Vim-style keybindings, rich markup rendering, native Mermaid diagrams, in-document search, sticky outline, scroll marks, yank, and interactive task lists.
+A terminal TUI for reading Markdown. Vim-style keybindings, rich markup rendering, native Mermaid diagrams, in-document search, sticky outline, scroll marks, and yank.
 
 ## Features
 
@@ -12,8 +12,7 @@ Documents parsed with [pulldown-cmark](https://github.com/raphlinus/pulldown-cma
 - **Paragraphs** — bold, italic, inline code, hard breaks
 - **Code blocks** — syntax highlighting via [syntect](https://github.com/trishume/syntect) with a language label
 - **Block quotes** — nested block quotes supported
-- **Lists** — ordered and unordered, including nested lists
-- **Task lists** — GitHub-style `- [ ]` / `- [x]` checklists; click a checkbox to toggle (session-only, not saved to disk)
+- **Lists** — ordered and unordered, including nested lists and GFM task markers (`- [ ]` / `- [x]`)
 - **Tables** — column widths adapt to terminal width; cells wrap internally
 - **Horizontal rules** — `---` and similar rule lines
 
@@ -33,7 +32,7 @@ Scroll position is tracked in logical lines; the on-screen position is animated 
 
 ### Outline
 
-Press `t` to pin a heading outline on the left. Opening the outline focuses it: `j` / `k` (or `n` / `p`) move the selection, `Enter` / `o` jumps to that heading, `Esc` returns focus to the document while keeping the sidebar, and `t` closes it. Click an outline entry to jump. While unfocused, the selection tracks the heading under the current scroll position.
+Press `t` to pin a heading outline on the left. The sidebar stays visible while you scroll the document (`j` / `k` and other keys keep working on the document). Selection tracks the heading under the current scroll position; click an outline entry to jump. Press `t` again to close it.
 
 ### Yank
 
@@ -41,16 +40,16 @@ Press `y` to copy an active text selection. With no selection, `y` waits for a s
 
 ### In-document search
 
-Press `/` for forward search or `?` for backward search. A prompt appears at the bottom of the screen; press `Enter` to confirm and return to normal mode. Matches are highlighted in yellow; the current match is emphasized in magenta.
+Press `/` for forward search or `?` for backward search. A prompt appears at the bottom of the screen; as you type, matching lines are highlighted and the prompt shows a live match count. Press `Enter` to confirm, jump to the nearest match, and return to normal mode. Matches are highlighted in yellow; the current match is emphasized in magenta.
 
 - Case-insensitive substring matching
 - Searches plain text across paragraphs, code blocks, lists, block quotes, and tables
-- After confirming, `n` / `N` / `p` (or `Tab` / `Shift-Tab`) move between matches and scroll to the matching line
+- After confirming, `n` / `N` (or `Tab` / `Shift-Tab`) move between matches and scroll to the matching line
 - `Esc` while search is active clears the search (does not quit)
 
 ### Links and preview
 
-Cycle through links in the document with `n` / `N` / `p`. Only links currently visible on screen are included; pressing `n` wraps within that set without scrolling.
+Cycle through links in the document with `n` / `N` (or `Tab` / `Shift-Tab`). Selection walks the whole document in order, scrolls to each link, and wraps from last to first (and vice versa). Footnote markers are not in that cycle — click a `[^ref]` marker to open its preview.
 
 | Type | Example | `o` / `Enter` |
 |------|---------|---------------|
@@ -60,19 +59,7 @@ Cycle through links in the document with `n` / `N` / `p`. Only links currently v
 | Image | `![alt](path.png)` | Floating in-terminal preview |
 | Mermaid | Link from a mermaid code block | Floating preview of the rendered diagram |
 
-Close the preview overlay with `Esc` or `o`. The `o`/`O` pairing is consistent: `o` opens links and previews; `O` closes an open preview or steps back one navigation level (anchor jump or previous file). `Esc` resets the anchor stack to your pre-jump scroll position, or returns to the first opened file when only the document stack is active. Anchor navigation takes priority over document navigation when both apply. Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
-
-### Task lists
-
-Markdown task lists (`- [ ]` / `- [x]`) render with checkbox markers. Left-click a marker to toggle checked state for the current session; changes are not written back to the file.
-
-Marker appearance is chosen automatically:
-
-| `BMD_CHECKLIST_STYLE` | Markers |
-|-----------------------|---------|
-| `unicode` (default when auto-detection is inconclusive) | `☐` / `☑` |
-| `emoji` | `⬜` / `✅` |
-| `auto` or unset | Emoji when the terminal is identifiable (Kitty, Ghostty, iTerm2, WezTerm, Apple Terminal, VS Code); otherwise Unicode |
+Close the preview overlay with `Esc`, `o`, or `O`. **One back model:** `Esc` and `O` always dismiss one layer — close an open preview, or step back one navigation jump (in-document `#anchor` first, then the previous file). The status bar shows where you went (`back → README.md` or `back → previous position`). Press again to continue stepping; there is no separate “reset both stacks” key by default (bind `nav_reset` in config if you want a full drain). Each stack keeps the live current section or file outside the stack; following a link fixes the prior position/document once at jump time (scrolling and other navigation never update stored priors). Both stacks count the current item as layer 1 and support up to 64 layers. Further link jumps beyond that limit show a status-bar message and leave the current view unchanged. Web links are blue; image and Mermaid links are magenta. The selected link is shown inverted.
 
 ### Mermaid and images
 
@@ -84,6 +71,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 
 ### Other
 
+- **Task markers** — GFM `- [ ]` / `- [x]` render as checkboxes; left-click toggles for the session only (not saved). Marker style via `BMD_CHECKLIST_STYLE` (`unicode` / `emoji` / `auto`)
 - **Type-safe domain model** — Kamae-style state transitions (`ViewState` methods consume `self`)
 - **Document render cache** — full document buffered until width or highlight state changes; scrolling only blits the viewport
 - **stdin / file input** — path argument, `-`, or pipe; file paths reload automatically on save (scroll position preserved)
@@ -91,7 +79,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 
 ## Requirements
 
-- [devbox](https://www.jetify.com/devbox) (recommended; provides Rust 1.92, clang, sccache, prek)
+- [devbox](https://www.jetify.com/devbox) (recommended; provides Rust 1.98, clang, sccache, prek)
 - macOS for opening web links via `open`; Linux uses `xdg-open`
 - Kitty, Ghostty, iTerm2, WezTerm, or similar for inline Mermaid and image rendering
 
@@ -135,23 +123,23 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 | `u` / `PageUp` | Half page up |
 | `g` / `G` | Jump to top / bottom |
 | `[` / `]` | Previous / next heading |
-| `t` | Toggle outline sidebar (j/k navigate when focused; Enter/o jump; Esc unfocus) |
+| `t` | Toggle outline sidebar (tracks scroll; click entry to jump) |
 | `m` then `a`–`z` | Set scroll mark |
 | `'` then `a`–`z` | Jump to scroll mark |
-| `Tab` / `n` | Next visible link (or next search match when search is active) |
-| `Shift-Tab` / `N` / `p` | Previous visible link (or previous search match) |
+| `Tab` / `n` | Next link in the document, scrolling to it (or next search match when search is active) |
+| `Shift-Tab` / `N` | Previous link in the document, scrolling to it (or previous search match) |
 | `o` / `Enter` | Open selected link / preview (`#anchor` jumps in-document) |
-| `O` | Close an open preview, or step back one navigation level |
+| `O` / `Esc` | One step back: close preview or previous jump/file (status: `back → …`) |
 | `/` / `?` | Start forward / backward search |
-| `h` / `H` | Show help overlay / close help overlay |
-| `x` | Toggle task-list item on top visible line |
+| `h` | Show help overlay (`Esc` closes) |
 | `y` | Copy text selection, or start yank (`yl` link, `yh` heading, `yc` code, `yy` selection) |
 | Mouse wheel | Scroll up / down |
-| `q` / `Ctrl-c` | Quit (`Esc` clears search when active; else resets anchor or document stack) |
+| `q` / `Ctrl-c` | Quit (`Esc` clears search when active; otherwise same one-step back as `O`) |
 | Left click on link | Open link / preview |
-| Left click on checkbox | Toggle task-list item (normal mode) |
+| Left click on footnote marker | Open footnote preview |
+| Left click on checkbox | Toggle task marker for this session (not saved) |
 | Left click on outline | Jump to heading |
-| Drag | Select text (copied to clipboard on release) |
+| Drag | Select text (highlight only; press `y` to copy) |
 
 ### Search input mode
 
@@ -166,7 +154,7 @@ BMD_CHECKLIST_STYLE=unicode bmd notes.md
 
 | Key | Action |
 |-----|--------|
-| `Esc` / `o` | Close preview |
+| `Esc` / `o` / `O` | Close preview |
 | `+` / `=` / `-` | Zoom in / out |
 | `0` | Reset zoom to fit |
 | Ctrl+trackpad pinch | Zoom in / out |
@@ -179,31 +167,24 @@ Optional settings live in `~/.config/bmd/config.toml` (or `$XDG_CONFIG_HOME/bmd/
 
 ### Theme
 
-Pick a built-in preset, then override individual roles on top of that preset:
+Pick one of the three built-in presets, then override individual roles for a custom palette:
 
 ```toml
 [theme]
-preset = "nord"   # see table below
+preset = "dark"   # or light / cursor-midnight (default when omitted)
 ```
 
 | Preset | Description |
 |--------|-------------|
-| `dark` | High-contrast classic terminal palette |
 | `cursor-midnight` | Application default (`DEFAULT_PRESET`; used when `preset` is omitted) |
+| `dark` | High-contrast classic terminal palette |
 | `light` | Dark text for light terminal backgrounds |
-| `solarized-dark` | Ethan Schoonover Solarized (dark) |
-| `solarized-light` | Ethan Schoonover Solarized (light) |
-| `nord` | Nord frost / aurora palette |
-| `gruvbox-dark` | Warm Gruvbox dark |
-| `dracula` | Dracula purple-pink accents |
-| `tokyo-night` | Tokyo Night editor colors |
-| `hackerman-omarchy` | Omarchy Hackerman neon cyan/green on `#0B0C16` |
 
-Each `[theme.<role>]` section overrides only the fields you set on the chosen preset; omitted fields keep the preset value. Set a boolean modifier to `false` to turn it off.
+Further skins are not shipped as presets — use `[theme.<role>]` overrides on top of a base. Each override section replaces only the fields you set; omitted fields keep the preset value. Set a boolean modifier to `false` to turn it off.
 
 ```toml
 [theme]
-preset = "nord"
+preset = "dark"
 
 [theme.link]
 fg = "cyan"        # overrides preset link foreground only
@@ -221,11 +202,10 @@ Bindings are grouped by mode. Each command accepts one key string or an array of
 ```toml
 [keymap.normal]
 scroll_down = ["j", "down"]
-prev_link = ["N", "backtab", "p"]
+prev_link = ["N", "backtab"]
 prev_heading = "["
 next_heading = "]"
 toggle_help = "h"
-close_help = "H"
 toggle_outline = "t"
 yank_prefix = "y"
 
@@ -239,7 +219,7 @@ Available commands:
 
 | Mode | Commands |
 |------|----------|
-| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `start_search_forward`, `start_search_backward`, `toggle_help`, `close_help`, `toggle_checklist`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` |
+| `normal` | `scroll_down`, `scroll_up`, `half_page_down`, `half_page_up`, `jump_to_top`, `jump_to_bottom`, `next_link`, `prev_link`, `next_heading`, `prev_heading`, `open_link`, `nav_back`, `nav_reset`, `start_search_forward`, `start_search_backward`, `toggle_help`, `toggle_outline`, `yank_prefix`, `copy_selection`, `quit` (optional: `close_help`, `toggle_checklist`, unbound by default) |
 | `preview` | `close_preview`, `preview_zoom_in`, `preview_zoom_out`, `preview_zoom_reset`, `quit` |
 | `search` | `search_confirm`, `search_cancel`, `search_backspace` |
 
