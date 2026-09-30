@@ -103,10 +103,16 @@ src/
 ## レンダリングパイプライン
 
 1. `parse` が markup を `ParsedDocument` に落とし、`into_domain` で `Document` にする。
-2. `render` は `Document` + `ViewState` を受け取り、スクロールに応じて可視ブロックを描画する。
-3. テーブルは独自のカラム幅計算で折り返す。
-4. mermaid / 画像は `RenderedDocument` にキャッシュし、スクロール中は描画を止める。
-5. 選択中リンクは反転ハイライト。
+2. `render::render_document` は文書全体を上から一度だけ `DocumentRenderCache` のバッファへ描く。スクロールはこのバッファの blit（サブピクセル合成あり）で、部分描画経路は持たない。
+3. トップレベルブロックの配置は `measure::block_tops` が唯一の正本（ブロック間に空行 1 行、先頭・末尾には置かない）。見出し・検索・yank もこれを使う。
+4. リンク / 脚注参照 / チェックボックスの画面位置（`render::hits`）は独自に計算しない。対象スパンの `underline_color` に ID を埋め込んだ「プローブ描画」を行い、バッファを走査して得る。描画と一致することが構成上保証され、幅とチェックリスト版数でキャッシュする。
+5. 単語はスパン境界をまたぐ非空白の連なり（`**Bold**,` は 1 語）。語間の空白は前後が同じスタイルのときだけそれを継ぎ、異なるときは下線・取り消し線を外す。
+6. mermaid / 画像はフローティングプレビューでのみ表示し、`RenderedDocument` にキャッシュする。
+7. 選択中リンクは反転ハイライト。
+
+<!-- constrained-by ./src/render/invariant_tests.rs -->
+
+`render/invariant_tests.rs` が全サンプルと `tests/fixtures/kitchen-sink.{md,adoc,rst}` を複数幅で描き、次を検査する: 測定高さ = 描画範囲、検索一致行に語が含まれる、参照される全リンク / 脚注にヒットがありヒットが重ならない。
 
 ## テーブル折り返しアルゴリズム
 
