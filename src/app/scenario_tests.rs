@@ -25,8 +25,12 @@ struct Harness {
 
 impl Harness {
     fn new(format: MarkupFormat, source: &str) -> Self {
+        Self::sized(format, source, WIDTH, HEIGHT)
+    }
+
+    fn sized(format: MarkupFormat, source: &str, width: u16, height: u16) -> Self {
         let document = parse_document(format, source).unwrap();
-        let size = TerminalSize::new(WIDTH, HEIGHT).unwrap();
+        let size = TerminalSize::new(width, height).unwrap();
         let app = App::new_with_terminal_size(
             document,
             Picker::halfblocks(),
@@ -36,7 +40,7 @@ impl Harness {
             Config::default(),
         )
         .unwrap();
-        let terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).unwrap();
+        let terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         Self { app, terminal }
     }
 
@@ -336,5 +340,41 @@ fn outline_rows_fit_the_sidebar_without_heading_markers() {
             .any(|row| row.contains("Level six") || row.contains("Level s…")),
         "deep heading lost its text:\n{}",
         rows.join("\n")
+    );
+}
+
+#[test]
+fn help_overlay_scrolls_on_a_short_terminal() {
+    let (_, format, source) = SAMPLES[0];
+    let mut h = Harness::sized(format, source, 50, 16);
+    let screen = |h: &Harness| (0..16).map(|y| h.row(y)).collect::<Vec<_>>().join("\n");
+    h.keys("h");
+    assert!(screen(&h).contains("Scroll"), "{}", screen(&h));
+    assert!(!screen(&h).contains("Other"), "help should overflow 50x16");
+
+    h.keys("G");
+    let bottom = screen(&h);
+    assert!(
+        bottom.contains("Other") && bottom.contains("q/Ctrl-c quit"),
+        "{bottom}"
+    );
+    assert!(!bottom.contains("Scroll "), "{bottom}");
+
+    // Scrolling past the end is clamped, so one k moves back up at once.
+    h.keys("jjjk");
+    assert!(!screen(&h).contains("q/Ctrl-c quit"), "{}", screen(&h));
+
+    h.keys("g");
+    assert!(screen(&h).contains("Scroll"), "{}", screen(&h));
+    h.mouse(MouseEventKind::ScrollDown, 25, 8);
+    h.draw();
+    assert!(!screen(&h).contains("Scroll "), "wheel did not scroll help");
+    assert_eq!(h.scroll(), 0, "document scrolled under the help overlay");
+
+    h.key(KeyCode::Esc);
+    h.keys("h");
+    assert!(
+        screen(&h).contains("Scroll"),
+        "reopened help should start at the top"
     );
 }

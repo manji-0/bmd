@@ -89,6 +89,8 @@ pub struct App {
     base_path: Option<std::path::PathBuf>,
     source_label: Option<String>,
     help_visible: bool,
+    /// First visible row of the help overlay; clamped when drawn.
+    help_scroll: usize,
     status_message: Option<String>,
     /// Whether `status_message` reports a failure (drawn with `status_error`).
     status_is_error: bool,
@@ -192,6 +194,7 @@ impl App {
             base_path: base_path.clone(),
             source_label,
             help_visible: false,
+            help_scroll: 0,
             status_message: None,
             status_is_error: false,
             status_message_until: None,

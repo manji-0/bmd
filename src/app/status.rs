@@ -4,7 +4,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Clear, Padding, Paragraph, Wrap},
+    widgets::{Block, Clear, Padding, Paragraph},
 };
 
 use crate::domain::{Document, NavTarget, NormalSearch, ViewState};
@@ -243,25 +243,31 @@ pub(crate) fn draw_status_bar(frame: &mut Frame, area: Rect, line: Line<'_>, the
     frame.render_widget(para, area);
 }
 
-pub(crate) fn draw_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
+/// Draw the help overlay starting at row `scroll` of its wrapped content.
+/// Returns `scroll` clamped to the last page so key presses past the end
+/// do not accumulate.
+pub(crate) fn draw_help_overlay(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    scroll: usize,
+) -> usize {
+    let content_width = HELP_ROWS
+        .iter()
+        .map(|(_, body)| HELP_LABEL_WIDTH + body.width())
+        .max()
+        .unwrap_or(0);
+    let width = (content_width as u16).saturating_add(4).min(area.width);
+    let inner_width = usize::from(width.saturating_sub(4)).max(1);
     let lines: Vec<Line> = HELP_ROWS
         .iter()
-        .map(|(label, body)| {
-            Line::from(vec![
-                Span::styled(format!("{label:<HELP_LABEL_WIDTH$}"), theme.status_info),
-                Span::styled(*body, theme.text),
-            ])
-        })
+        .flat_map(|(label, body)| help_row_lines(label, body, inner_width, theme))
         .collect();
-    let content_width = lines.iter().map(Line::width).max().unwrap_or(0);
-    let width = (content_width as u16).saturating_add(4).min(area.width);
-    // Rows wrap on terminals narrower than the content; grow the popup to match.
-    let inner_width = usize::from(width.saturating_sub(4)).max(1);
-    let wrapped_rows: usize = lines
-        .iter()
-        .map(|line| line.width().div_ceil(inner_width).max(1))
-        .sum();
+    let wrapped_rows = lines.len();
     let height = (wrapped_rows as u16).saturating_add(2).min(area.height);
+    let visible_rows = usize::from(height.saturating_sub(2));
+    let max_scroll = wrapped_rows.saturating_sub(visible_rows);
+    let scroll = scroll.min(max_scroll);
     let popup = Rect {
         x: area.x + (area.width - width) / 2,
         y: area.y + (area.height - height) / 2,
@@ -269,14 +275,60 @@ pub(crate) fn draw_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
         height,
     };
     frame.render_widget(Clear, popup);
-    let block = Block::bordered()
+    let mut block = Block::bordered()
         .border_style(theme.popup_border)
         .title(Span::styled(" bmd help — Esc to close ", theme.status_info))
         .padding(Padding::horizontal(1));
+    if max_scroll > 0 {
+        let hint = match (scroll > 0, scroll < max_scroll) {
+            (true, true) => " ↑↓ j/k ",
+            (true, false) => " ↑ k ",
+            _ => " ↓ j ",
+        };
+        block = block.title_bottom(Line::styled(hint, theme.status_info).right_aligned());
+    }
     let para = Paragraph::new(lines)
         .block(block)
-        .wrap(Wrap { trim: false });
+        .scroll((scroll as u16, 0));
     frame.render_widget(para, popup);
+    scroll
+}
+
+/// Word-wrap one help row to `width` columns. Continuation rows hang under
+/// the bindings column when there is room for it.
+fn help_row_lines(label: &str, body: &str, width: usize, theme: &Theme) -> Vec<Line<'static>> {
+    let hang = if width > HELP_LABEL_WIDTH * 2 {
+        HELP_LABEL_WIDTH
+    } else {
+        0
+    };
+    let mut rows: Vec<String> = vec![String::new()];
+    let mut used = HELP_LABEL_WIDTH;
+    for word in body.split(' ') {
+        let row = rows.last_mut().expect("rows is non-empty");
+        let sep = usize::from(!row.is_empty());
+        if used + sep + word.width() > width && !row.is_empty() {
+            rows.push(word.to_string());
+            used = hang + word.width();
+        } else {
+            if sep == 1 {
+                row.push(' ');
+            }
+            row.push_str(word);
+            used += sep + word.width();
+        }
+    }
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let lead = if i == 0 {
+                Span::styled(format!("{label:<HELP_LABEL_WIDTH$}"), theme.status_info)
+            } else {
+                Span::raw(" ".repeat(hang))
+            };
+            Line::from(vec![lead, Span::styled(row, theme.text)])
+        })
+        .collect()
 }
 
 pub(crate) fn scroll_link_target(
