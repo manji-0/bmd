@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::domain::{
-    AnchorIdle, ChecklistState, ChecklistStyle, DocumentPrefetchSessionSnapshot, DocumentStackFull,
+    AnchorIdle, ChecklistState, DocumentPrefetchSessionSnapshot, DocumentStackFull,
     document_link_path_part, document_stack_limit_message, resolve_document_path,
 };
 use crate::error::AppError;
@@ -172,7 +172,7 @@ impl App {
         self.preview.pending = None;
         self.view_state = crate::domain::ViewState::new(terminal_size);
         self.nav_stack.clear();
-        self.checklist_state = ChecklistState::new(ChecklistStyle::from_env());
+        self.checklist_state = ChecklistState::new(self.checklist_style);
         self.base_path = None;
         self.source_label = Some(blob.path.clone());
         self.file_watch = None;
@@ -259,7 +259,7 @@ impl App {
         self.preview.pending = None;
         self.view_state = crate::domain::ViewState::new(terminal_size);
         self.nav_stack.clear();
-        self.checklist_state = ChecklistState::new(ChecklistStyle::from_env());
+        self.checklist_state = ChecklistState::new(self.checklist_style);
         self.base_path = Some(path.clone());
         self.source_label = path
             .file_name()

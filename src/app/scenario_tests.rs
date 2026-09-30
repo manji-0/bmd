@@ -29,17 +29,21 @@ impl Harness {
     }
 
     fn sized(format: MarkupFormat, source: &str, width: u16, height: u16) -> Self {
+        Self::with_config(format, source, width, height, Config::default())
+    }
+
+    fn with_config(
+        format: MarkupFormat,
+        source: &str,
+        width: u16,
+        height: u16,
+        config: Config,
+    ) -> Self {
         let document = parse_document(format, source).unwrap();
         let size = TerminalSize::new(width, height).unwrap();
-        let app = App::new_with_terminal_size(
-            document,
-            Picker::halfblocks(),
-            None,
-            None,
-            size,
-            Config::default(),
-        )
-        .unwrap();
+        let app =
+            App::new_with_terminal_size(document, Picker::halfblocks(), None, None, size, config)
+                .unwrap();
         let terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         Self { app, terminal }
     }
@@ -377,4 +381,23 @@ fn help_overlay_scrolls_on_a_short_terminal() {
         screen(&h).contains("Scroll"),
         "reopened help should start at the top"
     );
+}
+
+#[test]
+fn ascii_checklist_markers_render_and_toggle_on_click() {
+    let mut config = Config::default();
+    config.view.checklist = Some(crate::config::ChecklistMarkers::Ascii);
+    let source = "- [ ] open task\n- [x] done task\n";
+    let mut h = Harness::with_config(MarkupFormat::Markdown, source, WIDTH, HEIGHT, config);
+    h.draw();
+    if std::env::var("BMD_CHECKLIST_STYLE").is_ok() {
+        return; // The env var deliberately overrides config.
+    }
+    assert!(h.row(0).starts_with("[ ] open task"), "{}", h.row(0));
+    assert!(h.row(1).starts_with("[x] done task"), "{}", h.row(1));
+
+    // Clicking the last cell of the wide marker still toggles it.
+    h.click(2, 0);
+    h.draw();
+    assert!(h.row(0).starts_with("[x] open task"), "{}", h.row(0));
 }

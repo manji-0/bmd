@@ -32,7 +32,7 @@ use crossterm::event;
 use ratatui::{Terminal, backend::Backend};
 use ratatui_image::picker::Picker;
 
-use crate::config::Config;
+use crate::config::{ChecklistMarkers, Config};
 use crate::domain::{
     ChecklistState, ChecklistStyle, Document, Marks, NavStack, TerminalSize, TextSelection,
     ViewState,
@@ -85,6 +85,8 @@ pub struct App {
     syntax_assets: SyntaxAssets,
     theme: Theme,
     keymap: Keymap,
+    /// Marker style resolved once at startup; reused for every opened document.
+    checklist_style: ChecklistStyle,
     checklist_state: ChecklistState,
     base_path: Option<std::path::PathBuf>,
     source_label: Option<String>,
@@ -180,6 +182,12 @@ impl App {
             .as_ref()
             .and_then(|path| FileWatch::new(path.clone()).ok());
         let worker_pool = WorkerPool::shared();
+        let checklist_style = ChecklistStyle::resolve(config.view.checklist.map(|m| match m {
+            ChecklistMarkers::Unicode => ChecklistStyle::Unicode,
+            ChecklistMarkers::Emoji => ChecklistStyle::Emoji,
+            ChecklistMarkers::Ascii => ChecklistStyle::Ascii,
+            ChecklistMarkers::Auto => ChecklistStyle::detect(),
+        }));
         let mut app = Self {
             document,
             rendered,
@@ -190,7 +198,8 @@ impl App {
             syntax_assets: SyntaxAssets::new(),
             theme: config.theme,
             keymap: config.keymap,
-            checklist_state: ChecklistState::new(ChecklistStyle::from_env()),
+            checklist_style,
+            checklist_state: ChecklistState::new(checklist_style),
             base_path: base_path.clone(),
             source_label,
             help_visible: false,

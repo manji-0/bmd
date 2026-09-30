@@ -12,26 +12,38 @@ pub struct ChecklistId(pub u32);
 
 /// Visual style for task-list markers.
 ///
-/// Selection order:
-/// 1. `BMD_CHECKLIST_STYLE=unicode` or `emoji` — explicit override.
-/// 2. `BMD_CHECKLIST_STYLE=auto` or unset — use [`ChecklistStyle::detect`].
-/// 3. Any other value — fall back to Unicode box glyphs.
+/// Selection order (see [`ChecklistStyle::resolve`]):
+/// 1. `BMD_CHECKLIST_STYLE=unicode`, `emoji`, `ascii`, or `auto` — explicit override.
+///    Any other value falls back to Unicode box glyphs.
+/// 2. The `[view] checklist` config value, when set.
+/// 3. Otherwise [`ChecklistStyle::detect`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChecklistStyle {
     /// U+2610 BALLOT BOX / U+2611 BALLOT BOX WITH CHECK.
     Unicode,
     /// Emoji pair for terminals known to render color emoji reliably.
     Emoji,
+    /// `[ ]` / `[x]`, for fonts or terminals without reliable box glyphs.
+    Ascii,
 }
 
 impl ChecklistStyle {
-    pub fn from_env() -> Self {
+    /// Parse a style name (`unicode`, `emoji`, `ascii`, or `auto`), case-insensitively.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "unicode" => Some(Self::Unicode),
+            "emoji" => Some(Self::Emoji),
+            "ascii" => Some(Self::Ascii),
+            "auto" => Some(Self::detect()),
+            _ => None,
+        }
+    }
+
+    /// Style from `BMD_CHECKLIST_STYLE`, else `configured`, else auto-detection.
+    pub fn resolve(configured: Option<Self>) -> Self {
         match std::env::var("BMD_CHECKLIST_STYLE") {
-            Ok(value) if value.eq_ignore_ascii_case("emoji") => Self::Emoji,
-            Ok(value) if value.eq_ignore_ascii_case("unicode") => Self::Unicode,
-            Ok(value) if value.eq_ignore_ascii_case("auto") => Self::detect(),
-            Ok(_) => Self::Unicode,
-            Err(_) => Self::detect(),
+            Ok(value) => Self::from_name(&value).unwrap_or(Self::Unicode),
+            Err(_) => configured.unwrap_or_else(Self::detect),
         }
     }
 
@@ -48,6 +60,7 @@ impl ChecklistStyle {
         match self {
             Self::Unicode => "\u{2610} ",
             Self::Emoji => "⬜ ",
+            Self::Ascii => "[ ] ",
         }
     }
 
@@ -55,6 +68,7 @@ impl ChecklistStyle {
         match self {
             Self::Unicode => "\u{2611} ",
             Self::Emoji => "✅ ",
+            Self::Ascii => "[x] ",
         }
     }
 

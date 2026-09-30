@@ -16,17 +16,46 @@ use crate::render::{DEFAULT_PRESET, Theme};
 
 const CONFIG_RELATIVE: &str = ".config/bmd/config.toml";
 
-/// Application configuration with optional theme and keymap overrides.
+/// Application configuration with optional theme, keymap, and view overrides.
 #[derive(Clone, Debug)]
 pub struct Config {
     pub theme: Theme,
     pub keymap: Keymap,
+    pub view: ViewConfig,
+}
+
+/// `[view]` settings for how documents are laid out and marked up.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ViewConfig {
+    /// Task-list marker style; `None` leaves it to `BMD_CHECKLIST_STYLE` or detection.
+    pub checklist: Option<ChecklistMarkers>,
+}
+
+/// Task-list marker choice from `[view] checklist`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChecklistMarkers {
+    /// Detect from the terminal (same as leaving the setting out).
+    Auto,
+    /// `☐` / `☑`.
+    Unicode,
+    /// `⬜` / `✅`.
+    Emoji,
+    /// `[ ]` / `[x]`.
+    Ascii,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct ConfigFile {
     theme: Option<ThemeSection>,
     keymap: Option<KeymapSection>,
+    view: Option<ViewSection>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ViewSection {
+    checklist: Option<ChecklistMarkers>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -83,6 +112,7 @@ impl Default for Config {
         Self {
             theme: Theme::from_preset(DEFAULT_PRESET).expect("built-in default preset must exist"),
             keymap: Keymap::default(),
+            view: ViewConfig::default(),
         }
     }
 }
@@ -95,6 +125,11 @@ impl ConfigFile {
         }
         if let Some(keymap) = self.keymap {
             config.keymap = keymap.apply_to(Keymap::default())?;
+        }
+        if let Some(view) = self.view {
+            config.view = ViewConfig {
+                checklist: view.checklist.filter(|m| *m != ChecklistMarkers::Auto),
+            };
         }
         Ok(config)
     }
@@ -307,5 +342,18 @@ scroll_down = ["e"]
 
     fn test_key(code: KeyCode) -> crossterm::event::KeyEvent {
         crossterm::event::KeyEvent::new(code, KeyModifiers::empty())
+    }
+
+    #[test]
+    fn view_checklist_parses_marker_names() {
+        let file: ConfigFile = toml::from_str("[view]\nchecklist = \"ascii\"\n").unwrap();
+        let config = file.into_config().unwrap();
+        assert_eq!(config.view.checklist, Some(ChecklistMarkers::Ascii));
+
+        let file: ConfigFile = toml::from_str("[view]\nchecklist = \"auto\"\n").unwrap();
+        assert_eq!(file.into_config().unwrap().view.checklist, None);
+
+        assert!(toml::from_str::<ConfigFile>("[view]\nchecklist = \"boxes\"\n").is_err());
+        assert!(toml::from_str::<ConfigFile>("[view]\nunknown = 1\n").is_err());
     }
 }

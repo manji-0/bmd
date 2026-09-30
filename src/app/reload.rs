@@ -100,8 +100,7 @@ impl App {
         self.document_cache.invalidate();
         self.preview.cache.clear();
         self.preview.pending = None;
-        self.checklist_state =
-            crate::domain::ChecklistState::new(crate::domain::ChecklistStyle::from_env());
+        self.checklist_state = crate::domain::ChecklistState::new(self.checklist_style);
         self.help_visible = false;
         self.nav_stack.clear();
 

@@ -58,7 +58,7 @@ devbox run run -- docs/func-check/00-index.md
 | 16 | ヘルプオーバーレイ | 任意のドキュメントで `h` |
 | 17 | ファイル再読み込み | エディタで開いている md を保存しスクロール位置が維持されるか |
 | 18 | Web リンク | [08-links-anchors.md](./08-links-anchors.md) の外部 URL を `o` で開く |
-| 19 | チェックリストスタイル | `BMD_CHECKLIST_STYLE=unicode` / `emoji` で [04-task-lists.md](./04-task-lists.md) を表示 |
+| 19 | チェックリストスタイル | `BMD_CHECKLIST_STYLE=unicode` / `emoji` / `ascii` で [04-task-lists.md](./04-task-lists.md) を表示 |
 
 ## キーバインド早見表
 
