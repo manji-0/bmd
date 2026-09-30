@@ -1291,3 +1291,9 @@ fn checklist_hits_follow_the_rendered_rows_after_other_blocks() {
         );
     }
 }
+
+#[test]
+fn text_before_a_hard_break_is_kept() {
+    let rows = rendered_rows("before the break\\\nafter it", 80);
+    assert_eq!(rows, ["before the break", "after it"]);
+}

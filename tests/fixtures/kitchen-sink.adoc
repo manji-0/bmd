@@ -1,0 +1,104 @@
+= Kitchen sink
+:author: bmd
+:toc:
+
+Every AsciiDoc construct bmd maps, used by render and app invariant tests.
+*bold*, _italic_, `mono`, +verbatim+, #highlight#, H~2~O, x^2^,
+"`curved quotes`", '`single`', it`'s, and a hard break +
+on the next line.
+
+toc::[]
+
+== Links and references
+
+https://example.com[Example site], <<tables,cross reference>>, mailto:a@example.com[mail],
+link:./other.adoc[another doc], https://example.org, footnote:[An inline footnote.]
+and pass:[<b>raw</b>]. Press kbd:[Ctrl+C], click btn:[Save], open menu:File[Save As],
+icon:heart[], indexterm:[term] ((visible term)), stem:[x^2 + y^2], image:assets/icon.png[Icon].
+
+[[anchor-here]]
+=== Level three
+
+[discrete]
+==== Discrete heading
+
+[#tables]
+== Tables
+
+[cols="1,2,1",options="header"]
+|===
+|Left |Center |Right
+
+|a https://example.net[cell link] |`code` |1
+|a much longer cell that has to wrap when the terminal is narrow |*b* |22
+|===
+
+== Lists
+
+* item one
+* item two
+** nested with https://nested.example[link]
+*** deeper
+* [ ] open task
+* [x] done task
+
+. first
+. second
+.. nested ordered
+
+Term:: Definition with _emphasis_.
+Other term::
+  Definition on its own line.
+
+== Admonitions and blocks
+
+NOTE: Note body with `code`.
+
+TIP: Tip body.
+
+[WARNING]
+====
+Warning block body.
+====
+
+____
+A quote block.
+____
+
+[source,rust]
+----
+fn main() {
+    println!("hello {}", 42); // <1>
+}
+----
+<1> Callout list entry.
+
+....
+literal block
+....
+
+[stem]
+++++
+\int_0^1 x^2 \, dx
+++++
+
+// a comment line
+
+== Media
+
+image::assets/missing.png[Block image]
+
+video::media/demo.mp4[]
+
+audio::media/note.mp3[]
+
+[mermaid]
+....
+graph TD; A-->B;
+....
+
+'''
+
+<<<
+
+Final paragraph after a rule and page break.

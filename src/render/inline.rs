@@ -368,54 +368,11 @@ fn inlines_to_text_raw(
     let mut pending_whitespace = false;
 
     for seg in segments {
+        append_segment_text(&mut spans, &mut pending_whitespace, &seg);
         if seg.force_break_after {
-            // Finish the current line, trimming trailing spaces.
             lines.push(Line::from(std::mem::take(&mut spans)));
             pending_whitespace = false;
-            continue;
         }
-
-        if seg.text.is_empty() {
-            continue;
-        }
-
-        // Normalise whitespace within the segment: split on whitespace runs and join with a
-        // single space. This keeps styled spans contiguous while preserving word boundaries.
-        let words: Vec<&str> = seg.text.split_whitespace().collect();
-        if words.is_empty() {
-            pending_whitespace = true;
-            continue;
-        }
-
-        if pending_whitespace && !spans.is_empty() {
-            spans.push(Span::styled(" ".to_string(), seg.style));
-        }
-
-        // If the segment originally started with whitespace, prefix a single space before the
-        // first word, but only if there is already preceding content.
-        let starts_with_space = seg
-            .text
-            .chars()
-            .next()
-            .map(|c| c.is_whitespace())
-            .unwrap_or(false);
-        if starts_with_space && !spans.is_empty() && !pending_whitespace {
-            spans.push(Span::styled(" ".to_string(), seg.style));
-        }
-
-        for (i, word) in words.iter().enumerate() {
-            if i > 0 {
-                spans.push(Span::styled(" ".to_string(), seg.style));
-            }
-            spans.push(Span::styled((*word).to_string(), seg.style));
-        }
-
-        pending_whitespace = seg
-            .text
-            .chars()
-            .last()
-            .map(|c| c.is_whitespace())
-            .unwrap_or(false);
     }
 
     if pending_whitespace && !spans.is_empty() {
@@ -429,6 +386,55 @@ fn inlines_to_text_raw(
     }
 
     Text::from(lines)
+}
+
+/// Append `seg`'s words to `spans`, collapsing whitespace runs to single spaces.
+fn append_segment_text(
+    spans: &mut Vec<Span<'static>>,
+    pending_whitespace: &mut bool,
+    seg: &Segment,
+) {
+    if seg.text.is_empty() {
+        return;
+    }
+
+    // Normalise whitespace within the segment: split on whitespace runs and join with a
+    // single space. This keeps styled spans contiguous while preserving word boundaries.
+    let words: Vec<&str> = seg.text.split_whitespace().collect();
+    if words.is_empty() {
+        *pending_whitespace = true;
+        return;
+    }
+
+    if *pending_whitespace && !spans.is_empty() {
+        spans.push(Span::styled(" ".to_string(), seg.style));
+    }
+
+    // If the segment originally started with whitespace, prefix a single space before the
+    // first word, but only if there is already preceding content.
+    let starts_with_space = seg
+        .text
+        .chars()
+        .next()
+        .map(|c| c.is_whitespace())
+        .unwrap_or(false);
+    if starts_with_space && !spans.is_empty() && !*pending_whitespace {
+        spans.push(Span::styled(" ".to_string(), seg.style));
+    }
+
+    for (i, word) in words.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" ".to_string(), seg.style));
+        }
+        spans.push(Span::styled((*word).to_string(), seg.style));
+    }
+
+    *pending_whitespace = seg
+        .text
+        .chars()
+        .last()
+        .map(|c| c.is_whitespace())
+        .unwrap_or(false);
 }
 
 #[derive(Debug)]

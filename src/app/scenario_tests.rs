@@ -128,10 +128,11 @@ fn keyboard_tour_visits_every_mode_on_every_sample() {
         h.keys("[");
         assert!(h.scroll() <= after_heading, "{name}: [ moved down");
 
+        let marked = h.scroll();
         h.keys("ma");
         h.keys("G");
         h.keys("'a");
-        assert_eq!(h.scroll(), 0, "{name}: mark jump");
+        assert_eq!(h.scroll(), marked, "{name}: mark jump");
 
         h.keys("nnN");
         assert!(
