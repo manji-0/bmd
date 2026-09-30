@@ -20,8 +20,7 @@ use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
 
 use inline::{
-    map_inline_without_state, map_inlines, map_verbatim_inlines, mermaid_link_label,
-    source_to_string, verbatim_content,
+    map_inlines, map_verbatim_inlines, mermaid_link_label, source_to_string, verbatim_content,
 };
 use table::map_table;
 
@@ -34,14 +33,10 @@ struct AsciiDocState<'a> {
 }
 
 impl<'a> AsciiDocState<'a> {
-    fn new(
-        footnotes: Vec<ParsedFootnoteDefinition>,
-        front_matter: Option<ParsedFrontMatter>,
-        toc_entries: &'a [TocEntry<'a>],
-    ) -> Self {
+    fn new(front_matter: Option<ParsedFrontMatter>, toc_entries: &'a [TocEntry<'a>]) -> Self {
         Self {
             parts: ParsedDocumentParts::default(),
-            footnotes,
+            footnotes: Vec::new(),
             footnote_order: Vec::new(),
             front_matter,
             toc_entries,
@@ -75,9 +70,8 @@ pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
     let parsed = acdc_parser::parse(content, &options)
         .map_err(|error| ParseError::syntax(MarkupFormat::AsciiDoc, error.to_string()))?;
     let doc = parsed.document();
-    let footnotes = convert_document_footnotes(&doc.footnotes);
     let front_matter = build_front_matter(&doc.attributes, doc.header.as_ref());
-    let mut state = AsciiDocState::new(footnotes, front_matter, &doc.toc_entries);
+    let mut state = AsciiDocState::new(front_matter, &doc.toc_entries);
     let mut blocks = Vec::new();
     if let Some(header) = doc.header.as_ref() {
         let title = acdc_parser::inlines_to_string(&header.title);
@@ -94,10 +88,14 @@ pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
         }
     }
     blocks.extend(map_blocks(&doc.blocks, &mut state)?);
+    state.footnotes = convert_document_footnotes(&doc.footnotes, &mut state);
     Ok(state.into_document(blocks))
 }
 
-fn convert_document_footnotes(footnotes: &[AdocFootnote<'_>]) -> Vec<ParsedFootnoteDefinition> {
+fn convert_document_footnotes(
+    footnotes: &[AdocFootnote<'_>],
+    state: &mut AsciiDocState<'_>,
+) -> Vec<ParsedFootnoteDefinition> {
     footnotes
         .iter()
         .map(|footnote| ParsedFootnoteDefinition {
@@ -105,13 +103,10 @@ fn convert_document_footnotes(footnotes: &[AdocFootnote<'_>]) -> Vec<ParsedFootn
                 .id
                 .map(str::to_string)
                 .unwrap_or_else(|| footnote.number.to_string()),
-            blocks: vec![ParsedBlock::Paragraph(
-                footnote
-                    .content
-                    .iter()
-                    .flat_map(|inline| map_inline_without_state(inline))
-                    .collect(),
-            )],
+            blocks: vec![ParsedBlock::Paragraph(map_inlines(
+                &footnote.content,
+                state,
+            ))],
         })
         .collect()
 }

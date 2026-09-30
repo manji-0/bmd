@@ -271,3 +271,24 @@ fn parse_asciidoc_block_image_keeps_a_visible_label() {
         assert_eq!(children, &[Inline::Text(label.into())], "{source:?}");
     }
 }
+
+#[test]
+fn parse_asciidoc_footnote_body_keeps_links_and_markup() {
+    let src = "Text.footnote:[See https://example.com[the docs] and *bold*.]\n";
+    let doc = parse(src).unwrap().into_domain().unwrap();
+    let [definition] = doc.footnotes() else {
+        panic!("{:?}", doc.footnotes());
+    };
+    let [Block::Paragraph(inlines)] = definition.content.as_slice() else {
+        panic!("{:?}", definition.content);
+    };
+    assert!(
+        inlines.iter().any(|i| matches!(i, Inline::Link(..))),
+        "{inlines:?}"
+    );
+    assert!(
+        inlines.iter().any(|i| matches!(i, Inline::Strong(..))),
+        "{inlines:?}"
+    );
+    assert_eq!(doc.links()[0].url.as_str(), "https://example.com");
+}

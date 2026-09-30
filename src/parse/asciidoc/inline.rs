@@ -31,64 +31,6 @@ pub(super) fn map_inlines(
         .collect()
 }
 
-pub(super) fn map_inline_without_state(inline: &InlineNode<'_>) -> Vec<ParsedInline> {
-    match inline {
-        InlineNode::PlainText(plain) => vec![ParsedInline::Text(plain.content.to_string())],
-        InlineNode::RawText(raw) => vec![ParsedInline::Text(raw.content.to_string())],
-        InlineNode::VerbatimText(verbatim) => {
-            vec![ParsedInline::Code(verbatim.content.to_string())]
-        }
-        InlineNode::BoldText(bold) => {
-            let children = map_inline_children_without_state(&bold.content);
-            if is_line_through_role(bold.role) {
-                vec![ParsedInline::Strikethrough(children)]
-            } else {
-                vec![ParsedInline::Strong(children)]
-            }
-        }
-        InlineNode::ItalicText(italic) => {
-            let children = map_inline_children_without_state(&italic.content);
-            if is_line_through_role(italic.role) {
-                vec![ParsedInline::Strikethrough(children)]
-            } else {
-                vec![ParsedInline::Emphasis(children)]
-            }
-        }
-        InlineNode::MonospaceText(mono) => {
-            vec![ParsedInline::Code(acdc_parser::inlines_to_string(
-                &mono.content,
-            ))]
-        }
-        InlineNode::HighlightText(node) => {
-            let children = map_inline_children_without_state(&node.content);
-            if is_line_through_role(node.role) {
-                vec![ParsedInline::Strikethrough(children)]
-            } else {
-                children
-            }
-        }
-        InlineNode::SubscriptText(node) => {
-            vec![ParsedInline::Subscript(map_inline_children_without_state(
-                &node.content,
-            ))]
-        }
-        InlineNode::SuperscriptText(node) => {
-            vec![ParsedInline::Superscript(
-                map_inline_children_without_state(&node.content),
-            )]
-        }
-        InlineNode::CurvedQuotationText(node) => map_inline_children_without_state(&node.content),
-        InlineNode::CurvedApostropheText(node) => map_inline_children_without_state(&node.content),
-        InlineNode::StandaloneCurvedApostrophe(_) => vec![ParsedInline::Text("'".into())],
-        InlineNode::LineBreak(_) => vec![ParsedInline::HardBreak],
-        InlineNode::Macro(macro_node) => map_inline_macro_without_state(macro_node),
-        InlineNode::CalloutRef(callout) => {
-            vec![ParsedInline::Text(format!("<{}>", callout.number))]
-        }
-        _ => Vec::new(),
-    }
-}
-
 fn map_inline(inline: &InlineNode<'_>, state: &mut AsciiDocState<'_>) -> Vec<ParsedInline> {
     match inline {
         InlineNode::PlainText(plain) => vec![ParsedInline::Text(plain.content.to_string())],
@@ -135,10 +77,6 @@ fn map_inline(inline: &InlineNode<'_>, state: &mut AsciiDocState<'_>) -> Vec<Par
         }
         _ => Vec::new(),
     }
-}
-
-fn map_inline_children_without_state(inlines: &[InlineNode<'_>]) -> Vec<ParsedInline> {
-    inlines.iter().flat_map(map_inline_without_state).collect()
 }
 
 fn styled_inlines<F>(
@@ -273,24 +211,6 @@ fn map_inline_macro(
             acdc_parser::IndexTermKind::Flow(term) => vec![ParsedInline::Text(term.to_string())],
             acdc_parser::IndexTermKind::Concealed { .. } | _ => Vec::new(),
         },
-        _ => Vec::new(),
-    }
-}
-
-fn map_inline_macro_without_state(macro_node: &InlineMacro<'_>) -> Vec<ParsedInline> {
-    match macro_node {
-        InlineMacro::Footnote(footnote) => {
-            let footnote_id = footnote.number.saturating_sub(1) as usize;
-            vec![ParsedInline::FootnoteReference {
-                footnote_id,
-                display: footnote.number as usize,
-            }]
-        }
-        InlineMacro::Pass(pass) => pass
-            .text
-            .map(|text| vec![ParsedInline::Text(text.to_string())])
-            .unwrap_or_default(),
-        InlineMacro::Stem(stem) => vec![ParsedInline::Math(stem.content.to_string())],
         _ => Vec::new(),
     }
 }
