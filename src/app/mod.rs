@@ -21,6 +21,8 @@ mod worker_pool;
 mod yank;
 
 #[cfg(test)]
+mod scenario_tests;
+#[cfg(test)]
 mod tests;
 
 use std::time::{Duration, Instant};

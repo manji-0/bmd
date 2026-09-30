@@ -7,37 +7,10 @@ use super::document::render_document;
 use super::hits::{HitTarget, collect_hits};
 use super::{RenderContext, SyntaxAssets, Theme, find_search_matches, measure_document_height};
 use crate::domain::{ChecklistState, ChecklistStyle, Document, Inline, NavTarget};
-use crate::parse::{MarkupFormat, parse_document};
+use crate::parse::parse_document;
+use crate::test_fixtures::SAMPLES;
 
 const WIDTHS: [u16; 4] = [24, 40, 80, 132];
-
-pub(crate) const SAMPLES: [(&str, MarkupFormat, &str); 5] = [
-    (
-        "kitchen-sink.md",
-        MarkupFormat::Markdown,
-        include_str!("../../tests/fixtures/kitchen-sink.md"),
-    ),
-    (
-        "sample.md",
-        MarkupFormat::Markdown,
-        include_str!("../../sample.md"),
-    ),
-    (
-        "sample-gfm.md",
-        MarkupFormat::Markdown,
-        include_str!("../../sample-gfm.md"),
-    ),
-    (
-        "sample.rst",
-        MarkupFormat::Rest,
-        include_str!("../../sample.rst"),
-    ),
-    (
-        "sample.adoc",
-        MarkupFormat::AsciiDoc,
-        include_str!("../../sample.adoc"),
-    ),
-];
 
 struct Fixture {
     theme: Theme,

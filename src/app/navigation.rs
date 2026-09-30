@@ -59,7 +59,7 @@ impl App {
         self.maybe_warm_selected_preview();
     }
 
-    fn visible_nav_targets(&mut self) -> Vec<crate::domain::NavTarget> {
+    pub(crate) fn visible_nav_targets(&mut self) -> Vec<crate::domain::NavTarget> {
         let scroll = self.view_state.scroll().offset();
         let lines = self.content_height() as usize;
         crate::render::visible_nav_targets(self.hits(), scroll, lines)
@@ -291,7 +291,7 @@ impl App {
         };
     }
 
-    fn scroll_to_line(&mut self, line_offset: usize) {
+    pub(crate) fn scroll_to_line(&mut self, line_offset: usize) {
         let max = self.max_scroll();
         let target = scroll_link_target(line_offset, max, &self.view_state);
         self.view_state = self.view_state.clone().scroll_to(target, max);

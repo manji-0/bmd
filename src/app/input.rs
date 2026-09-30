@@ -101,10 +101,6 @@ impl App {
             self.view_state.mode(),
             self.view_state.normal_search(),
         );
-        if self.is_quit(&command) {
-            self.should_quit = true;
-            return Ok(true);
-        }
         self.handle_command(command)?;
         Ok(true)
     }
@@ -333,9 +329,5 @@ impl App {
             }
             _ => None,
         }
-    }
-
-    pub(crate) fn is_quit(&self, command: &Command) -> bool {
-        matches!(command, Command::Quit)
     }
 }

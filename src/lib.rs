@@ -9,6 +9,8 @@ mod github;
 mod keymap;
 mod parse;
 mod render;
+#[cfg(test)]
+mod test_fixtures;
 
 pub use app::App;
 pub use domain::Document;
