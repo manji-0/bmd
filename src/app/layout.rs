@@ -43,7 +43,16 @@ pub(crate) fn content_height(terminal_height: u16, mode: &UiMode) -> u16 {
 }
 
 /// Split the terminal into optional outline, main content, status bar, and prompt.
-pub(crate) fn split_layout(area: Rect, mode: &UiMode, outline_visible: bool) -> LayoutAreas {
+///
+/// With `max_width`, a wider main column is narrowed to it and centered in the
+/// space beside the outline. Every width-dependent path (wrapping, hit tests,
+/// selection) reads the main rect from here so they stay in agreement.
+pub(crate) fn split_layout(
+    area: Rect,
+    mode: &UiMode,
+    outline_visible: bool,
+    max_width: Option<u16>,
+) -> LayoutAreas {
     let prompt_rows = if mode.is_search_input() { 1 } else { 0 };
     let chrome = STATUS_BAR_HEIGHT + prompt_rows;
     let main_height = area.height.saturating_sub(chrome).max(1);
@@ -77,6 +86,10 @@ pub(crate) fn split_layout(area: Rect, mode: &UiMode, outline_visible: bool) -> 
         )
     };
 
+    let (main_x, main_width) = match max_width {
+        Some(max) if main_width > max => (main_x + (main_width - max) / 2, max),
+        _ => (main_x, main_width),
+    };
     let main = Rect {
         x: main_x,
         y: area.y,
@@ -116,19 +129,4 @@ pub(crate) fn split_layout(area: Rect, mode: &UiMode, outline_visible: bool) -> 
         status,
         prompt,
     }
-}
-
-/// Split the terminal area into the main content area and a one-line prompt area
-/// when the application is in search input mode.
-pub(crate) fn split_main_and_prompt(
-    area: Rect,
-    mode: &UiMode,
-    outline_visible: bool,
-) -> (Rect, Rect) {
-    let areas = split_layout(area, mode, outline_visible);
-    (areas.main, areas.prompt)
-}
-
-pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    crate::render::centered_rect(percent_x, percent_y, r)
 }

@@ -33,7 +33,7 @@ impl App {
                 }
             }
 
-            if self.view_state.mode().is_normal() && !self.help_visible {
+            if self.view_state.mode().is_normal() {
                 match mouse.kind {
                     MouseEventKind::ScrollDown => {
                         self.handle_command(Command::ScrollDown)?;
@@ -185,7 +185,7 @@ impl App {
                     Ok(name) => self.set_mark(name),
                     Err(_) => {
                         self.pending_input = PendingInput::None;
-                        self.set_status_message("mark name must be a-z".into());
+                        self.set_status_error("mark name must be a-z".into());
                     }
                 }
                 Ok(Some(true))
@@ -195,7 +195,7 @@ impl App {
                     Ok(name) => self.jump_to_mark(name),
                     Err(_) => {
                         self.pending_input = PendingInput::None;
-                        self.set_status_message("mark name must be a-z".into());
+                        self.set_status_error("mark name must be a-z".into());
                     }
                 }
                 Ok(Some(true))
@@ -207,8 +207,7 @@ impl App {
                     'h' => self.yank_heading_slug()?,
                     'c' => self.yank_code_block()?,
                     'y' => self.copy_text_selection()?,
-                    _ => self
-                        .set_status_message("yank: l link  h heading  c code  y selection".into()),
+                    _ => self.set_status_error(format!("yank: unknown target '{c}'")),
                 }
                 Ok(Some(true))
             }
@@ -229,6 +228,19 @@ impl App {
                     self.help_visible = false;
                 }
                 Command::Quit => self.should_quit = true,
+                Command::ScrollDown => self.help_scroll += LINE_SCROLL_LINES,
+                Command::ScrollUp => {
+                    self.help_scroll = self.help_scroll.saturating_sub(LINE_SCROLL_LINES);
+                }
+                Command::HalfPageDown => self.help_scroll += usize::from(self.content_height() / 2),
+                Command::HalfPageUp => {
+                    self.help_scroll = self
+                        .help_scroll
+                        .saturating_sub(usize::from(self.content_height() / 2));
+                }
+                Command::JumpToTop => self.help_scroll = 0,
+                // Clamped to the last page when the overlay is drawn.
+                Command::JumpToBottom => self.help_scroll = usize::MAX,
                 _ => {}
             }
             return Ok(());
@@ -283,7 +295,10 @@ impl App {
             Command::SearchCancel => self.cancel_search(),
             Command::SearchInput(c) => self.append_search_input(c),
             Command::SearchBackspace => self.backspace_search_input(),
-            Command::ToggleHelp => self.help_visible = true,
+            Command::ToggleHelp => {
+                self.help_visible = true;
+                self.help_scroll = 0;
+            }
             Command::CloseHelp => self.help_visible = false,
             Command::ToggleChecklist => self.toggle_checklist_at_viewport(),
             Command::ToggleOutline => self.toggle_outline(),
@@ -300,7 +315,6 @@ impl App {
             return self.copy_text_selection();
         }
         self.pending_input = PendingInput::Yank;
-        self.set_status_message("yank: l link  h heading  c code  y selection".into());
         Ok(())
     }
 

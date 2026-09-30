@@ -88,7 +88,7 @@ impl App {
         let terminal = self.view_state.terminal_size();
         self.preview
             .cache
-            .ensure(link_id, terminal, &title, protocol);
+            .ensure(link_id, terminal, &title, self.theme.popup_border, protocol);
     }
 
     pub(crate) fn open_preview_now(&mut self, link_id: LinkId) {

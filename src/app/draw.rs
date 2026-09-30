@@ -28,9 +28,20 @@ impl App {
     where
         AppError: From<B::Error>,
     {
+        // The outline sidebar already marks the current heading.
+        let section = if self.outline.visible {
+            None
+        } else {
+            self.section_breadcrumb()
+        };
         terminal.draw(|f| {
             let full_area = f.area();
-            let areas = split_layout(full_area, self.view_state.mode(), self.outline.visible);
+            let areas = split_layout(
+                full_area,
+                self.view_state.mode(),
+                self.outline.visible,
+                self.max_width,
+            );
 
             if areas.outline.width > 0 {
                 self.draw_outline_sidebar(f, areas.outline);
@@ -73,11 +84,13 @@ impl App {
             }
 
             if self.help_visible {
-                draw_help_overlay(f, areas.main);
+                self.help_scroll =
+                    draw_help_overlay(f, areas.main, &self.theme, &self.keymap, self.help_scroll);
             }
 
             let status = format_status_bar(StatusBarInput {
                 source_label: self.source_label.as_deref(),
+                section: section.as_deref(),
                 document: &self.document,
                 view_state: &self.view_state,
                 max_scroll: self.max_scroll(),
@@ -85,8 +98,11 @@ impl App {
                 status_message: self.status_message.as_deref(),
                 outline_visible: self.outline.visible,
                 pending_prompt: self.pending_input.prompt(),
+                status_is_error: self.status_is_error,
+                theme: &self.theme,
+                width: areas.status.width,
             });
-            draw_status_bar(f, areas.status, status);
+            draw_status_bar(f, areas.status, status, &self.theme);
 
             if let UiMode::SearchInput { direction, query } = self.view_state.mode() {
                 let prompt = super::search::format_search_prompt(
@@ -94,8 +110,13 @@ impl App {
                     query,
                     self.live_search_match_count,
                 );
-                let para = Paragraph::new(prompt);
-                f.render_widget(para, areas.prompt);
+                // A query with no matches reads as an error while typing.
+                let style = if self.live_search_match_count == Some(0) {
+                    self.theme.status_error
+                } else {
+                    self.theme.text
+                };
+                f.render_widget(Paragraph::new(prompt).style(style), areas.prompt);
             }
         })?;
         Ok(())
@@ -142,7 +163,9 @@ impl App {
                 area,
             );
             frame.render_widget(Clear, popup);
-            let block = Block::bordered().title(title);
+            let block = Block::bordered()
+                .border_style(self.theme.popup_border)
+                .title(title);
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
             frame.render_widget(Paragraph::new(preview_external_open_message()), inner);
@@ -161,9 +184,13 @@ impl App {
             );
 
             if (self.preview.zoom - 1.0).abs() < f32::EPSILON {
-                self.preview
-                    .cache
-                    .ensure(link_id, terminal, &title, protocol);
+                self.preview.cache.ensure(
+                    link_id,
+                    terminal,
+                    &title,
+                    self.theme.popup_border,
+                    protocol,
+                );
                 if self
                     .preview
                     .cache
@@ -174,7 +201,9 @@ impl App {
             }
 
             frame.render_widget(Clear, popup);
-            let block = Block::bordered().title(title);
+            let block = Block::bordered()
+                .border_style(self.theme.popup_border)
+                .title(title);
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
             crate::render::render_floating_image(
@@ -193,7 +222,9 @@ impl App {
                 area,
             );
             frame.render_widget(Clear, popup);
-            let block = Block::bordered().title(title);
+            let block = Block::bordered()
+                .border_style(self.theme.popup_border)
+                .title(title);
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
             let message = preview_failed_message(link.kind);
@@ -214,7 +245,9 @@ impl App {
             area,
         );
         frame.render_widget(Clear, popup);
-        let block = Block::bordered().title("Table of Contents");
+        let block = Block::bordered()
+            .border_style(self.theme.popup_border)
+            .title("Table of Contents");
         let inner = block.inner(popup);
         frame.render_widget(block, popup);
 
@@ -267,7 +300,9 @@ impl App {
         );
         frame.render_widget(Clear, popup);
         let title = footnote_preview_title(&self.document, footnote_id);
-        let block = Block::bordered().title(title);
+        let block = Block::bordered()
+            .border_style(self.theme.popup_border)
+            .title(title);
         let inner = block.inner(popup);
         frame.render_widget(block, popup);
 

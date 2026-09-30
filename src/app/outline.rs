@@ -2,13 +2,18 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Modifier,
     text::{Line, Span},
     widgets::{Block, Clear, Paragraph},
 };
 
 use super::App;
-use super::layout::{OUTLINE_GAP, outline_panel_width};
+use super::status::truncate_to_width;
+
+/// Columns of indent per heading level below the shallowest one.
+const OUTLINE_INDENT: usize = 2;
+/// Deepest indent; levels beyond it line up so their text stays readable.
+const OUTLINE_MAX_INDENT: usize = 6;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct OutlineUi {
@@ -53,6 +58,25 @@ impl App {
             .iter()
             .rposition(|heading| heading.line_offset <= scroll)
             .or_else(|| headings.first().map(|_| 0))
+    }
+
+    /// Headings enclosing the scroll position, outermost first, joined with `›`.
+    /// `None` above the first heading.
+    pub(crate) fn section_breadcrumb(&mut self) -> Option<String> {
+        self.refresh_heading_catalog();
+        let scroll = self.view_state.scroll().offset();
+        let headings = self.heading_cache.entries();
+        let current = headings
+            .iter()
+            .rposition(|heading| heading.line_offset <= scroll)?;
+        let mut trail = vec![&headings[current]];
+        for heading in headings[..current].iter().rev() {
+            if heading.level < trail.last().expect("trail is non-empty").level {
+                trail.push(heading);
+            }
+        }
+        let names: Vec<&str> = trail.iter().rev().map(|h| h.text.as_str()).collect();
+        Some(names.join(" › "))
     }
 
     pub(crate) fn jump_to_outline_heading(&mut self) {
@@ -111,16 +135,16 @@ impl App {
         }
         self.sync_outline_selection_from_scroll();
 
-        let current_scroll = self.view_state.scroll().offset();
-        let current_idx = self.heading_index_at_scroll(current_scroll);
         let selected_raw = self.outline.selected;
         let normal_style = self.theme.text;
-        let selected_style = Style::default().add_modifier(Modifier::BOLD);
-        let prefix_style = Style::default().add_modifier(Modifier::DIM);
+        let top_level_style = self.theme.text.add_modifier(Modifier::BOLD);
+        let selected_style = self.theme.link_selected;
         let entries = self.heading_cache.entries();
 
         frame.render_widget(Clear, area);
-        let block = Block::bordered().title("Outline");
+        let block = Block::bordered()
+            .border_style(self.theme.popup_border)
+            .title("Outline");
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -130,31 +154,33 @@ impl App {
         }
 
         let selected = selected_raw.min(entries.len() - 1);
+        let top_level = entries.iter().map(|e| e.level.as_u8()).min().unwrap_or(1);
+        let width = usize::from(inner.width);
 
         let lines: Vec<Line> = entries
             .iter()
             .enumerate()
             .map(|(i, entry)| {
-                let indent = "  ".repeat(entry.level.as_u8().saturating_sub(1) as usize);
-                let prefix = entry.level.prefix();
-                let is_selected = i == selected;
-                let is_current = current_idx == Some(i);
-                let style = if is_selected {
+                // Indent relative to the shallowest heading, capped so deep
+                // levels keep room for their text in the narrow sidebar.
+                let depth = usize::from(entry.level.as_u8().saturating_sub(top_level));
+                let indent = " ".repeat((depth * OUTLINE_INDENT).min(OUTLINE_MAX_INDENT));
+                let text = truncate_to_width(&entry.text, width.saturating_sub(indent.len()));
+                let style = if i == selected {
                     selected_style
-                } else if is_current {
-                    Style::default().add_modifier(Modifier::UNDERLINED)
+                } else if depth == 0 {
+                    top_level_style
                 } else {
                     normal_style
                 };
-                let marker_style = if is_selected {
-                    selected_style
+                // Pad the selected row so its highlight spans the sidebar.
+                let row = format!("{indent}{text}");
+                let row = if i == selected {
+                    format!("{row:<width$}")
                 } else {
-                    prefix_style
+                    row
                 };
-                Line::from(vec![
-                    Span::styled(format!("{indent}{prefix}"), marker_style),
-                    Span::styled(entry.text.as_str(), style),
-                ])
+                Line::from(Span::styled(row, style))
             })
             .collect();
 
@@ -166,18 +192,5 @@ impl App {
         };
         let paragraph = Paragraph::new(lines).scroll((scroll_y as u16, 0));
         frame.render_widget(paragraph, inner);
-    }
-}
-
-/// Width reserved for the outline column including the gap before main content.
-pub(crate) fn outline_reserve_width(terminal_width: u16, outline_visible: bool) -> u16 {
-    if !outline_visible {
-        return 0;
-    }
-    let panel = outline_panel_width(terminal_width);
-    if panel == 0 {
-        0
-    } else {
-        panel.saturating_add(OUTLINE_GAP)
     }
 }

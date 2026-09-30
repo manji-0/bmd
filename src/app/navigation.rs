@@ -111,7 +111,7 @@ impl App {
             return;
         };
         let Some(link) = self.document.links.get(id.0).cloned() else {
-            self.set_status_message(format!("dangling link {id}"));
+            self.set_status_error(format!("dangling link {id}"));
             return;
         };
         let url = link.url.as_str().to_string();
@@ -143,7 +143,7 @@ impl App {
                 };
                 let outcome = path.map(|path| path.and_then(|p| crate::browser::open_path(&p)));
                 if let Some(Err(e)) = outcome {
-                    self.set_status_message(e.to_string());
+                    self.set_status_error(e.to_string());
                 }
             }
             self.previews
@@ -165,7 +165,7 @@ impl App {
                 return;
             }
             if let Err(e) = open_link(&link.url) {
-                self.set_status_message(e.to_string());
+                self.set_status_error(e.to_string());
             }
         }
     }

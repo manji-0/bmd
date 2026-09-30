@@ -25,18 +25,26 @@ struct Harness {
 
 impl Harness {
     fn new(format: MarkupFormat, source: &str) -> Self {
+        Self::sized(format, source, WIDTH, HEIGHT)
+    }
+
+    fn sized(format: MarkupFormat, source: &str, width: u16, height: u16) -> Self {
+        Self::with_config(format, source, width, height, Config::default())
+    }
+
+    fn with_config(
+        format: MarkupFormat,
+        source: &str,
+        width: u16,
+        height: u16,
+        config: Config,
+    ) -> Self {
         let document = parse_document(format, source).unwrap();
-        let size = TerminalSize::new(WIDTH, HEIGHT).unwrap();
-        let app = App::new_with_terminal_size(
-            document,
-            Picker::halfblocks(),
-            None,
-            None,
-            size,
-            Config::default(),
-        )
-        .unwrap();
-        let terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).unwrap();
+        let size = TerminalSize::new(width, height).unwrap();
+        let app =
+            App::new_with_terminal_size(document, Picker::halfblocks(), None, None, size, config)
+                .unwrap();
+        let terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         Self { app, terminal }
     }
 
@@ -256,4 +264,246 @@ fn mouse_drag_selects_text_and_wheel_scrolls() {
     assert!(h.scroll() > 0);
     h.mouse(MouseEventKind::ScrollUp, 5, 5);
     assert_eq!(h.scroll(), 0);
+}
+
+impl Harness {
+    fn row(&self, y: u16) -> String {
+        let buf = self.terminal.backend().buffer();
+        (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()
+    }
+
+    fn status_row(&self) -> String {
+        self.row(HEIGHT - 1)
+    }
+}
+
+#[test]
+fn pending_key_prompts_appear_once_in_the_status_bar() {
+    let mut h = Harness::kitchen_sink();
+    for (keys, prompt) in [("y", "yank: l link"), ("m", "m — mark"), ("'", "' — jump")] {
+        h.keys(keys);
+        let status = h.status_row();
+        assert_eq!(status.matches(prompt).count(), 1, "{keys}: {status}");
+        assert!(
+            status.starts_with(prompt),
+            "{keys}: prompt should lead: {status}"
+        );
+        h.key(KeyCode::Esc);
+        assert!(!h.status_row().contains(prompt), "{keys}: Esc keeps prompt");
+    }
+}
+
+#[test]
+fn help_overlay_rows_are_not_clipped_at_80_columns() {
+    let mut h = Harness::kitchen_sink();
+    h.keys("h");
+    let screen: Vec<String> = (0..HEIGHT).map(|y| h.row(y)).collect();
+    for (label, body) in super::status::help_rows(&h.app.keymap) {
+        assert!(
+            screen
+                .iter()
+                .any(|row| row.contains(label) && row.contains(body.as_str())),
+            "help row '{label}' clipped:\n{}",
+            screen.join("\n")
+        );
+    }
+}
+
+#[test]
+fn status_messages_use_theme_info_and_error_styles() {
+    let mut h = Harness::kitchen_sink();
+    let fg_at_status_start = |h: &Harness| h.terminal.backend().buffer()[(0, HEIGHT - 1)].fg;
+
+    h.app.set_status_message("copied".into());
+    h.draw();
+    assert_eq!(Some(fg_at_status_start(&h)), h.app.theme.status_info.fg);
+
+    h.app.set_status_error("failed".into());
+    h.draw();
+    assert_eq!(Some(fg_at_status_start(&h)), h.app.theme.status_error.fg);
+
+    let bg = h.terminal.backend().buffer()[(WIDTH - 1, HEIGHT - 1)].bg;
+    assert_eq!(Some(bg), h.app.theme.status_bar.bg);
+}
+
+#[test]
+fn outline_rows_fit_the_sidebar_without_heading_markers() {
+    let mut h = Harness::kitchen_sink();
+    h.keys("t");
+    let panel = super::layout::outline_panel_width(WIDTH) as usize;
+    let rows: Vec<String> = (1..HEIGHT - 2)
+        .map(|y| h.row(y).chars().take(panel).collect())
+        .collect();
+    assert!(
+        rows.iter().all(|row| !row.contains("# ")),
+        "outline still shows # markers:\n{}",
+        rows.join("\n")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("Level six") || row.contains("Level s…")),
+        "deep heading lost its text:\n{}",
+        rows.join("\n")
+    );
+}
+
+#[test]
+fn help_overlay_scrolls_on_a_short_terminal() {
+    let (_, format, source) = SAMPLES[0];
+    let mut h = Harness::sized(format, source, 50, 16);
+    let screen = |h: &Harness| (0..16).map(|y| h.row(y)).collect::<Vec<_>>().join("\n");
+    h.keys("h");
+    assert!(screen(&h).contains("Scroll"), "{}", screen(&h));
+    assert!(!screen(&h).contains("Other"), "help should overflow 50x16");
+
+    h.keys("G");
+    let bottom = screen(&h);
+    assert!(
+        bottom.contains("Other") && bottom.contains("q/Ctrl-c quit"),
+        "{bottom}"
+    );
+    assert!(!bottom.contains("Scroll "), "{bottom}");
+
+    // Scrolling past the end is clamped, so one k moves back up at once.
+    h.keys("jjjk");
+    assert!(!screen(&h).contains("q/Ctrl-c quit"), "{}", screen(&h));
+
+    h.keys("g");
+    assert!(screen(&h).contains("Scroll"), "{}", screen(&h));
+    h.mouse(MouseEventKind::ScrollDown, 25, 8);
+    h.draw();
+    assert!(!screen(&h).contains("Scroll "), "wheel did not scroll help");
+    assert_eq!(h.scroll(), 0, "document scrolled under the help overlay");
+
+    h.key(KeyCode::Esc);
+    h.keys("h");
+    assert!(
+        screen(&h).contains("Scroll"),
+        "reopened help should start at the top"
+    );
+}
+
+#[test]
+fn ascii_checklist_markers_render_and_toggle_on_click() {
+    let mut config = Config::default();
+    config.view.checklist = Some(crate::config::ChecklistMarkers::Ascii);
+    let source = "- [ ] open task\n- [x] done task\n";
+    let mut h = Harness::with_config(MarkupFormat::Markdown, source, WIDTH, HEIGHT, config);
+    h.draw();
+    if std::env::var("BMD_CHECKLIST_STYLE").is_ok() {
+        return; // The env var deliberately overrides config.
+    }
+    assert!(h.row(0).starts_with("[ ] open task"), "{}", h.row(0));
+    assert!(h.row(1).starts_with("[x] done task"), "{}", h.row(1));
+
+    // Clicking the last cell of the wide marker still toggles it.
+    h.click(2, 0);
+    h.draw();
+    assert!(h.row(0).starts_with("[x] open task"), "{}", h.row(0));
+}
+
+#[test]
+fn status_bar_shows_the_enclosing_section() {
+    let mut h = Harness::kitchen_sink();
+    h.draw();
+    assert!(
+        h.status_row().contains("Kitchen sink"),
+        "{}",
+        h.status_row()
+    );
+
+    let level_three = h
+        .app
+        .heading_cache
+        .entries()
+        .iter()
+        .find(|e| e.text == "Level three")
+        .unwrap()
+        .line_offset;
+    let max = h.app.max_scroll();
+    h.app.view_state = h.app.view_state.clone().scroll_to(level_three, max);
+    h.app.snap_scroll_visual();
+    h.draw();
+    let status = h.status_row();
+    assert!(
+        status.contains("Kitchen sink › Links and footnotes › Level three"),
+        "{status}"
+    );
+
+    h.keys("t");
+    assert!(
+        !h.status_row().contains("Level three"),
+        "outline open: {}",
+        h.status_row()
+    );
+}
+
+#[test]
+fn help_overlay_follows_keymap_overrides() {
+    let mut config = Config::default();
+    let overrides = [(
+        "scroll_down".to_string(),
+        crate::keymap::KeyBindingValue::One("e".to_string()),
+    )]
+    .into_iter()
+    .collect();
+    config
+        .keymap
+        .apply_overrides(crate::keymap::Keymap::MODE_NORMAL, overrides)
+        .unwrap();
+    let (_, format, source) = SAMPLES[0];
+    let mut h = Harness::with_config(format, source, WIDTH, HEIGHT, config);
+    h.keys("h");
+    let scroll_row = (0..HEIGHT)
+        .map(|y| h.row(y))
+        .find(|row| row.contains("Scroll"))
+        .unwrap();
+    // One key per side now, so only the first pair remains.
+    assert!(scroll_row.contains("e/k line"), "{scroll_row}");
+    assert!(!scroll_row.contains("j/k"), "{scroll_row}");
+}
+
+#[test]
+fn wide_terminal_centers_a_capped_column_and_clicks_still_land() {
+    const WIDE: u16 = 140;
+    let (_, format, source) = SAMPLES[0];
+    let mut h = Harness::sized(format, source, WIDE, HEIGHT);
+    h.draw();
+    let max = crate::config::DEFAULT_MAX_WIDTH;
+    let main = h.app.layout_areas().main;
+    assert_eq!((main.x, main.width), ((WIDE - max) / 2, max));
+    assert_eq!(h.app.document_width(), max);
+    assert!(
+        h.row(0).starts_with(&" ".repeat(main.x as usize)),
+        "{}",
+        h.row(0)
+    );
+    assert!(h.row(0)[main.x as usize..].starts_with("# Kitchen sink"));
+
+    let hits = h.app.hits().to_vec();
+    let checkbox = hits
+        .iter()
+        .find(|hit| matches!(hit.target, HitTarget::Checklist(_)))
+        .unwrap();
+    let max_scroll = h.app.max_scroll();
+    h.app.view_state = h
+        .app
+        .view_state
+        .clone()
+        .scroll_to(checkbox.line, max_scroll);
+    h.app.snap_scroll_visual();
+    let row = (checkbox.line - h.scroll()) as u16;
+    let before = h.app.checklist_state.revision();
+    h.click(main.x + checkbox.x as u16, row);
+    assert_ne!(
+        h.app.checklist_state.revision(),
+        before,
+        "centered click missed"
+    );
+
+    // Opening the outline re-centers the column in the remaining space.
+    h.keys("t");
+    let with_outline = h.app.layout_areas();
+    assert!(with_outline.main.x >= with_outline.outline.width);
+    assert!(with_outline.main.width <= max);
 }

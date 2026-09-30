@@ -8,12 +8,10 @@ use super::pending::PendingInput;
 impl App {
     pub(crate) fn begin_set_mark(&mut self) {
         self.pending_input = PendingInput::SetMark;
-        self.set_status_message("m — mark a-z".into());
     }
 
     pub(crate) fn begin_jump_mark(&mut self) {
         self.pending_input = PendingInput::JumpMark;
-        self.set_status_message("' — jump a-z".into());
     }
 
     pub(crate) fn set_mark(&mut self, name: MarkName) {

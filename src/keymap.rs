@@ -185,6 +185,41 @@ fn resolve_key(key: &KeyEvent) -> ResolvedKey {
     }
 }
 
+/// Human-readable key name for help text, e.g. `j`, `Ctrl-c`, `↓`, `Shift-Tab`.
+fn key_label(key: &ResolvedKey) -> String {
+    let base = match key.code {
+        KeyCode::Char(c) => c.to_string(),
+        KeyCode::Down => "↓".into(),
+        KeyCode::Up => "↑".into(),
+        KeyCode::Left => "←".into(),
+        KeyCode::Right => "→".into(),
+        KeyCode::PageDown => "PgDn".into(),
+        KeyCode::PageUp => "PgUp".into(),
+        KeyCode::BackTab => "Shift-Tab".into(),
+        // Spelled out: crossterm's Display names these differently on macOS.
+        KeyCode::Enter => "Enter".into(),
+        KeyCode::Esc => "Esc".into(),
+        KeyCode::Tab => "Tab".into(),
+        KeyCode::Backspace => "Backspace".into(),
+        KeyCode::Delete => "Del".into(),
+        KeyCode::Home => "Home".into(),
+        KeyCode::End => "End".into(),
+        other => other.to_string(),
+    };
+    let mut label = String::new();
+    for (flag, name) in [
+        (KeyModifiers::CONTROL, "Ctrl-"),
+        (KeyModifiers::ALT, "Alt-"),
+        (KeyModifiers::SHIFT, "Shift-"),
+    ] {
+        if key.modifiers.contains(flag) {
+            label.push_str(name);
+        }
+    }
+    label.push_str(&base);
+    label
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct ResolvedKey {
     code: KeyCode,
@@ -239,6 +274,14 @@ impl ModeBindings {
             _ => {}
         }
     }
+}
+
+/// Keymap mode, for looking up the keys bound to a command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingMode {
+    Normal,
+    Preview,
+    Search,
 }
 
 /// Runtime keymap for all UI modes.
@@ -319,6 +362,31 @@ impl Keymap {
             },
             _ => Command::None,
         }
+    }
+
+    /// Display labels for the keys bound to `command` in `mode`, in a stable
+    /// order: plain characters first, then modified characters, then named keys.
+    pub fn key_labels(&self, mode: BindingMode, command: Command) -> Vec<String> {
+        let bindings = match mode {
+            BindingMode::Normal => &self.normal,
+            BindingMode::Preview => &self.preview,
+            BindingMode::Search => &self.search,
+        };
+        let mut keys: Vec<(u8, String)> = bindings
+            .map
+            .iter()
+            .filter(|(_, mapped)| **mapped == command)
+            .map(|(key, _)| {
+                let rank = match key.code {
+                    KeyCode::Char(_) if key.modifiers.is_empty() => 0,
+                    KeyCode::Char(_) => 1,
+                    _ => 2,
+                };
+                (rank, key_label(key))
+            })
+            .collect();
+        keys.sort();
+        keys.into_iter().map(|(_, label)| label).collect()
     }
 
     pub fn normal_command(&self, key: &KeyEvent) -> Command {
@@ -748,5 +816,27 @@ mod tests {
 
     fn shift(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT)
+    }
+
+    #[test]
+    fn key_labels_are_ordered_and_readable() {
+        let keymap = Keymap::default();
+        assert_eq!(
+            keymap.key_labels(BindingMode::Normal, Command::ScrollDown),
+            ["j", "↓"]
+        );
+        assert_eq!(
+            keymap.key_labels(BindingMode::Normal, Command::Quit),
+            ["q", "Ctrl-c"]
+        );
+        assert_eq!(
+            keymap.key_labels(BindingMode::Normal, Command::PrevLink),
+            ["N", "Shift-Tab"]
+        );
+        assert!(
+            keymap
+                .key_labels(BindingMode::Normal, Command::CloseHelp)
+                .is_empty()
+        );
     }
 }

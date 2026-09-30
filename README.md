@@ -71,7 +71,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 
 ### Other
 
-- **Task markers** — GFM `- [ ]` / `- [x]` render as checkboxes; left-click toggles for the session only (not saved). Marker style via `BMD_CHECKLIST_STYLE` (`unicode` / `emoji` / `auto`)
+- **Task markers** — GFM `- [ ]` / `- [x]` render as checkboxes; left-click toggles for the session only (not saved). Marker style via `[view] checklist` or `BMD_CHECKLIST_STYLE` (`unicode` / `emoji` / `ascii` / `auto`; the env var wins)
 - **Type-safe domain model** — Kamae-style state transitions (`ViewState` methods consume `self`)
 - **Document render cache** — full document buffered until width or highlight state changes; scrolling only blits the viewport
 - **stdin / file input** — path argument, `-`, or pipe; file paths reload automatically on save (scroll position preserved)
@@ -193,7 +193,17 @@ fg = "cyan"        # overrides preset link foreground only
 underlined = false # removes h1 underline from the preset
 ```
 
-Supported fields per role: `fg`, `bg`, `bold`, `italic`, `underlined`, `dim`, `reversed`, `crossed_out`. Colors may be named (`white`, `blue`, `darkgray`, …), hex (`#ff8800`), or a 256-color index (`208`). Roles match theme keys (`text`, `h1`, `link`, `code_block`, `math`, `text_selection`, …); an unknown role is a config error.
+Supported fields per role: `fg`, `bg`, `bold`, `italic`, `underlined`, `dim`, `reversed`, `crossed_out`. Colors may be named (`white`, `blue`, `darkgray`, …), hex (`#ff8800`), or a 256-color index (`208`). Roles match theme keys (`text`, `h1`, `link`, `code_block`, `math`, `text_selection`, …); an unknown role is a config error. UI chrome has its own roles: `status_bar` (bottom bar fg/bg), `status_info` (notices and key prompts), `status_error` (failures), and `popup_border` (outline, help, and preview borders).
+
+### View
+
+```toml
+[view]
+checklist = "ascii"   # task markers: auto (default) / unicode ☐☑ / emoji ⬜✅ / ascii [ ] [x]
+max_width = 100       # widest the document column grows; 0 fills the terminal
+```
+
+`BMD_CHECKLIST_STYLE` overrides `checklist` for a single run. On terminals wider than `max_width` (default 100) the document column is centered; narrower terminals are unaffected.
 
 ### Keymap
 
