@@ -95,6 +95,27 @@ impl<T> LinkJumpStack<T> {
         self.priors.push(PriorAtLinkJump::fix(value));
     }
 
+    /// Priors other than the newest `keep`, oldest first.
+    pub fn older_priors_mut(&mut self, keep: usize) -> impl Iterator<Item = &mut T> {
+        let end = self.priors.len().saturating_sub(keep);
+        self.priors[..end].iter_mut().map(|prior| &mut prior.0)
+    }
+
+    /// The newest `count` priors, newest first.
+    pub fn newest_priors_mut(&mut self, count: usize) -> impl Iterator<Item = &mut T> {
+        let start = self.priors.len().saturating_sub(count);
+        self.priors[start..]
+            .iter_mut()
+            .rev()
+            .map(|prior| &mut prior.0)
+    }
+
+    /// Every fixed prior, oldest first.
+    #[cfg(test)]
+    pub fn priors(&self) -> impl Iterator<Item = &T> {
+        self.priors.iter().map(|prior| &prior.0)
+    }
+
     /// Take every fixed prior, oldest first. The live current item stays outside.
     pub fn take_all_priors(&mut self) -> Vec<T> {
         std::mem::take(&mut self.priors)
@@ -213,6 +234,21 @@ mod tests {
         stack.return_latest_prior(latest);
         assert_eq!(stack.restore_latest_prior(), Ok(20));
         assert_eq!(stack.restore_latest_prior(), Ok(10));
+    }
+
+    #[test]
+    fn older_and_newest_priors_split_at_count() {
+        let mut stack = LinkJumpStack::with_max_layers(5);
+        for value in [1, 2, 3] {
+            stack
+                .fix_prior_on_link_jump(PriorAtLinkJump::fix(value))
+                .unwrap();
+        }
+        let older: Vec<i32> = stack.older_priors_mut(2).map(|value| *value).collect();
+        assert_eq!(older, vec![1]);
+        assert_eq!(stack.older_priors_mut(5).count(), 0);
+        let newest: Vec<i32> = stack.newest_priors_mut(2).map(|value| *value).collect();
+        assert_eq!(newest, vec![3, 2]);
     }
 
     #[test]

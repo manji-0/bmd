@@ -13,11 +13,21 @@ use super::outline::OutlineUi;
 use super::preview_render::PreviewSnapshots;
 use super::reload::FileWatch;
 
+/// Frames, newest first, that keep their draw buffers. Older frames drop them.
+///
+/// A document's draw buffer is a cell per row and column of the whole rendered
+/// document (about 29 MB for 6000 rows at width 100), so a deep stack of warm
+/// frames can reach gigabytes. Rebuilding costs tens of milliseconds, so the app
+/// rebuilds the window's cold frame while idle after a step back
+/// ([`DocStack::newest_frames_mut`]), keeping repeated back steps instant.
+pub(crate) const DOCUMENT_STACK_WARM_FRAMES: usize = 2;
+
 /// Full viewing state fixed at a document link jump, including render caches.
 ///
 /// The live current document is not stored here. [`RenderedDocument`] holds loaded
 /// image protocols; [`DocumentRenderCache`] and [`PreviewRenderCache`] preserve
-/// warmed draw buffers for instant restore.
+/// warmed draw buffers for instant restore in the newest
+/// [`DOCUMENT_STACK_WARM_FRAMES`] frames and are empty in older ones.
 #[derive(Clone)]
 pub(crate) struct DocumentFrame {
     pub document: Document,
@@ -81,6 +91,25 @@ impl DocStack {
         self.stack
             .fix_prior_on_link_jump(prior)
             .map_err(|(LinkJumpStackFull, prior)| (DocumentStackFull, Box::new(prior.into_inner())))
+    }
+
+    /// Drop the draw buffers of frames older than [`DOCUMENT_STACK_WARM_FRAMES`].
+    pub fn cool_older_frames(&mut self) {
+        for frame in self.stack.older_priors_mut(DOCUMENT_STACK_WARM_FRAMES) {
+            frame.document_cache = DocumentRenderCache::default();
+            frame.preview_render_cache.clear();
+        }
+    }
+
+    /// The frames that keep their draw buffers, newest first.
+    pub fn newest_frames_mut(&mut self) -> impl Iterator<Item = &mut DocumentFrame> {
+        self.stack.newest_priors_mut(DOCUMENT_STACK_WARM_FRAMES)
+    }
+
+    /// Stored frames, oldest first.
+    #[cfg(test)]
+    pub fn frames(&self) -> impl Iterator<Item = &DocumentFrame> {
+        self.stack.priors()
     }
 
     pub fn pop(&mut self) -> Option<DocumentFrame> {

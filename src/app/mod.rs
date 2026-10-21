@@ -451,6 +451,7 @@ impl App {
             if animating || awaiting_preview {
                 continue;
             }
+            self.warm_document_stack();
         }
         Ok(())
     }

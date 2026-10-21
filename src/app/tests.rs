@@ -1646,3 +1646,110 @@ fn doc_back_after_resize_returns_to_same_block() {
     assert_eq!(app.view_state.scroll().offset(), narrow_top);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Whether the live draw buffer is already built for the current state.
+fn live_cache_is_fresh(app: &mut App) -> bool {
+    let width = app.document_width();
+    let ctx = RenderContext::new(
+        &app.theme,
+        &app.syntax_assets,
+        &app.document.links,
+        &app.view_state,
+        &app.checklist_state,
+    );
+    !app.document_cache.ensure(&app.document, &ctx, width)
+}
+
+fn draw_once(app: &mut App) {
+    let backend = ratatui::backend::TestBackend::new(80, 30);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    app.draw_frame(&mut terminal).unwrap();
+}
+
+#[test]
+fn deep_document_stack_keeps_buffers_only_in_newest_frames() {
+    use super::doc_stack::DOCUMENT_STACK_WARM_FRAMES;
+
+    let dir = temp_markdown_dir("doc-stack-warm");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for i in 1..=3 {
+        std::fs::write(
+            dir.join(format!("{i}.md")),
+            format!("# Doc {i}\n\n[next]({}.md)\n", i + 1),
+        )
+        .unwrap();
+    }
+    let mut app = file_backed_app(&dir, "0.md", "# Doc 0\n\n[next](1.md)\n");
+    draw_once(&mut app);
+    let root_height = app.document_cache_total_height();
+    assert!(root_height > 0);
+
+    for i in 1..=3 {
+        app.open_document_link(&format!("{i}.md"));
+        draw_once(&mut app);
+    }
+    let warm: Vec<bool> = app
+        .doc_stack
+        .frames()
+        .map(|frame| frame.document_cache.total_height() > 0)
+        .collect();
+    let expected: Vec<bool> = (0..warm.len())
+        .map(|i| i + DOCUMENT_STACK_WARM_FRAMES >= warm.len())
+        .collect();
+    assert_eq!(warm, expected);
+    assert!(
+        warm.contains(&false),
+        "stack must be deeper than the warm window"
+    );
+
+    assert!(!app.warm_document_stack(), "window frames are already warm");
+
+    // One step back slides the cold root frame into the window; idle warms it.
+    app.doc_back(anchor_idle(&app));
+    assert!(app.warm_document_stack());
+    assert!(!app.warm_document_stack());
+    for _ in 0..2 {
+        app.doc_back(anchor_idle(&app));
+    }
+    assert_eq!(app.source_label.as_deref(), Some("0.md"));
+    assert_eq!(app.document_cache_total_height(), root_height);
+    assert!(live_cache_is_fresh(&mut app));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn idle_warming_rebuilds_window_frames_after_resize() {
+    let dir = temp_markdown_dir("doc-stack-warm-resize");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("b.md"), "# B\n\n").unwrap();
+    let mut app = file_backed_app(&dir, "a.md", &wrapping_markdown("[open b](b.md)\n"));
+    draw_once(&mut app);
+    app.open_document_link("b.md");
+
+    app.apply_terminal_size(TerminalSize::new(40, 30).unwrap());
+    assert!(app.warm_document_stack());
+    assert!(!app.warm_document_stack());
+    app.doc_back(anchor_idle(&app));
+    assert!(live_cache_is_fresh(&mut app));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn failed_document_jump_keeps_live_buffers() {
+    let dir = temp_markdown_dir("doc-apply-fail-buffers");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("b.md"), "# B\n\n").unwrap();
+    let mut app = file_backed_app(&dir, "a.md", "# A\n\n[open b](b.md)\n");
+    draw_once(&mut app);
+    let height = app.document_cache_total_height();
+    assert!(height > 0);
+
+    app.fail_apply_document = true;
+    app.open_document_link("b.md");
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert_eq!(app.document_cache_total_height(), height);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -188,13 +188,12 @@ impl App {
     fn push_document_prior(&mut self) -> Result<(), DocumentStackFull> {
         let prior = super::doc_stack::FixedDocumentPrior::fix(self.capture_document_frame());
         match self.doc_stack.fix_prior_on_link_jump(prior) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.doc_stack.cool_older_frames();
+                Ok(())
+            }
             Err((DocumentStackFull, prior)) => {
-                let prior = *prior;
-                self.resume_worker_sessions(
-                    prior.preview_sessions,
-                    prior.document_prefetch_session,
-                );
+                self.reclaim_moved_state(*prior);
                 Err(DocumentStackFull)
             }
         }
@@ -202,8 +201,50 @@ impl App {
 
     fn abort_document_jump(&mut self) {
         if let Some(frame) = self.doc_stack.pop() {
-            self.resume_worker_sessions(frame.preview_sessions, frame.document_prefetch_session);
+            self.reclaim_moved_state(frame);
         }
+    }
+
+    /// Rebuild the draw buffer of one warm-window frame that is missing it or was
+    /// built for another width. Returns `true` when it rebuilt one.
+    ///
+    /// Run while idle: a step back moves an evicted frame into the window, and a
+    /// resize leaves the stored buffers at the old width.
+    pub(crate) fn warm_document_stack(&mut self) -> bool {
+        let terminal = self.view_state.terminal_size();
+        let area = ratatui::layout::Rect::new(0, 0, terminal.width(), terminal.height());
+        for frame in self.doc_stack.newest_frames_mut() {
+            // Restore swaps in the live terminal size; build for that.
+            let view_state = frame.view_state.clone().resize(terminal);
+            let width = super::layout::split_layout(
+                area,
+                view_state.mode(),
+                frame.outline.visible,
+                self.max_width,
+            )
+            .main
+            .width;
+            let ctx = crate::render::RenderContext::new(
+                &self.theme,
+                &self.syntax_assets,
+                &frame.document.links,
+                &view_state,
+                &frame.checklist_state,
+            );
+            if frame.document_cache.ensure(&frame.document, &ctx, width) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Give the live document back what [`Self::capture_document_frame`] moved
+    /// into `frame` when the jump does not happen.
+    fn reclaim_moved_state(&mut self, frame: DocumentFrame) {
+        self.rendered = frame.rendered;
+        self.document_cache = frame.document_cache;
+        self.preview.cache = frame.preview_render_cache;
+        self.resume_worker_sessions(frame.preview_sessions, frame.document_prefetch_session);
     }
 
     fn resume_worker_sessions(
@@ -216,14 +257,18 @@ impl App {
         self.document_prefetch.resume(document_prefetch_session);
     }
 
+    /// Snapshot the live document for the stack.
+    ///
+    /// Image protocols and draw buffers are moved, not cloned: the jump replaces
+    /// them right after, and [`Self::reclaim_moved_state`] returns them if it does not.
     fn capture_document_frame(&mut self) -> DocumentFrame {
         DocumentFrame {
             document: self.document.clone(),
-            rendered: self.rendered.clone(),
+            rendered: std::mem::take(&mut self.rendered),
             preview_sessions: self.previews.suspend(),
             document_prefetch_session: self.document_prefetch.suspend(),
-            document_cache: self.document_cache.clone(),
-            preview_render_cache: self.preview.cache.clone(),
+            document_cache: std::mem::take(&mut self.document_cache),
+            preview_render_cache: std::mem::take(&mut self.preview.cache),
             pending_preview: self.preview.pending,
             preview_zoom: self.preview.zoom,
             toc_selected: self.preview.toc_selected,

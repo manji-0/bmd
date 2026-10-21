@@ -60,12 +60,14 @@ impl Default for DocumentRenderCache {
 
 impl DocumentRenderCache {
     /// Rebuild the cache when `ctx` or `width` no longer match the stored key.
-    pub fn ensure(&mut self, document: &Document, ctx: &RenderContext<'_>, width: u16) {
+    /// Returns `true` when it rebuilt.
+    pub fn ensure(&mut self, document: &Document, ctx: &RenderContext<'_>, width: u16) -> bool {
         let key = RenderCacheKey::from_context(ctx, width);
         if self.key.as_ref() == Some(&key) && self.total_height > 0 {
-            return;
+            return false;
         }
         self.rebuild(document, ctx, width, key);
+        true
     }
 
     fn rebuild(
