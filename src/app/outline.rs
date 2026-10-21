@@ -7,6 +7,8 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
+use crate::domain::ScrollAnchor;
+
 use super::App;
 use super::status::truncate_to_width;
 
@@ -23,23 +25,23 @@ pub(crate) struct OutlineUi {
 
 impl App {
     pub(crate) fn toggle_outline(&mut self) {
+        let anchor = self.scroll_anchor();
         if self.outline.visible {
             self.outline.visible = false;
-            self.clamp_after_outline_change();
+            self.rewrap_after_outline_change(anchor);
             return;
         }
         self.outline.visible = true;
+        self.rewrap_after_outline_change(anchor);
         let index = self.heading_index_at_scroll(self.view_state.scroll().offset());
         if let Some(index) = index {
             self.outline.selected = index;
         }
-        self.clamp_after_outline_change();
     }
 
-    fn clamp_after_outline_change(&mut self) {
-        let max = self.max_scroll();
-        self.view_state = self.view_state.clone().clamp_scroll(max);
-        self.scroll.visual = self.view_state.scroll().offset() as f32;
+    /// The outline changed the wrap width; keep the view on `anchor`'s block.
+    fn rewrap_after_outline_change(&mut self, anchor: ScrollAnchor) {
+        self.scroll_to_anchor(anchor);
         self.document_cache.invalidate();
         self.invalidate_prefetch_viewport();
     }

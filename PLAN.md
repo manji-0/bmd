@@ -98,7 +98,7 @@ src/
 - `Scroll`: スクロール offset を newtype で包む。
 - `ViewState`: `Scroll` + 選択中リンク + `TerminalSize`。遷移は `self` を消費する。
 - `NavStack` / `LinkJumpStack`: リンクジャンプ時に prior を固定。ライブな現在位置はスタックの外。
-- スタックに積む位置（アンカースタックの prior、文書フレームのスクロール位置）は `ScrollAnchor`（ブロック番号 + ブロック内の行）で持つ。戻る時点の幅で行番号に直すので、リサイズやアウトライン開閉のあとでも同じブロックに戻る。
+- スタックに積む位置（アンカースタックの prior、文書フレームのスクロール位置）とマークは `ScrollAnchor`（ブロック番号 + ブロック内の行）で持つ。使う時点の幅で行番号に直すので、リサイズやアウトライン開閉のあとでも同じブロックに戻る。表示中の位置も、リサイズとアウトライン開閉の前後で `ScrollAnchor` を経由して同じブロックに保つ。
 - 文書フレームの描画バッファ（`DocumentRenderCache` / `PreviewRenderCache`）は新しい `DOCUMENT_STACK_WARM_FRAMES`（2）フレームだけが持つ。古いフレームでは捨てる。1段戻って古いフレームが新しい2つに入ったら、操作のない空き時間にそのバッファを作り直す（`App::warm_document_stack`、1回に1フレーム）。リサイズで幅が変わった場合も同じ処理で作り直すので、続けて戻ってもすぐ表示できる。積むときは clone せず move し、ジャンプが失敗したら表示中の文書に返す。
 - `PreviewLoadSession<S: PreviewSource>`: mermaid / 画像プレビューを `(未登録) → Queued → Loading → Ready | Failed` で追跡する単一の汎用状態機械。app 側は `PreviewPools` が両種を束ねる。
 

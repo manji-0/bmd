@@ -199,12 +199,6 @@ impl ViewState {
         }
     }
 
-    /// Clamp the current scroll offset to `max_scroll` without changing other state.
-    pub fn clamp_scroll(self, max_scroll: usize) -> Self {
-        let offset = self.scroll.offset;
-        self.scroll_to(offset, max_scroll)
-    }
-
     pub fn jump_to_bottom(self, max_scroll: usize) -> Self {
         Self {
             scroll: Scroll { offset: max_scroll },

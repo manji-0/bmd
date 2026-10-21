@@ -1,5 +1,7 @@
 //! Named scroll bookmarks (`a`–`z`), vim-style.
 
+use super::scroll_anchor::ScrollAnchor;
+
 /// A validated mark name in `a`..=`z`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct MarkName(char);
@@ -32,13 +34,12 @@ impl MarkName {
 
 /// Session scroll marks for the current document.
 ///
-/// Values are logical layout-line offsets at the wrap width when the mark was
-/// set. A later wrap or outline-width change can land the same offset on a
-/// different heading; jumps clamp to the current max scroll. Reload clears
-/// marks because the document identity changed.
+/// Values are [`ScrollAnchor`]s, so a mark still names the same block after a
+/// wrap or outline-width change. Reload clears marks because the document
+/// identity changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Marks {
-    slots: [Option<usize>; 26],
+    slots: [Option<ScrollAnchor>; 26],
 }
 
 impl Default for Marks {
@@ -52,13 +53,13 @@ impl Marks {
         Self { slots: [None; 26] }
     }
 
-    /// Set mark `name` to `offset`, consuming `self`.
-    pub fn set(mut self, name: MarkName, offset: usize) -> Self {
-        self.slots[name.index()] = Some(offset);
+    /// Set mark `name` to `anchor`, consuming `self`.
+    pub fn set(mut self, name: MarkName, anchor: ScrollAnchor) -> Self {
+        self.slots[name.index()] = Some(anchor);
         self
     }
 
-    pub fn get(&self, name: MarkName) -> Option<usize> {
+    pub fn get(&self, name: MarkName) -> Option<ScrollAnchor> {
         self.slots[name.index()]
     }
 
@@ -82,8 +83,9 @@ mod tests {
     #[test]
     fn marks_set_and_get() {
         let name = MarkName::new('b').unwrap();
-        let marks = Marks::new().set(name, 42);
-        assert_eq!(marks.get(name), Some(42));
+        let anchor = ScrollAnchor::new(4, 2, 3);
+        let marks = Marks::new().set(name, anchor);
+        assert_eq!(marks.get(name), Some(anchor));
         assert_eq!(marks.get(MarkName::new('a').unwrap()), None);
     }
 }

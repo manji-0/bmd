@@ -15,21 +15,19 @@ impl App {
     }
 
     pub(crate) fn set_mark(&mut self, name: MarkName) {
-        let offset = self.view_state.scroll().offset();
-        self.marks = self.marks.clone().set(name, offset);
+        let anchor = self.scroll_anchor();
+        self.marks = self.marks.clone().set(name, anchor);
         self.pending_input = PendingInput::None;
         self.set_status_message(format!("mark {} set", name.as_char()));
     }
 
     pub(crate) fn jump_to_mark(&mut self, name: MarkName) {
         self.pending_input = PendingInput::None;
-        let Some(offset) = self.marks.get(name) else {
+        let Some(anchor) = self.marks.get(name) else {
             self.set_status_message(format!("mark {} not set", name.as_char()));
             return;
         };
-        let max = self.max_scroll();
-        self.view_state = self.view_state.clone().scroll_to(offset, max);
-        self.snap_scroll_visual();
+        self.scroll_to_anchor(anchor);
         self.set_status_message(format!("jumped to mark {}", name.as_char()));
     }
 

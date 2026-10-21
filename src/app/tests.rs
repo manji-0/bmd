@@ -1753,3 +1753,53 @@ fn failed_document_jump_keeps_live_buffers() {
     assert_eq!(app.document_cache_total_height(), height);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn resize_keeps_live_view_on_same_block() {
+    let doc = parse(&wrapping_markdown("end\n")).unwrap();
+    let mut app = new_test_app(doc);
+    let wide_top = block_top(&app, 5);
+    let max = app.max_scroll();
+    app.view_state = app.view_state.clone().scroll_to(wide_top, max);
+
+    app.apply_terminal_size(TerminalSize::new(40, 30).unwrap());
+    let narrow_top = block_top(&app, 5);
+    assert_ne!(narrow_top, wide_top, "fixture must wrap differently");
+    assert_eq!(app.view_state.scroll().offset(), narrow_top);
+    assert_eq!(app.scroll.visual, narrow_top as f32);
+}
+
+#[test]
+fn outline_toggle_keeps_live_view_on_same_block() {
+    let doc = parse(&wrapping_markdown("end\n")).unwrap();
+    let mut app = new_test_app(doc);
+    let wide_top = block_top(&app, 5);
+    let max = app.max_scroll();
+    app.view_state = app.view_state.clone().scroll_to(wide_top, max);
+
+    app.toggle_outline();
+    let narrow_top = block_top(&app, 5);
+    assert_ne!(narrow_top, wide_top, "fixture must wrap differently");
+    assert_eq!(app.view_state.scroll().offset(), narrow_top);
+
+    app.toggle_outline();
+    assert_eq!(app.view_state.scroll().offset(), wide_top);
+}
+
+#[test]
+fn mark_jump_after_resize_returns_to_same_block() {
+    let doc = parse(&wrapping_markdown("end\n")).unwrap();
+    let mut app = new_test_app(doc);
+    let wide_top = block_top(&app, 5);
+    let max = app.max_scroll();
+    app.view_state = app.view_state.clone().scroll_to(wide_top, max);
+    let name = crate::domain::MarkName::new('a').unwrap();
+    app.set_mark(name);
+    app.view_state = app.view_state.clone().jump_to_top();
+
+    app.apply_terminal_size(TerminalSize::new(40, 30).unwrap());
+    app.jump_to_mark(name);
+    let narrow_top = block_top(&app, 5);
+    assert_ne!(narrow_top, wide_top, "fixture must wrap differently");
+    assert_eq!(app.view_state.scroll().offset(), narrow_top);
+}

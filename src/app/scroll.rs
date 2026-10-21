@@ -126,11 +126,11 @@ impl App {
         Ok(true)
     }
 
+    /// Adopt a new terminal size, keeping the view on the same block.
     pub(crate) fn apply_terminal_size(&mut self, size: TerminalSize) {
+        let anchor = self.scroll_anchor();
         self.view_state = self.view_state.clone().resize(size);
-        let max = self.max_scroll();
-        self.view_state = self.view_state.clone().clamp_scroll(max);
-        self.scroll.visual = self.view_state.scroll().offset() as f32;
+        self.scroll_to_anchor(anchor);
         self.invalidate_preview_caches();
     }
 }

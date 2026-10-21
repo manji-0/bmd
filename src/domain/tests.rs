@@ -494,13 +494,6 @@ fn scroll_to_clamps_to_max() {
 }
 
 #[test]
-fn clamp_scroll_reduces_overshoot() {
-    let size = TerminalSize::new(80, 24).unwrap();
-    let state = ViewState::new(size).scroll_down(50, 100).clamp_scroll(12);
-    assert_eq!(state.scroll().offset(), 12);
-}
-
-#[test]
 fn confirm_search_sorts_unsorted_matches() {
     let size = TerminalSize::new(80, 24).unwrap();
     let state = ViewState::new(size)
