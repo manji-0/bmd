@@ -2,10 +2,10 @@
 
 use std::time::{Duration, Instant};
 
-use crate::domain::TerminalSize;
+use crate::domain::{ScrollAnchor, TerminalSize};
 use crate::error::AppError;
 use crate::render::subpixel::SUBPIXEL_SNAP;
-use crate::render::{RenderContext, measure_document_height};
+use crate::render::{RenderContext, measure_document_height, scroll_anchor_at, scroll_offset_for};
 
 use super::App;
 
@@ -57,6 +57,29 @@ impl App {
         total_height.saturating_sub(view_height)
     }
 
+    /// The current scroll position in a form that survives a wrap-width change.
+    pub(crate) fn scroll_anchor(&self) -> ScrollAnchor {
+        scroll_anchor_at(
+            &self.document,
+            self.document_width(),
+            &self.render_context(),
+            self.view_state.scroll().offset(),
+        )
+    }
+
+    /// Scroll to `anchor` at the current wrap width and snap the visual scroll.
+    pub(crate) fn scroll_to_anchor(&mut self, anchor: ScrollAnchor) {
+        let offset = scroll_offset_for(
+            &self.document,
+            self.document_width(),
+            &self.render_context(),
+            anchor,
+        );
+        let max = self.max_scroll();
+        self.view_state = self.view_state.clone().scroll_to(offset, max);
+        self.snap_scroll_visual();
+    }
+
     pub(crate) fn render_context(&self) -> RenderContext<'_> {
         RenderContext::new(
             &self.theme,
@@ -99,11 +122,15 @@ impl App {
         if size == self.view_state.terminal_size() {
             return Ok(false);
         }
+        self.apply_terminal_size(size);
+        Ok(true)
+    }
+
+    pub(crate) fn apply_terminal_size(&mut self, size: TerminalSize) {
         self.view_state = self.view_state.clone().resize(size);
         let max = self.max_scroll();
         self.view_state = self.view_state.clone().clamp_scroll(max);
         self.scroll.visual = self.view_state.scroll().offset() as f32;
         self.invalidate_preview_caches();
-        Ok(true)
     }
 }

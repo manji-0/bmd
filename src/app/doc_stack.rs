@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::domain::{
     ChecklistState, DOCUMENT_STACK_MAX_LAYERS, Document, DocumentPrefetchSessionSnapshot,
     DocumentStackFull, LinkId, LinkJumpStack, LinkJumpStackFull, Marks, NavStack, PriorAtLinkJump,
-    TextSelection, ViewState,
+    ScrollAnchor, TextSelection, ViewState,
 };
 use crate::render::{DocumentRenderCache, PreviewRenderCache, RenderedDocument};
 
@@ -30,6 +30,9 @@ pub(crate) struct DocumentFrame {
     pub preview_zoom: f32,
     pub toc_selected: usize,
     pub view_state: ViewState,
+    /// Scroll position by block; `view_state`'s row offset is only valid at the
+    /// wrap width the frame was fixed at.
+    pub scroll_anchor: ScrollAnchor,
     pub scroll_visual: f32,
     pub scroll_anim_speed: f32,
     pub checklist_state: ChecklistState,
@@ -82,6 +85,11 @@ impl DocStack {
 
     pub fn pop(&mut self) -> Option<DocumentFrame> {
         self.stack.restore_latest_prior().ok()
+    }
+
+    /// Put back the frame just popped, keeping every older frame.
+    pub fn push_back(&mut self, frame: DocumentFrame) {
+        self.stack.return_latest_prior(frame);
     }
 
     /// Take every stored document frame, oldest (root) first.

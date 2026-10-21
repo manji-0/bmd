@@ -1,6 +1,7 @@
 //! Capacity limits for layered navigation stacks.
 
 use super::link_jump_stack::LinkJumpStack;
+use super::scroll_anchor::ScrollAnchor;
 
 /// Maximum anchor layers in one document, counting the current section as layer 1.
 pub const ANCHOR_STACK_MAX_LAYERS: usize = 64;
@@ -30,7 +31,7 @@ pub fn document_stack_limit_message() -> String {
     DocumentStackFull.to_string()
 }
 
-pub type AnchorLinkStack = LinkJumpStack<usize>;
+pub type AnchorLinkStack = LinkJumpStack<ScrollAnchor>;
 
 pub fn new_anchor_link_stack() -> AnchorLinkStack {
     LinkJumpStack::with_max_layers(ANCHOR_STACK_MAX_LAYERS)
@@ -53,14 +54,15 @@ mod tests {
         for i in 0..ANCHOR_STACK_MAX_FRAMES {
             assert!(
                 stack
-                    .fix_prior_on_link_jump(PriorAtLinkJump::fix(i))
+                    .fix_prior_on_link_jump(PriorAtLinkJump::fix(ScrollAnchor::new(i, 0, 1)))
                     .is_ok()
             );
         }
         assert_eq!(stack.current_layer(), ANCHOR_STACK_MAX_LAYERS);
+        let origin = ScrollAnchor::new(0, 0, 1);
         assert_eq!(
-            stack.fix_prior_on_link_jump(PriorAtLinkJump::fix(0)),
-            Err((LinkJumpStackFull, PriorAtLinkJump::fix(0)))
+            stack.fix_prior_on_link_jump(PriorAtLinkJump::fix(origin)),
+            Err((LinkJumpStackFull, PriorAtLinkJump::fix(origin)))
         );
     }
 }

@@ -58,13 +58,13 @@ pub fn plan_reset(anchor: &NavStack, document_depth: usize) -> NavResetPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::FixedScrollPrior;
+    use crate::domain::{FixedScrollPrior, ScrollAnchor};
 
     #[test]
     fn anchor_layer_blocks_document_back() {
         let mut anchor = NavStack::default();
         anchor
-            .fix_prior_on_link_jump(FixedScrollPrior::fix(0))
+            .fix_prior_on_link_jump(FixedScrollPrior::fix(ScrollAnchor::new(0, 0, 1)))
             .unwrap();
         assert_eq!(plan_back(&anchor, 3), NavBackPlan::AnchorStep);
         assert_eq!(plan_reset(&anchor, 3), NavResetPlan::AnchorReset);
@@ -90,11 +90,11 @@ mod tests {
     fn draining_anchor_unlocks_document_reset() {
         let mut anchor = NavStack::default();
         anchor
-            .fix_prior_on_link_jump(FixedScrollPrior::fix(5))
+            .fix_prior_on_link_jump(FixedScrollPrior::fix(ScrollAnchor::new(5, 0, 1)))
             .unwrap();
         assert_eq!(plan_reset(&anchor, 2), NavResetPlan::AnchorReset);
         let origin = anchor.step_reset().unwrap();
-        assert_eq!(origin, 5);
+        assert_eq!(origin, ScrollAnchor::new(5, 0, 1));
         let idle = AnchorIdle::from_stack(&anchor).unwrap();
         assert_eq!(plan_reset(&anchor, 2), NavResetPlan::DocumentReset(idle));
     }

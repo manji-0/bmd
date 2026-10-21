@@ -126,7 +126,7 @@ impl App {
         if let Err(err) = self.try_restore_document_frame(frame) {
             let (e, frame) = *err;
             self.set_status_error(e.to_string());
-            self.doc_stack.restore_frames(vec![frame]);
+            self.doc_stack.push_back(frame);
             return;
         }
         self.set_status_message(format!("back → {dest}"));
@@ -228,6 +228,7 @@ impl App {
             preview_zoom: self.preview.zoom,
             toc_selected: self.preview.toc_selected,
             view_state: self.view_state.clone(),
+            scroll_anchor: self.scroll_anchor(),
             scroll_visual: self.scroll.visual,
             scroll_anim_speed: self.scroll.anim_speed,
             checklist_state: self.checklist_state.clone(),
@@ -299,7 +300,9 @@ impl App {
         self.document = frame.document;
         self.rendered = frame.rendered;
         self.bump_document_revision();
-        self.view_state = frame.view_state;
+        // The frame's terminal size is stale if the terminal was resized since.
+        let terminal_size = self.view_state.terminal_size();
+        self.view_state = frame.view_state.resize(terminal_size);
         self.document_cache = frame.document_cache;
         self.preview.cache = frame.preview_render_cache;
         self.preview.pending = frame.pending_preview;
@@ -315,6 +318,7 @@ impl App {
         self.marks = frame.marks;
         self.outline = frame.outline;
         self.text_selection = frame.text_selection;
+        self.scroll_to_anchor(frame.scroll_anchor);
         self.selection_drag = None;
         self.pending_input = super::pending::PendingInput::None;
         self.scroll.key_down_at = None;

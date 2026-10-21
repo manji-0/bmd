@@ -23,6 +23,7 @@ mod nav_target;
 mod navigation;
 mod navigation_limits;
 mod preview_load;
+mod scroll_anchor;
 mod slug;
 mod text_selection;
 mod view;
@@ -60,6 +61,7 @@ pub use preview_load::{
     PreviewLoadStatus, PreviewSessionSnapshot, PreviewSource, PreviewSpawnRequest,
     mermaid_diagram_index,
 };
+pub use scroll_anchor::ScrollAnchor;
 pub use slug::{anchor_href, normalize_anchor_slug, slugify_heading};
 pub use text_selection::{TextPoint, TextSelection};
 pub use view::{SearchDirection, SearchMatch, TerminalSize, TerminalSizeError, ViewState};

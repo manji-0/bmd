@@ -1541,3 +1541,108 @@ fn click_footnote_marker_opens_preview() {
         Some(crate::domain::FootnoteId(0))
     );
 }
+
+#[test]
+fn doc_back_preserves_all_frames_when_restore_fails() {
+    let dir = temp_markdown_dir("doc-back-fail-nested");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.md");
+    let b = dir.join("b.md");
+    let c = dir.join("c.md");
+    std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
+    std::fs::write(&b, "# B\n\n[open c](c.md)\n").unwrap();
+    std::fs::write(&c, "# C\n\ncontent\n").unwrap();
+
+    let doc = parse(&std::fs::read_to_string(&a).unwrap()).unwrap();
+    let mut app = App::new_with_terminal_size(
+        doc,
+        Picker::halfblocks(),
+        Some(a.clone()),
+        Some("a.md".into()),
+        test_terminal_size(),
+        Config::default(),
+    )
+    .unwrap();
+
+    app.open_document_link("b.md");
+    app.open_document_link("c.md");
+    assert_eq!(app.doc_stack.len_frames(), 2);
+
+    app.fail_document_restore = true;
+    app.nav_back();
+
+    assert!(app.status_message.is_some());
+    assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    assert_eq!(app.doc_stack.len_frames(), 2);
+
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert!(app.doc_stack.is_empty());
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Markdown whose paragraphs wrap differently at 80 and 40 columns, ending in
+/// `tail` so links can sit below the wrapped text.
+fn wrapping_markdown(tail: &str) -> String {
+    let mut input = String::from("# Top\n\n");
+    for i in 0..30 {
+        input.push_str(&format!("Para {i} {}\n\n", "wrap me again ".repeat(10)));
+    }
+    input.push_str("## Target\n\n");
+    input.push_str(tail);
+    input
+}
+
+fn block_top(app: &App, index: usize) -> usize {
+    crate::render::block_tops(&app.document, app.document_width(), &app.render_context())
+        .nth(index)
+        .map(|(top, _, _)| top)
+        .unwrap()
+}
+
+#[test]
+fn anchor_back_after_resize_returns_to_same_block() {
+    let doc = parse(&wrapping_markdown("end\n")).unwrap();
+    let mut app = new_test_app(doc);
+    let wide_top = block_top(&app, 5);
+    let max = app.max_scroll();
+    assert!(wide_top < max);
+    app.view_state = app.view_state.clone().scroll_to(wide_top, max);
+    app.follow_anchor("target");
+    assert_ne!(app.view_state.scroll().offset(), wide_top);
+
+    app.apply_terminal_size(TerminalSize::new(40, 30).unwrap());
+    let narrow_top = block_top(&app, 5);
+    assert_ne!(narrow_top, wide_top, "fixture must wrap differently");
+
+    app.nav_back();
+    assert_eq!(app.view_state.scroll().offset(), narrow_top);
+}
+
+#[test]
+fn doc_back_after_resize_returns_to_same_block() {
+    let dir = temp_markdown_dir("doc-back-resize");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("b.md"), "# B\n\ncontent\n").unwrap();
+    let mut app = file_backed_app(&dir, "a.md", &wrapping_markdown("[open b](b.md)\n"));
+    let wide_top = block_top(&app, 5);
+    let max = app.max_scroll();
+    assert!(wide_top < max);
+    app.view_state = app.view_state.clone().scroll_to(wide_top, max);
+    app.open_document_link("b.md");
+    assert_eq!(app.source_label.as_deref(), Some("b.md"));
+
+    app.apply_terminal_size(TerminalSize::new(40, 30).unwrap());
+    app.doc_back(anchor_idle(&app));
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
+    assert_eq!(app.view_state.terminal_size().width(), 40);
+    let narrow_top = block_top(&app, 5);
+    assert_ne!(narrow_top, wide_top, "fixture must wrap differently");
+    assert_eq!(app.view_state.scroll().offset(), narrow_top);
+    let _ = std::fs::remove_dir_all(&dir);
+}

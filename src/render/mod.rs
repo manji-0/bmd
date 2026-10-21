@@ -40,7 +40,7 @@ pub(crate) use image::{
     PREVIEW_POPUP_PERCENT, centered_rect, render_floating_image, resolve_image_path,
 };
 pub(crate) use measure::block_tops;
-pub use measure::measure_document_height;
+pub use measure::{measure_document_height, scroll_anchor_at, scroll_offset_for};
 pub use mermaid::RenderedDocument;
 pub(crate) use mermaid::{render_mermaid_from_source, save_mermaid_png};
 pub use preview_cache::PreviewRenderCache;

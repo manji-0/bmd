@@ -5,7 +5,8 @@ use unicode_width::UnicodeWidthStr;
 use super::footnotes::measure_footnotes_height;
 
 use crate::domain::{
-    Block, CodeBlock, DefinitionList, Document, Heading, Inline, List, MathBlock, Table,
+    Block, CodeBlock, DefinitionList, Document, Heading, Inline, List, MathBlock, ScrollAnchor,
+    Table,
 };
 
 use super::callout::measure_callout_height;
@@ -38,6 +39,46 @@ pub(crate) fn measure_body_height(document: &Document, width: u16, ctx: &RenderC
     block_tops(document, width, ctx)
         .last()
         .map_or(0, |(top, _, height)| top + height)
+}
+
+/// Width-independent form of `offset`, for restoring it after the wrap width changes.
+pub fn scroll_anchor_at(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext,
+    offset: usize,
+) -> ScrollAnchor {
+    let tops: Vec<(usize, usize)> = block_tops(document, width, ctx)
+        .map(|(top, _, height)| (top, height))
+        .collect();
+    let body_end = tops.last().map_or(0, |&(top, height)| top + height);
+    if offset >= body_end {
+        let footnotes = measure_footnotes_height(document, width, ctx);
+        return ScrollAnchor::new(tops.len(), offset - body_end, footnotes);
+    }
+    // The first block starts at row 0 and `offset` is inside the body, so some top is <= offset.
+    let index = tops.partition_point(|&(top, _)| top <= offset) - 1;
+    let (top, height) = tops[index];
+    ScrollAnchor::new(index, offset - top, height)
+}
+
+/// Scroll offset of `anchor` at `width`. Inverse of [`scroll_anchor_at`] at the same width.
+pub fn scroll_offset_for(
+    document: &Document,
+    width: u16,
+    ctx: &RenderContext,
+    anchor: ScrollAnchor,
+) -> usize {
+    let block = block_tops(document, width, ctx)
+        .nth(anchor.block())
+        .map(|(top, _, height)| (top, height));
+    let (top, height) = block.unwrap_or_else(|| {
+        (
+            measure_body_height(document, width, ctx),
+            measure_footnotes_height(document, width, ctx),
+        )
+    });
+    top + anchor.line_in(height)
 }
 
 /// Total logical height of the whole document: body blocks plus footnotes.

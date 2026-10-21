@@ -98,6 +98,7 @@ src/
 - `Scroll`: スクロール offset を newtype で包む。
 - `ViewState`: `Scroll` + 選択中リンク + `TerminalSize`。遷移は `self` を消費する。
 - `NavStack` / `LinkJumpStack`: リンクジャンプ時に prior を固定。ライブな現在位置はスタックの外。
+- スタックに積む位置（アンカースタックの prior、文書フレームのスクロール位置）は `ScrollAnchor`（ブロック番号 + ブロック内の行）で持つ。戻る時点の幅で行番号に直すので、リサイズやアウトライン開閉のあとでも同じブロックに戻る。
 - `PreviewLoadSession<S: PreviewSource>`: mermaid / 画像プレビューを `(未登録) → Queued → Loading → Ready | Failed` で追跡する単一の汎用状態機械。app 側は `PreviewPools` が両種を束ねる。
 
 ## レンダリングパイプライン

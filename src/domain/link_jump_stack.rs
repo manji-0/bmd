@@ -85,6 +85,16 @@ impl<T> LinkJumpStack<T> {
             .ok_or(LinkJumpStackEmpty)
     }
 
+    /// Put back a prior just taken by [`Self::restore_latest_prior`], keeping
+    /// every older prior. Used when restoring that prior failed.
+    pub fn return_latest_prior(&mut self, value: T) {
+        debug_assert!(
+            self.priors.len() < self.max_frames,
+            "returned prior exceeds stack capacity"
+        );
+        self.priors.push(PriorAtLinkJump::fix(value));
+    }
+
     /// Take every fixed prior, oldest first. The live current item stays outside.
     pub fn take_all_priors(&mut self) -> Vec<T> {
         std::mem::take(&mut self.priors)
@@ -186,6 +196,21 @@ mod tests {
         assert!(stack.is_at_origin());
         stack.restore_priors(taken);
         assert_eq!(stack.fixed_prior_count(), 2);
+        assert_eq!(stack.restore_latest_prior(), Ok(20));
+        assert_eq!(stack.restore_latest_prior(), Ok(10));
+    }
+
+    #[test]
+    fn return_latest_prior_keeps_older_priors() {
+        let mut stack = LinkJumpStack::with_max_layers(4);
+        stack
+            .fix_prior_on_link_jump(PriorAtLinkJump::fix(10))
+            .unwrap();
+        stack
+            .fix_prior_on_link_jump(PriorAtLinkJump::fix(20))
+            .unwrap();
+        let latest = stack.restore_latest_prior().unwrap();
+        stack.return_latest_prior(latest);
         assert_eq!(stack.restore_latest_prior(), Ok(20));
         assert_eq!(stack.restore_latest_prior(), Ok(10));
     }

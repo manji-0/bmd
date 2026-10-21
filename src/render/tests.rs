@@ -1373,3 +1373,51 @@ fn text_before_a_hard_break_is_kept() {
     let rows = rendered_rows("before the break\\\nafter it", 80);
     assert_eq!(rows, ["before the break", "after it"]);
 }
+
+fn anchor_test_document() -> Document {
+    let mut input = String::from("# Title\n\n");
+    for i in 0..6 {
+        input.push_str(&format!(
+            "Paragraph {i} {}[^n{i}]\n\n",
+            "wrapping words ".repeat(12)
+        ));
+    }
+    for i in 0..6 {
+        input.push_str(&format!("[^n{i}]: footnote {i} {}\n", "note ".repeat(20)));
+    }
+    parse(&input).unwrap()
+}
+
+#[test]
+fn scroll_anchor_round_trips_every_offset_at_same_width() {
+    let ctx = test_render_context();
+    let document = anchor_test_document();
+    let width = 50;
+    let total = measure_document_height(&document, width, &ctx);
+    for offset in 0..=total + 2 {
+        let anchor = super::measure::scroll_anchor_at(&document, width, &ctx, offset);
+        assert_eq!(
+            super::measure::scroll_offset_for(&document, width, &ctx, anchor),
+            offset,
+            "offset {offset} did not round-trip through {anchor:?}"
+        );
+    }
+}
+
+#[test]
+fn scroll_anchor_keeps_block_top_across_widths() {
+    let ctx = test_render_context();
+    let document = anchor_test_document();
+    let tops = |width| -> Vec<usize> {
+        super::measure::block_tops(&document, width, &ctx)
+            .map(|(top, _, _)| top)
+            .collect()
+    };
+    let (wide, narrow) = (tops(80), tops(30));
+    assert_ne!(wide[4], narrow[4], "fixture must wrap differently");
+    let anchor = super::measure::scroll_anchor_at(&document, 80, &ctx, wide[4]);
+    assert_eq!(
+        super::measure::scroll_offset_for(&document, 30, &ctx, anchor),
+        narrow[4]
+    );
+}

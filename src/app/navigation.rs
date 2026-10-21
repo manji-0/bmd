@@ -202,10 +202,8 @@ impl App {
 
     fn apply_anchor_back(&mut self) {
         match self.nav_stack.step_back() {
-            Ok(offset) => {
-                let max = self.max_scroll();
-                self.view_state = self.view_state.clone().scroll_to(offset, max);
-                self.snap_scroll_visual();
+            Ok(anchor) => {
+                self.scroll_to_anchor(anchor);
                 self.set_status_message("back → previous position".into());
             }
             Err(AnchorStackEmpty) => {
@@ -219,9 +217,7 @@ impl App {
             self.set_status_message("nothing to reset".into());
             return;
         };
-        let max = self.max_scroll();
-        self.view_state = self.view_state.clone().scroll_to(origin, max);
-        self.snap_scroll_visual();
+        self.scroll_to_anchor(origin);
         self.set_status_message("reset → previous position".into());
     }
 
@@ -232,7 +228,7 @@ impl App {
             self.set_status_message(format!("heading not found: #{anchor}"));
             return;
         };
-        let prior = FixedScrollPrior::fix(self.view_state.scroll().offset());
+        let prior = FixedScrollPrior::fix(self.scroll_anchor());
         if let Err(AnchorStackFull) = self.nav_stack.fix_prior_on_link_jump(prior) {
             self.set_status_message(anchor_stack_limit_message());
             return;
