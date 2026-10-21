@@ -48,8 +48,14 @@ fn run() -> Result<(), AppError> {
     // halfblocks protocol. ratatui-image's own default is 2000ms; split the
     // difference so terminals with no graphics query support (which never
     // respond) don't stall startup for a full 2 seconds.
+    //
+    // Kitty compression: an uncompressed kitty image is base64 RGBA held in
+    // memory (about 2.4 MB per preview popup at 200x50 cells), kept by every
+    // stacked document that loaded it. Diagrams are flat colour and deflate well;
+    // terminals that cannot inflate (`o=z`) don't report it and stay uncompressed.
     let options = QueryStdioOptions {
         timeout: Duration::from_millis(1000),
+        kitty_compression: true,
         ..QueryStdioOptions::default()
     };
     let picker =
@@ -57,9 +63,10 @@ fn run() -> Result<(), AppError> {
 
     if env::var("BMD_DEBUG_PICKER").is_ok() {
         eprintln!(
-            "[bmd] picker protocol={:?} font_size={:?}",
+            "[bmd] picker protocol={:?} font_size={:?} capabilities={:?}",
             picker.protocol_type(),
-            picker.font_size()
+            picker.font_size(),
+            picker.capabilities()
         );
     }
 
