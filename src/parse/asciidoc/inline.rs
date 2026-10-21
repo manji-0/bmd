@@ -47,9 +47,7 @@ fn map_inline(inline: &InlineNode<'_>, state: &mut AsciiDocState<'_>) -> Vec<Par
             })
         }
         InlineNode::MonospaceText(mono) => {
-            vec![ParsedInline::Code(acdc_parser::inlines_to_string(
-                &mono.content,
-            ))]
+            vec![ParsedInline::Code(inlines_to_string(&mono.content))]
         }
         InlineNode::LineBreak(_) => vec![ParsedInline::HardBreak],
         InlineNode::HighlightText(node) => {
@@ -208,7 +206,7 @@ fn map_inline_macro(
             vec![ParsedInline::Text(path.join(" > "))]
         }
         InlineMacro::IndexTerm(index_term) => match &index_term.kind {
-            acdc_parser::IndexTermKind::Flow(term) => vec![ParsedInline::Text(term.to_string())],
+            acdc_parser::IndexTermKind::Flow(term) => map_inlines(term, state),
             acdc_parser::IndexTermKind::Concealed { .. } | _ => Vec::new(),
         },
         _ => Vec::new(),
@@ -228,7 +226,7 @@ pub(super) fn verbatim_content(inner: &DelimitedBlockType<'_>) -> String {
         DelimitedBlockType::DelimitedListing(inlines)
         | DelimitedBlockType::DelimitedLiteral(inlines)
         | DelimitedBlockType::DelimitedPass(inlines)
-        | DelimitedBlockType::DelimitedVerse(inlines) => acdc_parser::inlines_to_string(inlines),
+        | DelimitedBlockType::DelimitedVerse(inlines) => inlines_to_string(inlines),
         _ => String::new(),
     }
 }
@@ -243,5 +241,59 @@ pub(super) fn mermaid_link_label(source: &str) -> String {
         "[mermaid diagram]".to_string()
     } else {
         format!("[mermaid: {first_line}]")
+    }
+}
+
+/// Plain text of `inlines`, recursing through formatting nodes.
+///
+/// acdc-parser 0.10 dropped its `inlines_to_string`; this keeps that policy:
+/// link-like macros yield their text (or target when empty), visible index
+/// terms yield their term, and every other macro is omitted.
+pub(super) fn inlines_to_string(inlines: &[InlineNode<'_>]) -> String {
+    let mut out = String::new();
+    write_inlines(&mut out, inlines);
+    out
+}
+
+fn write_inlines(out: &mut String, inlines: &[InlineNode<'_>]) {
+    for node in inlines {
+        match node {
+            InlineNode::PlainText(text) => out.push_str(text.content),
+            InlineNode::RawText(text) => out.push_str(text.content),
+            InlineNode::VerbatimText(text) => out.push_str(text.content),
+            InlineNode::BoldText(node) => write_inlines(out, &node.content),
+            InlineNode::ItalicText(node) => write_inlines(out, &node.content),
+            InlineNode::MonospaceText(node) => write_inlines(out, &node.content),
+            InlineNode::HighlightText(node) => write_inlines(out, &node.content),
+            InlineNode::SubscriptText(node) => write_inlines(out, &node.content),
+            InlineNode::SuperscriptText(node) => write_inlines(out, &node.content),
+            InlineNode::CurvedQuotationText(node) => write_inlines(out, &node.content),
+            InlineNode::CurvedApostropheText(node) => write_inlines(out, &node.content),
+            InlineNode::StandaloneCurvedApostrophe(_) => out.push('\''),
+            InlineNode::LineBreak(_) => out.push(' '),
+            InlineNode::Macro(inline_macro) => write_inline_macro(out, inline_macro),
+            InlineNode::CalloutRef(callout) => out.push_str(&format!("<{}>", callout.number)),
+            _ => {}
+        }
+    }
+}
+
+fn write_inline_macro(out: &mut String, inline_macro: &InlineMacro<'_>) {
+    match inline_macro {
+        InlineMacro::Link(link) if link.text.is_empty() => out.push_str(&link.target.to_string()),
+        InlineMacro::Link(link) => write_inlines(out, &link.text),
+        InlineMacro::Url(url) if url.text.is_empty() => out.push_str(&url.target.to_string()),
+        InlineMacro::Url(url) => write_inlines(out, &url.text),
+        InlineMacro::Mailto(mailto) if mailto.text.is_empty() => {
+            out.push_str(&mailto.target.to_string());
+        }
+        InlineMacro::Mailto(mailto) => write_inlines(out, &mailto.text),
+        InlineMacro::Autolink(autolink) => out.push_str(&autolink.url.to_string()),
+        InlineMacro::CrossReference(xref) if xref.text.is_empty() => out.push_str(xref.target),
+        InlineMacro::CrossReference(xref) => write_inlines(out, &xref.text),
+        InlineMacro::IndexTerm(index_term) if index_term.is_visible() => {
+            write_inlines(out, index_term.term());
+        }
+        _ => {}
     }
 }

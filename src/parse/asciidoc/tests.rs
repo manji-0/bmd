@@ -99,7 +99,7 @@ fn parse_asciidoc_line_through_highlight() {
 fn parse_asciidoc_document_attributes_as_front_matter() {
     let dto = parse("= Doc\n:toc: left\n:revnumber: 1.0\n\nBody.\n").unwrap();
     let front_matter = dto.front_matter.expect("front matter");
-    assert!(front_matter.raw.contains("toc: left"));
+    assert!(front_matter.raw.contains("toc-position: left"));
     assert!(front_matter.raw.contains("revnumber: 1.0"));
 }
 

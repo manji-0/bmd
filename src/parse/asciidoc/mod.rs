@@ -20,7 +20,8 @@ use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
 
 use inline::{
-    map_inlines, map_verbatim_inlines, mermaid_link_label, source_to_string, verbatim_content,
+    inlines_to_string, map_inlines, map_verbatim_inlines, mermaid_link_label, source_to_string,
+    verbatim_content,
 };
 use table::map_table;
 
@@ -74,7 +75,7 @@ pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
     let mut state = AsciiDocState::new(front_matter, &doc.toc_entries);
     let mut blocks = Vec::new();
     if let Some(header) = doc.header.as_ref() {
-        let title = acdc_parser::inlines_to_string(&header.title);
+        let title = inlines_to_string(&header.title);
         blocks.push(ParsedBlock::Heading(ParsedHeading {
             level: 1,
             content: map_inlines(&header.title, &mut state),
@@ -121,7 +122,7 @@ fn build_front_matter(
     }
     if let Some(header) = header {
         if let Some(subtitle) = &header.subtitle {
-            let text = acdc_parser::inlines_to_string(subtitle);
+            let text = inlines_to_string(subtitle);
             if !text.is_empty() {
                 lines.push(format!("subtitle: {text}"));
             }
@@ -147,7 +148,7 @@ fn image_alt_text(image: &acdc_parser::Image<'_>, url: &str) -> String {
     {
         return alt.to_string();
     }
-    let title = acdc_parser::inlines_to_string(&image.title);
+    let title = inlines_to_string(&image.title);
     if !title.is_empty() {
         return title;
     }
@@ -157,14 +158,14 @@ fn image_alt_text(image: &acdc_parser::Image<'_>, url: &str) -> String {
     )
 }
 
-fn attribute_value_yaml(value: &AttributeValue<'_>) -> String {
-    match value {
-        AttributeValue::String(text) => text.to_string(),
-        AttributeValue::Bool(true) => "true".to_string(),
-        AttributeValue::Bool(false) => "false".to_string(),
-        AttributeValue::None => "null".to_string(),
-        _ => String::new(),
+fn attribute_value_yaml(value: &acdc_parser::DocumentAttributeValue<'_>) -> String {
+    if value.is_presence() {
+        return "true".to_string();
     }
+    let mut text = String::new();
+    // Writing into a `String` is infallible.
+    let _ = value.write_text(&mut text);
+    text
 }
 
 fn author_display(author: &Author<'_>) -> String {
@@ -206,7 +207,7 @@ fn map_block(
 ) -> Result<Vec<ParsedBlock>, ParseError> {
     Ok(match block {
         AdocBlock::Section(section) => {
-            let title = acdc_parser::inlines_to_string(&section.title);
+            let title = inlines_to_string(&section.title);
             let level = section_heading_level(section.level)?;
             let mut mapped = vec![ParsedBlock::Heading(ParsedHeading {
                 level,
@@ -254,7 +255,7 @@ fn map_block(
         AdocBlock::Admonition(admonition) => vec![map_admonition(admonition, state)?],
         AdocBlock::DescriptionList(list) => map_description_list(list, state)?,
         AdocBlock::DiscreteHeader(header) => {
-            let title = acdc_parser::inlines_to_string(&header.title);
+            let title = inlines_to_string(&header.title);
             let level = section_heading_level(header.level)?;
             vec![ParsedBlock::Heading(ParsedHeading {
                 level,
@@ -267,7 +268,7 @@ fn map_block(
         AdocBlock::PageBreak(_) => vec![ParsedBlock::Rule],
         AdocBlock::Audio(audio) => vec![media_block(
             source_to_string(&audio.source),
-            acdc_parser::inlines_to_string(&audio.title),
+            inlines_to_string(&audio.title),
             state,
         )],
         AdocBlock::Video(video) => {
@@ -276,11 +277,7 @@ fn map_block(
                 .first()
                 .map(source_to_string)
                 .unwrap_or_default();
-            vec![media_block(
-                url,
-                acdc_parser::inlines_to_string(&video.title),
-                state,
-            )]
+            vec![media_block(url, inlines_to_string(&video.title), state)]
         }
         AdocBlock::Comment(_) | AdocBlock::DocumentAttribute(_) | _ => Vec::new(),
     })
@@ -309,7 +306,7 @@ fn map_table_of_contents(state: &mut AsciiDocState<'_>) -> Vec<ParsedBlock> {
             (
                 entry.id.to_string(),
                 entry.level as usize,
-                acdc_parser::inlines_to_string(&entry.title),
+                inlines_to_string(&entry.title),
             )
         })
         .collect();
@@ -416,21 +413,19 @@ fn map_delimited_block(
     match &delimited.inner {
         DelimitedBlockType::DelimitedListing(inlines)
         | DelimitedBlockType::DelimitedLiteral(inlines) => {
-            let language = delimited
-                .metadata
-                .attributes
-                .iter()
-                .next()
-                .map(|(name, _)| name.to_string());
+            let language = match delimited.metadata.attributes.get("language") {
+                Some(AttributeValue::String(language)) => Some(language.to_string()),
+                _ => None,
+            };
             Ok(vec![ParsedBlock::CodeBlock(ParsedCodeBlock {
                 language: if style == "source" { language } else { None },
-                content: acdc_parser::inlines_to_string(inlines),
+                content: inlines_to_string(inlines),
             })])
         }
         DelimitedBlockType::DelimitedPass(inlines) => {
             Ok(vec![ParsedBlock::CodeBlock(ParsedCodeBlock {
                 language: None,
-                content: acdc_parser::inlines_to_string(inlines),
+                content: inlines_to_string(inlines),
             })])
         }
         DelimitedBlockType::DelimitedVerse(inlines) => Ok(vec![ParsedBlock::Paragraph(

@@ -27,7 +27,7 @@ pub enum AppError {
     MarkdownParse(String),
 
     #[error("mermaid render error: {0}")]
-    MermaidRender(#[from] merman::render::raster::RasterError),
+    MermaidRender(#[from] merman::RenderError),
 
     #[error("mermaid source did not produce a diagram")]
     MermaidNoDiagram,

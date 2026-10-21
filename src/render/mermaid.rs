@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use merman::render::{HeadlessRenderer, LayoutOptions, raster::RasterOptions};
+use merman::svg::export::RasterOptions;
+use merman::svg::{LayoutOptions, SvgRenderOptions};
+use merman::{OperationControl, PngRequest, RenderOutput, RenderRequest, Renderer, SvgRequest};
 use ratatui_image::protocol::Protocol;
 
 use crate::domain::{LinkKind, MermaidDiagram, TerminalSize};
@@ -64,18 +66,15 @@ fn render_mermaid_image(
     let target_px_w = target.width as f64 * font.width as f64;
     let target_px_h = target.height as f64 * font.height as f64;
 
-    let mut layout = LayoutOptions::headless_svg_defaults();
-    layout.viewport_width = target_px_w;
-    layout.viewport_height = target_px_h;
+    let renderer = Renderer::new();
+    let svg = mermaid_svg_request(
+        LayoutOptions::headless_svg_defaults().with_container_size(target_px_w, target_px_h),
+    );
 
-    let renderer = HeadlessRenderer::new()
-        .with_layout_options(layout)
-        .with_diagram_id("bmd-mermaid");
-
-    let dyn_img = rasterize_mermaid(&renderer, &diag.source, MERMAID_RASTER_SCALE)?;
+    let dyn_img = rasterize_mermaid(&renderer, &svg, &diag.source, MERMAID_RASTER_SCALE)?;
 
     // `merman` lays most diagram types out at their own intrinsic,
-    // content-driven size regardless of `viewport_width`/`viewport_height`
+    // content-driven size regardless of `container_width`/`container_height`
     // (that field only affects the C4 diagram layout). If the resulting
     // raster is smaller than the popup, the terminal display step's
     // aspect-preserving fit would *upscale* it — blurring text and edges.
@@ -85,7 +84,7 @@ fn render_mermaid_image(
     let dyn_img = if fit_ratio > 1.0 {
         let needed_scale =
             (f64::from(MERMAID_RASTER_SCALE) * fit_ratio).min(f64::from(MERMAID_MAX_RASTER_SCALE));
-        rasterize_mermaid(&renderer, &diag.source, needed_scale as f32)?
+        rasterize_mermaid(&renderer, &svg, &diag.source, needed_scale as f32)?
     } else {
         dyn_img
     };
@@ -100,10 +99,9 @@ fn render_mermaid_image(
 /// an explicit user action (pressing `o`) — never from background prefetch —
 /// so an external viewer window doesn't pop up unexpectedly on document load.
 pub(crate) fn save_mermaid_png(source: &str) -> Result<std::path::PathBuf, AppError> {
-    let renderer = HeadlessRenderer::new()
-        .with_layout_options(LayoutOptions::headless_svg_defaults())
-        .with_diagram_id("bmd-mermaid");
-    let dyn_img = rasterize_mermaid(&renderer, source, MERMAID_RASTER_SCALE)?;
+    let renderer = Renderer::new();
+    let svg = mermaid_svg_request(LayoutOptions::headless_svg_defaults());
+    let dyn_img = rasterize_mermaid(&renderer, &svg, source, MERMAID_RASTER_SCALE)?;
     save_mermaid_temp_png(&dyn_img)
         .ok_or_else(|| AppError::TerminalImage("failed to save mermaid diagram".into()))
 }
@@ -119,19 +117,32 @@ fn save_mermaid_temp_png(dyn_img: &image::DynamicImage) -> Option<std::path::Pat
     Some(path)
 }
 
+fn mermaid_svg_request(layout: LayoutOptions) -> SvgRequest {
+    SvgRequest {
+        layout,
+        options: SvgRenderOptions {
+            diagram_id: Some("bmd-mermaid".to_string()),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
 fn rasterize_mermaid(
-    renderer: &HeadlessRenderer,
+    renderer: &Renderer,
+    svg: &SvgRequest,
     source: &str,
     scale: f32,
 ) -> Result<image::DynamicImage, AppError> {
-    let options = RasterOptions {
-        scale,
-        ..Default::default()
+    let request = PngRequest {
+        svg: svg.clone(),
+        options: RasterOptions::default().with_scale(scale),
     };
-    let png = renderer
-        .render_png_sync(source, &options)?
-        .ok_or(AppError::MermaidNoDiagram)?;
-    Ok(image::load_from_memory(&png)?)
+    let output = renderer.render(RenderRequest::png(source, OperationControl::new(), request))?;
+    let RenderOutput::Png(Some(png)) = output else {
+        return Err(AppError::MermaidNoDiagram);
+    };
+    Ok(image::load_from_memory(&png.bytes)?)
 }
 
 #[cfg(test)]
@@ -201,13 +212,11 @@ mod tests {
 
         let source = "graph TD; A-->B; B-->C; A-->C;";
 
-        let mut layout = LayoutOptions::headless_svg_defaults();
-        layout.viewport_width = target_px_w;
-        layout.viewport_height = target_px_h;
-        let renderer = HeadlessRenderer::new()
-            .with_layout_options(layout)
-            .with_diagram_id("bmd-mermaid");
-        let base = rasterize_mermaid(&renderer, source, MERMAID_RASTER_SCALE).unwrap();
+        let renderer = Renderer::new();
+        let svg = mermaid_svg_request(
+            LayoutOptions::headless_svg_defaults().with_container_size(target_px_w, target_px_h),
+        );
+        let base = rasterize_mermaid(&renderer, &svg, source, MERMAID_RASTER_SCALE).unwrap();
         let base_fit_ratio = (target_px_w / base.width().max(1) as f64)
             .min(target_px_h / base.height().max(1) as f64);
         assert!(
@@ -223,7 +232,7 @@ mod tests {
 
         let needed_scale = (f64::from(MERMAID_RASTER_SCALE) * base_fit_ratio)
             .min(f64::from(MERMAID_MAX_RASTER_SCALE));
-        let corrected = rasterize_mermaid(&renderer, source, needed_scale as f32).unwrap();
+        let corrected = rasterize_mermaid(&renderer, &svg, source, needed_scale as f32).unwrap();
         let corrected_fit_ratio = (target_px_w / corrected.width().max(1) as f64)
             .min(target_px_h / corrected.height().max(1) as f64);
         assert!(
