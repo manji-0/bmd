@@ -848,7 +848,7 @@ fn nav_reset_drains_anchor_before_returning_to_root_document() {
     let b = dir.join("b.md");
     let c = dir.join("c.md");
     std::fs::write(&a, "# A\n\n[open b](b.md)\n").unwrap();
-    std::fs::write(&b, "# B\n\n[open c](c.md#target)\n").unwrap();
+    std::fs::write(&b, "# B\n\n[open c](c.md)\n").unwrap();
     let mut body = String::from("# Top\n\n");
     for i in 0..60 {
         body.push_str(&format!("paragraph {}\n\n", i));
@@ -878,6 +878,7 @@ fn nav_reset_drains_anchor_before_returning_to_root_document() {
         .with_selected_link(crate::domain::LinkId(0));
     app.open_current_link();
     assert_eq!(app.source_label.as_deref(), Some("c.md"));
+    app.follow_anchor("target");
     assert_eq!(app.doc_stack.len_frames(), 2);
     assert!(!app.nav_stack.is_empty());
 
@@ -1050,7 +1051,10 @@ fn open_document_link_follows_fragment_in_linked_file() {
 
     assert_eq!(app.source_label.as_deref(), Some("b.md"));
     assert!(app.view_state.scroll().offset() > 0);
-    assert!(!app.nav_stack.is_empty());
+    // The fragment jump is part of opening b.md, so one step back returns to a.md.
+    assert!(app.nav_stack.is_empty());
+    app.nav_back();
+    assert_eq!(app.source_label.as_deref(), Some("a.md"));
 
     let _ = std::fs::remove_dir_all(dir);
 }

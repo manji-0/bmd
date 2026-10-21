@@ -55,7 +55,7 @@ Cycle through links in the document with `n` / `N` (or `Tab` / `Shift-Tab`). Sel
 |------|---------|---------------|
 | Web | `[text](https://…)` | Opens in the browser via macOS `open` / Linux `xdg-open` |
 | Anchor | `[text](#section)` | Jumps to the matching heading; prior scroll positions are stacked |
-| Document | `[text](./other.md)` | Opens the linked file in the same view; file stack supports nested navigation |
+| Document | `[text](./other.md)` | Opens the linked file in the same view; file stack supports nested navigation. With `#section` it opens at that heading, and one step back returns to the linking file |
 | Image | `![alt](path.png)` | Floating in-terminal preview |
 | Mermaid | Link from a mermaid code block | Floating preview of the rendered diagram |
 

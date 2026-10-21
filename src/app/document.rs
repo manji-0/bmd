@@ -62,7 +62,7 @@ impl App {
         }
 
         if let Some(anchor) = anchor {
-            self.follow_anchor(anchor);
+            self.open_at_anchor(anchor);
         }
     }
 
@@ -107,7 +107,7 @@ impl App {
         }
 
         if let Some(anchor) = fragment {
-            self.follow_anchor(anchor);
+            self.open_at_anchor(anchor);
         }
     }
 

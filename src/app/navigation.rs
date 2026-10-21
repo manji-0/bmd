@@ -222,10 +222,7 @@ impl App {
     }
 
     pub(crate) fn follow_anchor(&mut self, anchor: &str) {
-        let ctx = self.render_context();
-        let width = self.document_width();
-        let Some(line) = find_heading_line_by_anchor(&self.document, width, &ctx, anchor) else {
-            self.set_status_message(format!("heading not found: #{anchor}"));
+        let Some(line) = self.heading_line(anchor) else {
             return;
         };
         let prior = FixedScrollPrior::fix(self.scroll_anchor());
@@ -234,6 +231,27 @@ impl App {
             return;
         }
         self.scroll_to_line(line);
+    }
+
+    /// Land on `anchor` in a document just opened from a `doc#anchor` link.
+    ///
+    /// Not pushed on the anchor stack: the document jump already recorded the
+    /// linking document, so one step back returns there.
+    pub(crate) fn open_at_anchor(&mut self, anchor: &str) {
+        if let Some(line) = self.heading_line(anchor) {
+            self.scroll_to_line(line);
+        }
+    }
+
+    /// Row of the heading whose slug is `anchor`; reports a missing heading.
+    fn heading_line(&mut self, anchor: &str) -> Option<usize> {
+        let ctx = self.render_context();
+        let width = self.document_width();
+        let line = find_heading_line_by_anchor(&self.document, width, &ctx, anchor);
+        if line.is_none() {
+            self.set_status_message(format!("heading not found: #{anchor}"));
+        }
+        line
     }
 
     pub(crate) fn jump_to_toc_heading(&mut self) {
