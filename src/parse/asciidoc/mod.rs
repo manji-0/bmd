@@ -3,10 +3,12 @@
 mod inline;
 mod table;
 
+use std::path::Path;
+
 use acdc_parser::{
     self, Admonition, AttributeValue, Author, Block as AdocBlock, BlockMetadata,
-    DelimitedBlockType, Footnote as AdocFootnote, ListItemCheckedStatus, Options, StemContent,
-    TocEntry,
+    DelimitedBlockType, Footnote as AdocFootnote, ListItemCheckedStatus, Options, SafeMode,
+    StemContent, TocEntry,
 };
 
 use crate::domain::{anchor_href, normalize_anchor_slug, slugify_heading};
@@ -66,8 +68,21 @@ impl<'a> AsciiDocState<'a> {
 }
 
 /// Parse AsciiDoc into a [`ParsedDocument`].
-pub fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
-    let options = Options::default();
+///
+/// With `include_base`, `include::` reads files beneath that directory
+/// ([`SafeMode::Safe`] confines `../` and absolute paths to it). Without it,
+/// includes are not read and render as links ([`SafeMode::Secure`]).
+pub fn parse(content: &str, include_base: Option<&Path>) -> Result<ParsedDocument, ParseError> {
+    let syntax =
+        |error: acdc_parser::Error| ParseError::syntax(MarkupFormat::AsciiDoc, error.to_string());
+    let options = match include_base {
+        Some(dir) => Options::builder()
+            .with_safe_mode(SafeMode::Safe)
+            .with_base_dir(dir)
+            .build()
+            .map_err(syntax)?,
+        None => Options::default(),
+    };
     let parsed = acdc_parser::parse(content, &options)
         .map_err(|error| ParseError::syntax(MarkupFormat::AsciiDoc, error.to_string()))?;
     let doc = parsed.document();
@@ -117,8 +132,12 @@ fn build_front_matter(
     header: Option<&acdc_parser::Header<'_>>,
 ) -> Option<ParsedFrontMatter> {
     let mut lines = Vec::new();
+    // Skip parser defaults (captions, character references, document and local
+    // date/time, safe-mode markers); only what the document assigns is shown.
     for (name, value) in attributes.iter() {
-        lines.push(format!("{name}: {}", attribute_value_yaml(value)));
+        if attributes.is_explicit(name) {
+            lines.push(format!("{name}: {}", attribute_value_yaml(value)));
+        }
     }
     if let Some(header) = header {
         if let Some(subtitle) = &header.subtitle {

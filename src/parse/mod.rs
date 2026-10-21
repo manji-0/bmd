@@ -30,17 +30,35 @@ pub fn parse_document(format: MarkupFormat, content: &str) -> Result<Document, A
 }
 
 /// Parse markup using path-based (and content) format detection.
+///
+/// `path` is a local file: AsciiDoc `include::` may read files beneath its
+/// directory. Pass `None` for content with no local home (stdin, remote).
 pub fn parse_with_path(path: Option<&Path>, content: &str) -> Result<Document, AppError> {
     let format = MarkupFormat::detect(path, content);
-    parse_document(format, content)
+    let include_base = path.map(|path| match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    });
+    let dto = parse_dto_in(format, content, include_base)?;
+    dto.into_domain().map_err(AppError::from)
 }
 
-/// Parse markup content into the shared DTO.
+/// Parse markup content into the shared DTO. No local files are read.
 pub fn parse_dto(format: MarkupFormat, content: &str) -> Result<ParsedDocument, ParseError> {
+    parse_dto_in(format, content, None)
+}
+
+/// Parse into the shared DTO, letting AsciiDoc `include::` read files beneath
+/// `include_base`. With `None`, includes are not read.
+fn parse_dto_in(
+    format: MarkupFormat,
+    content: &str,
+    include_base: Option<&Path>,
+) -> Result<ParsedDocument, ParseError> {
     match format {
         MarkupFormat::Markdown => markdown::parse(content),
         MarkupFormat::Rest => rst::parse(content),
-        MarkupFormat::AsciiDoc => asciidoc::parse(content),
+        MarkupFormat::AsciiDoc => asciidoc::parse(content, include_base),
     }
 }
 

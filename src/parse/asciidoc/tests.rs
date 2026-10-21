@@ -5,6 +5,71 @@ use crate::domain::{Block, Inline, LinkKind};
 use crate::parse::error::ParseError;
 use crate::parse::format::MarkupFormat;
 
+/// Parse with no local home: includes are not read.
+fn parse(content: &str) -> Result<ParsedDocument, ParseError> {
+    super::parse(content, None)
+}
+
+fn paragraph_text(dto: &ParsedDocument) -> String {
+    dto.clone()
+        .into_domain()
+        .unwrap()
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Paragraph(inlines) => Some(
+                inlines
+                    .iter()
+                    .filter_map(|inline| match inline {
+                        Inline::Text(text) => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<String>(),
+            ),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn include_fixture(name: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("bmd-adoc-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    std::fs::write(root.join("docs/part.adoc"), "included body\n").unwrap();
+    std::fs::write(root.join("secret.adoc"), "outside secret\n").unwrap();
+    root
+}
+
+#[test]
+fn include_reads_files_beneath_document_directory() {
+    let root = include_fixture("include-ok");
+    let dto = super::parse("= Doc\n\ninclude::part.adoc[]\n", Some(&root.join("docs"))).unwrap();
+    assert!(paragraph_text(&dto).contains("included body"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn include_cannot_escape_document_directory() {
+    let root = include_fixture("include-escape");
+    let dto = super::parse(
+        "= Doc\n\ninclude::../secret.adoc[]\n",
+        Some(&root.join("docs")),
+    )
+    .unwrap();
+    assert!(!paragraph_text(&dto).contains("outside secret"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn include_is_not_read_without_document_directory() {
+    let root = include_fixture("include-none");
+    let path = root.join("docs/part.adoc");
+    let dto = parse(&format!("= Doc\n\ninclude::{}[]\n", path.display())).unwrap();
+    assert!(!paragraph_text(&dto).contains("included body"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 #[test]
 fn parse_asciidoc_heading_and_emphasis() {
     let dto = parse("= Title\n\nHello *world*.\n").unwrap();
@@ -291,4 +356,11 @@ fn parse_asciidoc_footnote_body_keeps_links_and_markup() {
         "{inlines:?}"
     );
     assert_eq!(doc.links()[0].url.as_str(), "https://example.com");
+}
+
+#[test]
+fn front_matter_lists_only_attributes_the_document_sets() {
+    let dto = parse("= Title\n:foo: bar\n\nbody\n").unwrap();
+    let raw = dto.front_matter.as_ref().map(|fm| fm.raw.clone()).unwrap();
+    assert_eq!(raw, "foo: bar");
 }
