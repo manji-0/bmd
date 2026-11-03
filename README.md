@@ -1,6 +1,6 @@
 # bmd
 
-A terminal TUI for reading Markdown. Vim-style keybindings, rich markup rendering, native Mermaid diagrams, in-document search, sticky outline, scroll marks, and yank.
+A terminal TUI for reading Markdown, reStructuredText, and AsciiDoc. Vim-style keybindings, rich markup rendering, native Mermaid diagrams, in-document search, sticky outline, scroll marks, and yank.
 
 ## Features
 
@@ -63,9 +63,9 @@ Close the preview overlay with `Esc`, `o`, or `O`. **One back model:** `Esc` and
 
 ### Mermaid and images
 
-Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://crates.io/crates/merman) crate and displayed inline using the terminal graphics protocol.
+Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://crates.io/crates/merman) crate and displayed in a floating preview using the terminal graphics protocol.
 
-- Queries terminal capabilities at startup (Kitty, iTerm2, Sixel, etc.); falls back to Unicode half-blocks when unsupported
+- Queries terminal capabilities at startup (Kitty, iTerm2, Sixel, etc.); when the picker falls back to half-blocks (no graphics protocol), the preview is not drawn in the terminal. `o` on a Mermaid or image link writes a PNG and opens it with `open` / `xdg-open` instead
 - Pauses image drawing while scrolling; resumes 100 ms after scrolling stops
 - Markdown images with relative paths resolve against the input file's directory
 
@@ -81,7 +81,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 
 - [devbox](https://www.jetify.com/devbox) (recommended; provides Rust 1.98, clang, sccache, prek)
 - macOS for opening web links via `open`; Linux uses `xdg-open`
-- Kitty, Ghostty, iTerm2, WezTerm, or similar for inline Mermaid and image rendering
+- Kitty, Ghostty, iTerm2, WezTerm, or similar for in-terminal Mermaid and image previews
 
 ## Quick start
 
@@ -273,11 +273,15 @@ src/
 ├── main.rs           # entry point and terminal setup
 ├── app/              # application loop, input, drawing, navigation
 ├── domain/           # domain model and typed state transitions
-├── parse/            # pulldown-cmark → domain model
+├── parse/            # Markdown / reStructuredText / AsciiDoc → domain model
 ├── render/           # domain model → ratatui widgets
+├── github/           # GitHub URL parsing, blob/PR fetching, link rewriting
 ├── config.rs         # ~/.config/bmd/config.toml loader
 ├── keymap.rs         # per-mode keybindings (configurable)
-├── browser.rs        # macOS open adapter
+├── browser.rs        # open / xdg-open adapter
+├── clipboard.rs      # system clipboard adapter
+├── fs.rs             # std filesystem adapter
+├── lib.rs            # library crate exports
 └── error.rs
 ```
 

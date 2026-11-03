@@ -35,7 +35,7 @@
 
 ` ```mermaid ` コードブロックを検出 → `merman::render::HeadlessRenderer::render_png_sync` で PNG バイト列を生成 → `image::load_from_memory` → `ratatui_image::Picker::new_protocol` → `ratatui_image::Image` ウィジェットとして描画。
 
-ターミナルが画像プロトコル未対応の場合、`ratatui-image` はハーフブロック（Unicode）フォールバックを使う。これは「ASCII アート」ではない。
+ターミナルが画像プロトコル未対応で Picker がハーフブロックに解決された場合、bmd は端末内にプレビューを描画しない。`o` で PNG を一時ファイルに書き出し、`open` / `xdg-open` で外部ビューアに渡す（`src/app/navigation.rs`、`src/render/mermaid.rs::save_mermaid_png`）。
 
 ## モジュール構成
 
