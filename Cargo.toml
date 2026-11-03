@@ -13,14 +13,16 @@ keywords = ["markdown", "tui", "terminal", "viewer", "vim"]
 categories = ["command-line-utilities", "text-processing"]
 exclude = [
     ".github/",
-    ".devbox/",
+    ".direnv/",
     ".cargo/",
     ".rustup/",
     ".sccache/",
     ".pi/",
     ".claude/",
     "PLAN.md",
-    "devbox.json",
+    "flake.nix",
+    "flake.lock",
+    ".envrc",
     "prek.toml",
 ]
 

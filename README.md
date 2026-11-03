@@ -79,7 +79,7 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 
 ## Requirements
 
-- [devbox](https://www.jetify.com/devbox) (recommended; provides Rust 1.98, clang, sccache, prek)
+- [Nix](https://nixos.org/) with flakes (recommended; provides Rust 1.98, sccache, prek, cargo-zigbuild), or Rust 1.98 from `rust-toolchain.toml`
 - macOS for opening web links via `open`; Linux uses `xdg-open`
 - Kitty, Ghostty, iTerm2, WezTerm, or similar for in-terminal Mermaid and image previews
 
@@ -89,10 +89,12 @@ Mermaid fenced code blocks are rasterized with the pure-Rust [merman](https://cr
 # Install from crates.io
 cargo install bmd
 
-# Or build from source (devbox)
-devbox run setup
-devbox run build-release
-./target/release/bmd sample.md
+# Or run straight from the flake
+nix run github:manji-0/bmd -- sample.md
+
+# Or build from source
+nix build
+./result/bin/bmd sample.md
 ```
 
 ## Usage
@@ -235,34 +237,27 @@ Available commands:
 
 ## Build
 
-Building through devbox sets linker flags, `CARGO_HOME`, and sccache configuration.
+`flake.nix` reads the Rust version from `rust-toolchain.toml`. `nix build` builds and tests the package in the Nix sandbox; `nix develop` (or `direnv allow` with the bundled `.envrc`) opens a shell with the toolchain, the musl targets, sccache, prek, zig, and cargo-zigbuild.
 
 ```bash
-devbox run build          # debug
-devbox run build-release  # release
-devbox run build-linux-x86_64  # static Linux x86_64 (musl, from macOS)
-devbox run package        # release binaries (dist/*.tar.gz) + crates.io crate
+nix build                # release binary in ./result/bin/bmd
+nix develop              # development shell
 ```
 
-Without devbox, macOS may require `RUSTFLAGS="-C linker=clang"` when the default `cc` is not Apple clang. Mixing devbox and plain `cargo` invalidates incremental artifacts due to differing `RUSTFLAGS`.
-
-## Development
+Inside the shell:
 
 ```bash
-devbox shell
-devbox run setup        # toolchain and dependencies
-devbox run build
-devbox run build-release
-devbox run package
-devbox run test
-devbox run run -- sample.md
-devbox run clippy
-devbox run fmt
-devbox run prek         # pre-commit hooks
-devbox run cache-stats  # sccache hit rate
+cargo build --release --locked
+cargo zigbuild --release --locked --target x86_64-unknown-linux-musl   # static Linux (also aarch64-unknown-linux-musl)
+cargo test --locked -- --show-output
+cargo clippy --all-targets --locked -- -D warnings
+cargo fmt --all
+prek run --all-files     # pre-commit hooks
+sccache --show-stats     # compile cache hit rate
+cargo publish --locked
 ```
 
-`devbox.json` configures project-local `RUSTUP_HOME`, `CARGO_HOME`, `SCCACHE_DIR`, `RUSTFLAGS="-C linker=clang"`, and `RUSTC_WRAPPER=sccache`. Artifacts go to `target/` and `dist/`; compile cache to `.sccache/`.
+The shell sets project-local `CARGO_HOME=.cargo` and `SCCACHE_DIR=.sccache`, and `RUSTC_WRAPPER=sccache`. Artifacts go to `target/`; compile cache to `.sccache/`.
 
 Sandboxed IDE shells may point `CARGO_TARGET_DIR` at a temporary directory, which looks like a clean build every time — prefer building from a normal terminal.
 
